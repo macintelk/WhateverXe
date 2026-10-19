@@ -10,7 +10,10 @@ This project is experimental and requires the Xe root patch provided by the
 
 ## Compatibility
 
-The current target is **macOS Big Sur build 20G1443**.
+The current target is **macOS Big Sur build 20G1443**. Tiger Lake also runs
+experimentally on **macOS Tahoe 26.7.1 build 25G241** (that exact build only).
+On 25G241, Metal additionally requires the Big Sur Metal compiler stack (3902),
+which the root patch does not provide yet.
 
 | GPU family | Device IDs with an implemented backend |
 | --- | --- |
@@ -23,9 +26,10 @@ for detailed selection conditions and overrides.
 
 Dual external 1920×1080 at 60 Hz output, Metal/OpenGL, hardware HEVC and display
 sleep/wake have been tested on Tiger Lake and Alder Lake-N. Hardware H.264
-encode/decode has also been tested on Tiger Lake. Three simultaneous displays,
+encode/decode and internal eDP panels with backlight control have also been
+tested on Tiger Lake. Three simultaneous displays,
 system sleep, higher resolutions and other connector layouts require further
-validation. USB-C and internal display support are planned below.
+validation. USB-C support is planned below.
 
 Download the **RELEASE** ZIP from [Releases](https://github.com/b00t0x/WhateverXe/releases). The DEBUG ZIP is for troubleshooting.
 
@@ -99,6 +103,13 @@ Alder Lake-N / Twin Lake.
 | `-wexoff` | Disable WhateverXe. |
 | `-wexbeta` | Bypass the plugin's OS-version check. Exact kernel/driver checks still apply. |
 | `-wex-tgl-off` | Disable the Tiger Lake path. |
+| `-wex-tahoe-off` | Disable the macOS 26.7.1 (25G241) host path. |
+| `-wex-accel-off` | Keep the Tiger Lake framebuffer and leave the accelerator unclaimed. |
+| `-wex-edp-trans-off` | Disable the Tiger Lake eDP transcoder correction. |
+| `-wex-edphpd-off` | Do not enable eDP (DDI A) hotplug on Tiger Lake. |
+| `-wex-blfreq-off` | Use the driver's built-in backlight PWM period instead of the firmware value. |
+| `-wex-bl64-off` | Use the driver's 32-bit backlight duty calculation. |
+| `-wex-lt-off` | Do not record display registers when an internal-panel mode set fails. |
 
 ## Roadmap
 
@@ -107,7 +118,7 @@ Alder Lake-N / Twin Lake.
 - macOS Monterey through Tahoe support using OCLP's capabilities
 - Alder Lake and Raptor Lake S/H/P/U support
 - USB-C display output
-- Internal displays
+- Internal displays on Alder Lake-N / Twin Lake
 
 ### Not Planned
 

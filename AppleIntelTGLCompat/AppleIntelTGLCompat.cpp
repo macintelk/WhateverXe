@@ -222,8 +222,11 @@ extern "C" uint32_t tglProbePort(void *port) {
 }
 
 extern "C" kern_return_t tglStart(kmod_info_t *, void *) {
+    // macOS 26.7.1 25G241. Only donor-internal offsets are used here (manager +0xC40,
+    // port +0x548/+0x578), unchanged on this host; WhateverXe applies the host ABI fixes.
     if (strcmp(version, "Darwin Kernel Version 20.0.0: Sat Jun 13 17:58:16 PDT 2020; root:xnu-7090.0.0.111.5~1/RELEASE_X86_64") &&
-        strcmp(version, "Darwin Kernel Version 20.6.0: Thu Jul  6 22:12:47 PDT 2023; root:xnu-7195.141.49.702.12~1/RELEASE_X86_64"))
+        strcmp(version, "Darwin Kernel Version 20.6.0: Thu Jul  6 22:12:47 PDT 2023; root:xnu-7195.141.49.702.12~1/RELEASE_X86_64") &&
+        strcmp(version, "Darwin Kernel Version 25.6.0: Tue Aug 18 17:46:40 PDT 2026; root:xnu-12377.161.15.700.19~2/RELEASE_X86_64"))
         return KERN_FAILURE;
     // Backend selection is per physical owner/validated binding, not a global
     // boot policy. Register/DSB and port operations enforce their own guards.

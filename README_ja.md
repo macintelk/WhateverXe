@@ -8,7 +8,7 @@ WhateverXeは、一部のIntel Xe-LP内蔵GPU向けにAppleのグラフィック
 
 ## 対応範囲
 
-現在の対象は **macOS Big Sur build 20G1443** です。
+現在の対象は **macOS Big Sur build 20G1443** です。Tiger Lakeは **macOS Tahoe 26.7.1 build 25G241**（このbuildのみ）でも試験的に動作します。25G241でMetalを使うには、Big SurのMetalコンパイラ（3902）が別途必要で、root patchはまだこれを提供しません。
 
 | GPUファミリー | バックエンド実装があるdevice ID |
 | --- | --- |
@@ -17,7 +17,7 @@ WhateverXeは、一部のIntel Xe-LP内蔵GPU向けにAppleのグラフィック
 
 対応状況は機種やコネクタ構成によって異なります。この表はバックエンドの実装範囲を示すもので、すべての機種での動作を保証するものではありません。詳細な選択条件と上書き設定は[デバイス選択](docs/device-selection.md)を参照してください。
 
-Tiger LakeとAlder Lake-Nで、外部2画面の1920×1080・60Hz出力、Metal/OpenGL、ハードウェアHEVC、画面の消灯／復帰を確認しています。Tiger LakeではハードウェアH.264のエンコード／デコードも確認しています。3画面同時出力、システムスリープ、より高い解像度や他のコネクタ構成は追加検証が必要です。USB-Cと内蔵ディスプレイへの対応は下記ロードマップに含まれます。
+Tiger LakeとAlder Lake-Nで、外部2画面の1920×1080・60Hz出力、Metal/OpenGL、ハードウェアHEVC、画面の消灯／復帰を確認しています。Tiger LakeではハードウェアH.264のエンコード／デコードと、バックライト制御を含む内蔵eDPパネルも確認しています。3画面同時出力、システムスリープ、より高い解像度や他のコネクタ構成は追加検証が必要です。USB-Cへの対応は下記ロードマップに含まれます。
 
 [Releases](https://github.com/b00t0x/WhateverXe/releases)から **RELEASE** ZIPをダウンロードしてください。DEBUG ZIPは問題調査用です。
 
@@ -78,6 +78,13 @@ Alder Lake-N / Twin Lakeで世代選択や個別機能の有効化引数を追�
 | `-wexoff` | WhateverXeを無効にする。 |
 | `-wexbeta` | プラグインのOSバージョンチェックを回避する。kernel／driverの一致条件は維持する。 |
 | `-wex-tgl-off` | Tiger Lakeの処理を無効にする。 |
+| `-wex-tahoe-off` | macOS 26.7.1（25G241）向けの処理を無効にする。 |
+| `-wex-accel-off` | Tiger Lakeのframebufferは維持し、acceleratorを割り当てない。 |
+| `-wex-edp-trans-off` | Tiger LakeのeDP transcoder補正を無効にする。 |
+| `-wex-edphpd-off` | Tiger LakeでeDP（DDI A）のhotplugを有効にしない。 |
+| `-wex-blfreq-off` | ファームウェアの値ではなく、ドライバ内蔵のバックライトPWM周期を使う。 |
+| `-wex-bl64-off` | ドライバ本来の32-bitバックライトduty計算を使う。 |
+| `-wex-lt-off` | 内蔵パネルのmode set失敗時にディスプレイレジスタを記録しない。 |
 
 ## ロードマップ
 
@@ -86,7 +93,7 @@ Alder Lake-N / Twin Lakeで世代選択や個別機能の有効化引数を追�
 - OCLPの機能を利用したmacOS Monterey〜Tahoe対応
 - Alder Lake／Raptor LakeのS/H/P/U対応
 - USB-C画面出力対応
-- 内蔵ディスプレイ対応
+- Alder Lake-N / Twin Lakeの内蔵ディスプレイ対応
 
 ### Not Planned
 

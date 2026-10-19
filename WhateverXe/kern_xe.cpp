@@ -1083,6 +1083,29 @@ bool tglMMIOEvidenceSerialize(void *,void *,OSSerialize *serializer) {
  auto data=OSData::withBytes(out,sizeof(out));if (!data) return false;
  const bool ok=data->serialize(serializer);data->release();return ok;
 }
+// effective MTRR memory type of a physical address (Intel SDM 11.11.4.1).
+// 0 UC, 1 WC, 4 WT, 5 WP, 6 WB; 0xFF = overlapping types that the SDM leaves undefined.
+static bool tglTahoeUCMinus;  // set by the 25G241 branch of tglPrepareMMIOUC
+static uint64_t tglTahoeMTRR[4] {116};
+static uint8_t tglMTRRType(uint64_t phys) {
+ auto rd=[](uint32_t msr){uint32_t lo,hi;asm volatile("rdmsr" : "=a"(lo),"=d"(hi) : "c"(msr));return static_cast<uint64_t>(hi)<<32|lo;};
+ const uint64_t def=rd(0x2FF);
+ if (!(def&(1U<<11))) return 0;  // MTRRs disabled: everything UC
+ const unsigned count=rd(0xFE)&0xFF;
+ uint8_t type=0xFE;              // none matched yet
+ for (unsigned n=0;n<count;++n) {
+  const uint64_t base=rd(0x200+2*n),mask=rd(0x201+2*n);
+  if (!(mask&(1U<<11))) continue;
+  const uint64_t m=mask&~0xFFFULL;
+  if ((phys&m)!=(base&m)) continue;
+  const uint8_t t=base&0xFF;
+  if (type==0xFE || type==t) type=t;
+  else if (t==0 || type==0) type=0;                              // UC wins
+  else if ((t==4 && type==6) || (t==6 && type==4)) type=4;       // WT + WB -> WT
+  else type=0xFF;
+ }
+ return type==0xFE ? static_cast<uint8_t>(def&0xFF) : type;
+}
 static void tglCheckMMIOMap(IOMemoryMap *mapping) {
  auto q=tglMMIOMapEvidence;q[1]=mapping ? mapping->getVirtualAddress() : 0;
  q[2]=mapping ? mapping->getLength() : 0;
@@ -1093,8 +1116,18 @@ static void tglCheckMMIOMap(IOMemoryMap *mapping) {
   auto r=TGLVM::inspect(root,tglVM.directBase,tglVM.directEnd,q[1]+offsets[i],tglVMRead);
   auto m=q+3+i*7;m[0]=offsets[i];m[1]=r.status;m[2]=r.physical;
   m[3]=r.shift;m[4]=r.patIndex;m[5]=r.entry[3];m[6]=r.reads;
-  ok=ok && !r.status && r.physical==tglVM.pciBAR+offsets[i] && r.shift==12 && r.patIndex==3;
+  // 25G241 has no pmap routes, so its native transition stops at PAT UC- (index 2). UC- under an
+  // MTRR UC range is effective UC (SDM table 11-7); Linux i915 maps this BAR as UC- too.
+  bool uc=r.patIndex==3;
+  if (!uc && tglTahoeUCMinus && r.patIndex==2 && !r.status) {
+   const uint8_t t=tglMTRRType(r.physical);
+   tglTahoeMTRR[1+i]=t;
+   uc=t==0;
+  }
+  ok=ok && !r.status && r.physical==tglVM.pciBAR+offsets[i] && r.shift==12 && uc;
  }
+ if (tglTahoeUCMinus)
+  IORegistryEntry::getRegistryRoot()->setProperty("KextIntelTahoeMMIOMTRR",tglTahoeMTRR,sizeof(tglTahoeMTRR));
  tglMMIOUCReady=ok;
  IORegistryEntry::getRegistryRoot()->setProperty("TGLMMIOStrongUCPreflight",ok);
 }
@@ -1123,6 +1156,28 @@ static void tglUpdateMMIOMap(IOMemoryMap *mapping) {
 }
 static void tglPrepareMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
  const bool native20G=!strcmp(version,"Darwin Kernel Version 20.6.0: Thu Jul  6 22:12:47 PDT 2023; root:xnu-7195.141.49.702.12~1/RELEASE_X86_64");
+ // 25G241 gets no pmap_enter_options routes. Only the native IOProtectCacheMode transition
+ // on the donor's own map; tglCheckMMIOMap then reads the live PTEs and admits only PAT index 3.
+ const bool tahoe=!strcmp(version,"Darwin Kernel Version 25.6.0: Tue Aug 18 17:46:40 PDT 2026; root:xnu-12377.161.15.700.19~2/RELEASE_X86_64");
+ if (tahoe) {
+  tglMMIOUCReady=false;
+  auto bar=pci->getDeviceMemoryWithRegister(0x10);
+  auto protect=patcher.solveSymbol(KernelPatcher::KernelID,"_IOProtectCacheMode");
+  auto kernelMap=patcher.solveSymbol(KernelPatcher::KernelID,"_kernel_map");
+  patcher.clearError();
+  uint32_t lo,hi;asm volatile("rdmsr" : "=a"(lo),"=d"(hi) : "c"(0x277));
+  const uint64_t pat=static_cast<uint64_t>(hi)<<32|lo;
+  bool ok=tglVM.enabled && tglVM.pciBAR==0x4010000000ULL && bar && bar->getLength()==0x1000000 &&
+   pat==0x1040600070406ULL && protect && kernelMap && tglVMRead(kernelMap,tglKernelMap) && (tglKernelMap>>47)==0x1FFFF;
+  if (ok) tglProtectCacheMode=reinterpret_cast<decltype(tglProtectCacheMode)>(protect);
+  tglMMIOUCRouted=ok;
+  tglTahoeUCMinus=ok;
+  auto root=IORegistryEntry::getRegistryRoot();
+  root->setProperty("TGLMMIOStrongUCRouted",ok);
+  root->setProperty("KextIntelTahoeMMIOUCMode","IOProtectCacheMode only (no pmap routes)");
+  if (auto evidence=OSSerializer::forTarget(nullptr,tglMMIOEvidenceSerialize)) {root->setProperty("TGLMMIOMappingEvidence",evidence);evidence->release();}
+  return;
+ }
  if (!native20G) return;
  tglMMIOUCReady=false;
  auto bar=pci->getDeviceMemoryWithRegister(0x10);
@@ -1181,7 +1236,9 @@ void tglVMPrepare(KernelPatcher &patcher,IOPCIDevice *pci) {
  int32_t displacement;memcpy(&displacement,reinterpret_cast<void *>(verify+0x14),4);
  const auto target=verify+0x18+displacement;
  const bool dp1=!strcmp(version,"Darwin Kernel Version 20.0.0: Sat Jun 13 17:58:16 PDT 2020; root:xnu-7090.0.0.111.5~1/RELEASE_X86_64");
- if (target!=verify-(dp1 ? 0x3930 : 0x3AB0)) return;
+ // 25G241 keeps the same accessor (root table VA at pmap+0x50, verified below) 0x3D40 before it.
+ const bool tahoe=!strcmp(version,"Darwin Kernel Version 25.6.0: Tue Aug 18 17:46:40 PDT 2026; root:xnu-12377.161.15.700.19~2/RELEASE_X86_64");
+ if (target!=verify-(dp1 ? 0x3930 : tahoe ? 0x3D40 : 0x3AB0)) return;
  const uint8_t rootLoad[] {0x48,0x8B,0x47,0x50};
  if (memcmp(reinterpret_cast<void *>(target+0x20),rootLoad,sizeof(rootLoad))) return;
  tglVM.nofault=reinterpret_cast<decltype(tglVM.nofault)>(nf);
@@ -2613,7 +2670,13 @@ void XE::selectProfile(const XELP::Profile &profile) {
     tglProgramEnabled=!checkKernelArgument("-wex-tgl-prog-off");
     tglAcceleratorRequested=tglRequested;
     if(tglRequested) {
-        if(strcmp(version,"Darwin Kernel Version 20.0.0: Sat Jun 13 17:58:16 PDT 2020; root:xnu-7090.0.0.111.5~1/RELEASE_X86_64") &&
+        // macOS 26.7.1 25G241. ABI checked against its KDK:
+        // donor links, parent vtables match; IOSurface fields moved (runtime fix below).
+        tglTahoe=!strcmp(version,"Darwin Kernel Version 25.6.0: Tue Aug 18 17:46:40 PDT 2026; root:xnu-12377.161.15.700.19~2/RELEASE_X86_64") &&
+            !checkKernelArgument("-wex-tahoe-off");
+        IORegistryEntry::getRegistryRoot()->setProperty("KextIntelTahoeHost",tglTahoe);
+        if(!tglTahoe &&
+           strcmp(version,"Darwin Kernel Version 20.0.0: Sat Jun 13 17:58:16 PDT 2020; root:xnu-7090.0.0.111.5~1/RELEASE_X86_64") &&
            strcmp(version,"Darwin Kernel Version 20.6.0: Thu Jul  6 22:12:47 PDT 2023; root:xnu-7195.141.49.702.12~1/RELEASE_X86_64")) {
             tglRequested=tglAcceleratorRequested=false;return;
         }
@@ -2989,6 +3052,10 @@ void XE::processKernel(KernelPatcher &patcher, DeviceInfo *info) {
 					mmio->release();
 				}
 			}
+			// Kill switch: the Tahoe donor personalities require this property (IOPropertyMatch),
+			// so -wexoff / -liluoff / -wex-tgl-off / -wex-tahoe-off leave the GPU unclaimed instead of
+			// running the donor without WhateverXe.
+			pci->setProperty("KextIntelTGLAllowed", true);
 			SYSLOG("igfx", "TGL donor path enabled for PCI 8086:%04x, platform 9A490000", pci->configRead16(2));
 		} else {
 			SYSLOG("igfx", "TGL experiment rejected: kernel or physical PCI identity mismatch");
@@ -2997,7 +3064,46 @@ void XE::processKernel(KernelPatcher &patcher, DeviceInfo *info) {
 	}
 }
 
+// macOS 14.4 moved IOSurface fields read inline by pre-14.4 drivers: pixelFormat 0xA4 -> 0x80,
+// planeCount 0xB0 -> 0x98 (getters in the 25G241 IOSurface). These are the same three sites OCLP rewrites in
+// Skylake 12.5 -> 12.5-23.4. Exact function base and original bytes, or nothing.
+void XE::processTGLTahoeIOSurfaceABI(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size, bool framebuffer) {
+	struct Site { const char *symbol; uintptr_t function, offset; uint8_t find[6], replace[6]; };
+	static const Site accel[] {
+		{"__ZN15IGAccelResource38calculateIOSurfaceDeviceCacheVRAMBytesEPyS0_",0x72834,0x49,
+			{0x8B,0x83,0xB0,0,0,0},{0x8B,0x83,0x98,0,0,0}},
+		{"__ZN18IGAccelDisplayPipe18performTransactionEP30IOAccelDisplayPipeTransaction2",0x80EF0,0x471,
+			{0x8B,0x83,0xA4,0,0,0},{0x8B,0x83,0x80,0,0,0}},
+	};
+	static const Site fb[] {
+		{"__ZN21AppleIntelFramebuffer19ValidateTransactionEP30IOAccelDisplayPipeTransaction2y",0x2B4BA,0x12E,
+			{0x8B,0x80,0xA4,0,0,0},{0x8B,0x80,0x80,0,0,0}},
+	};
+	const Site *sites=framebuffer ? fb : accel;
+	const size_t count=framebuffer ? arrsize(fb) : arrsize(accel);
+	auto info=framebuffer ? currentFramebuffer : currentGraphics;
+	uint32_t applied=0;
+	for(size_t i=0;i<count;i++) {
+		const auto &s=sites[i];
+		auto fn=patcher.solveSymbol<mach_vm_address_t>(index,s.symbol,address,size);
+		patcher.clearError();
+		auto site=reinterpret_cast<uint8_t *>(address+s.function+s.offset);
+		if(fn!=address+s.function || s.function+s.offset+sizeof(s.find)>size || memcmp(site,s.find,sizeof(s.find)))continue;
+		KernelPatcher::LookupPatch patch {info,s.find,s.replace,sizeof(s.find),1};
+		patcher.applyLookupPatch(&patch,site,sizeof(s.find)+1);
+		if(patcher.getError()==KernelPatcher::Error::NoError && !memcmp(site,s.replace,sizeof(s.replace)))applied++;
+		patcher.clearError();
+	}
+	tglTahoeIOSurfaceReady[framebuffer]=applied==count;
+	uint32_t record[] {framebuffer,applied,static_cast<uint32_t>(count)};
+	IORegistryEntry::getRegistryRoot()->setProperty(framebuffer ? "KextIntelTahoeIOSurfaceFB" : "KextIntelTahoeIOSurfaceAccel",
+		record,sizeof(record));
+}
+
 bool XE::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
+	if(tglTahoe && tglRequested && currentGraphics && currentFramebuffer &&
+	   (currentGraphics->loadIndex==index || currentFramebuffer->loadIndex==index))
+		processTGLTahoeIOSurfaceABI(patcher,index,address,size,currentFramebuffer->loadIndex==index);
     if((tglRequested || display13FramebufferRequested) && kextAppleIntelTGLCompat.loadIndex==index) {
         const auto probe=patcher.solveSymbol<mach_vm_address_t>(index,"__ZN17AppleIntelPortHAL13probePortModeEv",address,size);
         patcher.clearError();
@@ -8279,6 +8385,13 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			if(blitInitOK) {
 				int32_t relative;memcpy(&relative,reinterpret_cast<void *>(address+0x355CE),4);
 				tglBlitPoolSubmit=address+0x355D2+relative;
+				// loaded from an auxiliary KC (Tahoe) the call lands on a "jmp *[rip+x]"
+				// stub into IOAcceleratorFamily2; its GOT slot holds the bound submitBuffer.
+				auto stub=reinterpret_cast<const uint8_t *>(tglBlitPoolSubmit);
+				if(tglTahoe && stub[0]==0xFF && stub[1]==0x25) {
+					int32_t got;memcpy(&got,stub+2,4);
+					tglBlitPoolSubmit=*reinterpret_cast<const mach_vm_address_t *>(tglBlitPoolSubmit+6+got);
+				}
 				blitInitOK=!memcmp(reinterpret_cast<void *>(tglBlitPoolSubmit),submitPrologue,sizeof(submitPrologue));
 			}
 			patcher.clearError();
@@ -8494,7 +8607,8 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			}
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLRecoverySinglePassRequested",recoveryRequested);
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLRecoverySinglePassReady",recoveryRequested && recoveryOK);
-			tglAcceleratorReady = adlnObserved && skuReady && urbReady && ccsReady && hizReady && ccsPSReady && ggttOK && observed && ok && gucOK && dmaWriteOK && hostOK && scratchOK && blitInitOK && tglMMIOUCReady && copyOK && auxAlignOK && iosCCSOK && ffModeOK && cpsOK && flushOK && tlbPreparserOK && hangOK && recoveryOK;
+			tglAcceleratorReady = adlnObserved && skuReady && urbReady && ccsReady && hizReady && ccsPSReady && ggttOK && observed && ok && gucOK && dmaWriteOK && hostOK && scratchOK && blitInitOK && tglMMIOUCReady && copyOK && auxAlignOK && iosCCSOK && ffModeOK && cpsOK && flushOK && tlbPreparserOK && hangOK && recoveryOK &&
+				!checkKernelArgument("-wex-accel-off");  // keep the TGL framebuffer, refuse only the accelerator
 			// r201: resource/copy diagnostics are absent, not admission requirements.
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLResourceDiagnosticsRemoved",true);
 			IORegistryEntry::getRegistryRoot()->setProperty("TGLAcceleratorAdmissionReady", tglAcceleratorReady);
@@ -8563,7 +8677,8 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 			// two slots when IOPlatformExpert's target/product names moved
 			// into reserved slots. Keep the native call and its ownership.
 			tglPlatformNVRAMReady = true;
-			if (!strcmp(version, "Darwin Kernel Version 20.6.0: Thu Jul  6 22:12:47 PDT 2023; root:xnu-7195.141.49.702.12~1/RELEASE_X86_64")) {
+			// 25G241 keeps writeNVRAMProperty at vtable+0x9E8 (KDK __ZTV18IODTPlatformExpert slot 317).
+			if (tglTahoe || !strcmp(version, "Darwin Kernel Version 20.6.0: Thu Jul  6 22:12:47 PDT 2023; root:xnu-7195.141.49.702.12~1/RELEASE_X86_64")) {
 				tglPlatformNVRAMReady = false;
 				auto table = patcher.solveSymbol(KernelPatcher::KernelID, "__ZTV18IODTPlatformExpert");
 				auto target = patcher.solveSymbol(KernelPatcher::KernelID,
@@ -8668,6 +8783,130 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 				tglTopologyReady = patcher.routeMultiple(index, &topology, 1, address, size);
 				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteNoPanelTopology", tglTopologyReady);
 				patcher.clearError();
+			}
+			// eDP: Gen12 has no transcoder EDP (Linux display ver 12 exposes
+			// transcoders A-D only). The 20A2314a donor still maps an eDP connector
+			// (port config[2]==0) to transcoder 0xF (0x6Fxxx) in 20 inlined sites, while
+			// hwUpdateRegCache reads the path's real transcoder (+0x3640). Reads of the
+			// absent registers return 0, so hwCRTCToIODetailedTimingInformation divides
+			// by LINK_N1==0 when WindowServer queries the firmware-lit panel. Remove only
+			// the 0xF overrides so every site keeps the transcoder it already computed.
+			// All sites are verified before any write; a partial set is never applied.
+			if (tglActive && !tglNoPanel && !checkKernelArgument("-wex-edp-trans-off")) {
+				struct EDPSite { uint32_t offset; uint8_t length; uint8_t bytes[6]; };
+				static const EDPSite sites[] {
+					{0x48E38,6,{0x41,0xBC,0x0F,0,0,0}}, {0x493C6,6,{0x41,0xBC,0x0F,0,0,0}},
+					{0x4956C,5,{0xB8,0x0F,0,0,0}},     {0x49EAA,5,{0xBB,0x0F,0,0,0}},
+					{0x4AF0E,5,{0xBE,0x0F,0,0,0}},     {0x4CCDE,5,{0xBE,0x0F,0,0,0}},
+					{0x4D705,5,{0xB9,0x0F,0,0,0}},     {0x4DF95,5,{0xBB,0x0F,0,0,0}},
+					{0x4E165,5,{0xBB,0x0F,0,0,0}},     {0x4E2AF,5,{0xBB,0x0F,0,0,0}},
+					{0x4E439,5,{0xBB,0x0F,0,0,0}},     {0x4F3B0,5,{0xBE,0x0F,0,0,0}},
+					{0x4F77F,6,{0x41,0xBC,0x0F,0,0,0}}, {0x5252B,5,{0xBB,0x0F,0,0,0}},
+					{0x52615,5,{0xBB,0x0F,0,0,0}},     {0x526FD,5,{0xBB,0x0F,0,0,0}},
+					{0x52A6D,5,{0xBB,0x0F,0,0,0}},     {0x5776D,5,{0xBE,0x0F,0,0,0}},
+					{0x57A42,6,{0x41,0xBF,0x0F,0,0,0}}, {0x57CD8,6,{0x41,0xBD,0x0F,0,0,0}},
+				};
+				static const uint8_t nop5[] {0x0F,0x1F,0x44,0x00,0x00};
+				static const uint8_t nop6[] {0x66,0x0F,0x1F,0x44,0x00,0x00};
+				const auto getOffset = patcher.solveSymbol<mach_vm_address_t>(index,
+					"__ZN31AppleIntelFramebufferController19getTranscoderOffsetEP14AppleIntelPortjj", address, size);
+				bool verified = getOffset == address + 0x49538 && size > 0x57CDE;
+				for (const auto &site : sites)
+					verified = verified && !memcmp(reinterpret_cast<void *>(address + site.offset), site.bytes, site.length);
+				patcher.clearError();
+				uint32_t applied = 0;
+				for (const auto &site : sites) {
+					if (!verified) break;
+					auto target = reinterpret_cast<uint8_t *>(address + site.offset);
+					KernelPatcher::LookupPatch patch {currentFramebuffer, site.bytes, site.length == 6 ? nop6 : nop5, site.length, 1};
+					patcher.applyLookupPatch(&patch, target, site.length + 1);
+					if (patcher.getError() == KernelPatcher::Error::NoError &&
+						!memcmp(target, site.length == 6 ? nop6 : nop5, site.length)) ++applied;
+					patcher.clearError();
+				}
+				uint32_t record[] {static_cast<uint32_t>(verified), applied, static_cast<uint32_t>(arrsize(sites))};
+				IORegistryEntry::getRegistryRoot()->setProperty("KextIntelEDPTranscoder", record, sizeof(record));
+				SYSLOG("igfx", "KextIntel eDP transcoder patch verified=%d applied=%u/%u", verified, applied,
+					static_cast<uint32_t>(arrsize(sites)));
+				// eDP HPD: hwEnableInterrupts enables the DDI A (eDP) PCH hotplug
+				// detect (SHOTPLUG_CTL_DDI 0xC4030 bit 3) only when an Apple Camellia TCON is
+				// present (|0x88), otherwise just DDI B (|0x80). Firmware sets bit 3 at boot,
+				// but after S3 the PCH register is reset, LightUpEDP's hwSetPanelPower times
+				// out waiting for HPD and eDP link training fails (black panel on wake).
+				// Enable DDI A HPD in the non-Camellia path as Linux does for TGP combo ports.
+				if (!checkKernelArgument("-wex-edphpd-off")) {
+					const auto enableIRQ = patcher.solveSymbol<mach_vm_address_t>(index,
+						"__ZN31AppleIntelFramebufferController18hwEnableInterruptsEv", address, size);
+					static const uint8_t hpdFind[] {0x0D,0x80,0x00,0x00,0x00};
+					static const uint8_t hpdReplace[] {0x0D,0x88,0x00,0x00,0x00};
+					static const uint8_t camellia[] {0x0D,0x88,0x00,0x00,0x00,0xEB,0x05};
+					auto site = reinterpret_cast<uint8_t *>(address + 0x758A3);
+					bool hpdOK = enableIRQ == address + 0x755CA && size > 0x758A8 &&
+						!memcmp(reinterpret_cast<void *>(address + 0x7589C), camellia, sizeof(camellia)) &&
+						!memcmp(site, hpdFind, sizeof(hpdFind));
+					patcher.clearError();
+					if (hpdOK) {
+						KernelPatcher::LookupPatch patch {currentFramebuffer, hpdFind, hpdReplace, sizeof(hpdFind), 1};
+						patcher.applyLookupPatch(&patch, site, sizeof(hpdFind) + 1);
+						hpdOK = patcher.getError() == KernelPatcher::Error::NoError && !memcmp(site, hpdReplace, sizeof(hpdReplace));
+						patcher.clearError();
+					}
+					IORegistryEntry::getRegistryRoot()->setProperty("KextIntelEDPHPD", hpdOK);
+				}
+			}
+			// Backlight: the donor derives its PWM period (+0xE60) from the PCH
+			// raw clock (17777 / 22222) and only programs BLC_PWM_FREQ1 in LightUpEDP.
+			// When it adopts the firmware-lit panel, FREQ1 keeps the firmware period
+			// (96000 on this Lenovo VBT, 200 Hz), so hwSetBacklight writes duties against
+			// the wrong period. Before each update use the period the hardware runs.
+			if (tglActive && !tglNoPanel && !checkKernelArgument("-wex-blfreq-off")) {
+				const auto setBacklight = patcher.solveSymbol<mach_vm_address_t>(index,
+					"__ZN31AppleIntelFramebufferController14hwSetBacklightEj", address, size);
+				kxReadRegister32 = patcher.solveSymbol<mach_vm_address_t>(index,
+					"__ZN31AppleIntelRegisterAccessManager14ReadRegister32Em", address, size);
+				kxDirectDuty = !checkKernelArgument("-wex-bl64-off");
+				// movq 0xC40(%rbx),%rdi ; movl 0xE60(%rbx),%eax
+				const uint8_t expected[] {0x48,0x8B,0xBB,0x40,0x0C,0,0,0x8B,0x83,0x60,0x0E,0,0};
+				const bool ready = setBacklight == address + 0x4A56A && kxReadRegister32 == address + 0x5E344 &&
+					size > 0x5E344 && !memcmp(reinterpret_cast<void *>(setBacklight + 0x2F), expected, sizeof(expected));
+				patcher.clearError();
+				KernelPatcher::RouteRequest request("__ZN31AppleIntelFramebufferController14hwSetBacklightEj",
+					wrapKXSetBacklight, orgKXSetBacklight);
+				const bool routed = ready && patcher.routeMultiple(index, &request, 1, address, size);
+				if (!routed) kxReadRegister32 = 0;
+				patcher.clearError();
+				IORegistryEntry::getRegistryRoot()->setProperty("KextIntelBacklightRouted", routed);
+				// AppleIntelPanelA (AppleBacklight) forwards brightness as
+				// setAttributeForConnection(0,'bklt',level). The donor only applies it when
+				// fb+0x1DC==0, ctl+0xE55!=0 and fb+0x4284==2; record and complete it otherwise.
+				const auto setAttr = patcher.solveSymbol<mach_vm_address_t>(index,
+					"__ZN21AppleIntelFramebuffer25setAttributeForConnectionEijm", address, size);
+				const uint8_t bklt[] {0x81,0xFB,0x74,0x6C,0x6B,0x62}; // cmpl $'bklt',%ebx
+				const bool attrReady = routed && setAttr == address + 0x352D4 &&
+					!memcmp(reinterpret_cast<void *>(address + 0x357F2), bklt, sizeof(bklt));
+				patcher.clearError();
+				KernelPatcher::RouteRequest attrRequest("__ZN21AppleIntelFramebuffer25setAttributeForConnectionEijm",
+					wrapKXSetAttributeForConnection, orgKXSetAttributeForConnection);
+				const bool attrRouted = attrReady && patcher.routeMultiple(index, &attrRequest, 1, address, size);
+				patcher.clearError();
+				IORegistryEntry::getRegistryRoot()->setProperty("KextIntelBkltRouted", attrRouted);
+				// Diagnostics for eDP retraining after S3: snapshot DDI A / transcoder A / PLL /
+				// power state when hwSetMode fails on FB0. Never hook AppleIntelPort::linkTraining:
+				// WhateverXe already routes it (wrapTGLPortTraining) with strict caller contracts;
+				// a second route there hung framebuffer start.
+				const auto setMode = patcher.solveSymbol<mach_vm_address_t>(index,
+					"__ZN31AppleIntelFramebufferController9hwSetModeEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2",
+					address, size);
+				patcher.clearError();
+				bool ltRouted = false;
+				if (!checkKernelArgument("-wex-lt-off") && routed && setMode == address + 0x4F9D4) {
+					KernelPatcher::RouteRequest smRequest(
+						"__ZN31AppleIntelFramebufferController9hwSetModeEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2",
+						wrapKXSetMode, orgKXSetMode);
+					ltRouted = patcher.routeMultiple(index, &smRequest, 1, address, size);
+					patcher.clearError();
+				}
+				IORegistryEntry::getRegistryRoot()->setProperty("KextIntelSetModeRouted", ltRouted);
 			}
 			// DP1 KC vtable inheritance fixup replaces this externally supplied
 			// override with the base class's pure-virtual slot. Verify and repair
@@ -9330,6 +9569,90 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 // Panel absence and HDMI routing are board inputs, not common-fix opt-ins.
 // Copy the donor description before any port/FB is constructed. A malformed
 // explicit profile or a mismatched donor connector must not be partly applied.
+int XE::wrapKXSetMode(void *controller, void *framebuffer, void *path, void *timing) {
+	auto self = callbackXE;
+	const int result = FunctionCast(wrapKXSetMode, self->orgKXSetMode)(controller, framebuffer, path, timing);
+	auto &r = self->kxLinkRecord;
+	++r[0];
+	auto c = static_cast<uint8_t *>(controller);
+	auto fb = static_cast<uint8_t *>(framebuffer);
+	auto manager = c ? *reinterpret_cast<void **>(c + 0xC40) : nullptr;
+	if (result != 0 && fb && manager && self->kxReadRegister32 && *reinterpret_cast<uint32_t *>(fb + 0x1DC) == 0) {
+		++r[1]; r[2] = static_cast<uint32_t>(result); r[3] = 0;
+		auto t = static_cast<uint32_t *>(timing);
+		if (t) for (unsigned i = 0; i < 4; ++i) r[4 + i] = t[i];
+		static const uint32_t regs[28] {
+			0x64000, 0x60400, 0x60540, 0x60544, 0x70008, 0x60000, 0x6000C, 0x60030, 0x60040, 0x60044,
+			0x46010, 0x46014, 0x164280, 0x164284, 0x164288, 0x16428C, 0x164290, 0x164000, 0x164004,
+			0x45400, 0x45404, 0x45444, 0x45454, 0x45504, 0xC7200, 0xC7204, 0x64C00, 0x162014,
+		};
+		auto read = reinterpret_cast<uint32_t (*)(void *, unsigned long)>(self->kxReadRegister32);
+		for (unsigned i = 0; i < 28; ++i) { r[8 + 2 * i] = regs[i]; r[9 + 2 * i] = read(manager, regs[i]); }
+		IORegistryEntry::getRegistryRoot()->setProperty("KextIntelSetModeFail", r, sizeof(r));
+	}
+	return result;
+}
+
+int XE::wrapKXSetAttributeForConnection(void *framebuffer, int connect, uint32_t attribute, uintptr_t value) {
+	auto self = callbackXE;
+	if (attribute != 0x626B6C74 || !framebuffer)
+		return FunctionCast(wrapKXSetAttributeForConnection, self->orgKXSetAttributeForConnection)(framebuffer, connect, attribute, value);
+	auto fb = static_cast<uint8_t *>(framebuffer);
+	auto controller = *reinterpret_cast<void **>(fb + 0x1D0);
+	const auto setsBefore = self->kxBacklightRecord[3];
+	int result = FunctionCast(wrapKXSetAttributeForConnection, self->orgKXSetAttributeForConnection)(framebuffer, connect, attribute, value);
+	auto &r = self->kxBkltRecord;
+	++r[0]; r[1] = static_cast<uint32_t>(value); r[2] = static_cast<uint32_t>(result);
+	r[3] = *reinterpret_cast<uint32_t *>(fb + 0x1DC); r[4] = *reinterpret_cast<uint32_t *>(fb + 0x4284);
+	r[5] = controller ? static_cast<uint8_t *>(controller)[0xE55] : 0xFF;
+	if (self->kxBacklightRecord[3] != setsBefore) {
+		++r[7];
+	} else if (controller && r[3] == 0 && value <= 0xFFFF && self->orgKXSetBacklight) {
+		// Native gate refused (or no-op): program the panel PWM duty directly.
+		wrapKXSetBacklight(controller, static_cast<uint32_t>(value));
+		++r[6];
+		result = 0;
+	}
+	if (r[0] <= 4 || (r[0] & 15) == 0)
+		IORegistryEntry::getRegistryRoot()->setProperty("KextIntelBklt", r, sizeof(r));
+	return result;
+}
+
+int XE::wrapKXSetBacklight(void *controller, uint32_t level) {
+	auto self = callbackXE;
+	auto c = static_cast<uint8_t *>(controller);
+	auto manager = c ? *reinterpret_cast<void **>(c + 0xC40) : nullptr;
+	if (manager && self->kxReadRegister32) {
+		const auto period = reinterpret_cast<uint32_t (*)(void *, unsigned long)>(self->kxReadRegister32)(manager, 0xC8254);
+		auto &donorPeriod = *reinterpret_cast<uint32_t *>(c + 0xE60);
+		// Only trust a sane, enabled period; never invent one.
+		bool changed = false;
+		if (period >= 0x100 && period <= 0x200000 && period != donorPeriod) {
+			self->kxBacklightRecord[0] = donorPeriod;
+			donorPeriod = period;
+			self->kxBacklightRecord[1] = period;
+			changed = true;
+		}
+		self->kxBacklightRecord[2] = level;
+		// {donor period before, firmware period applied, last level, calls}
+		++self->kxBacklightRecord[3];
+		if (changed || self->kxBacklightRecord[3] == 1)
+			IORegistryEntry::getRegistryRoot()->setProperty("KextIntelBacklight", self->kxBacklightRecord, sizeof(self->kxBacklightRecord));
+	}
+	// The donor computes (period * level) with a 32-bit imull; 96000*level wraps above
+	// ~68% (non-monotonic brightness). Program BLC_PWM_DUTY1 with a 64-bit product.
+	if (manager && self->kxReadRegister32 && self->kxDirectDuty) {
+		const uint32_t period = *reinterpret_cast<uint32_t *>(c + 0xE60);
+		const uint32_t clamped = level > 0xFFFF ? 0xFFFF : level;
+		const uint32_t duty = static_cast<uint32_t>((static_cast<uint64_t>(period) * clamped) / 0xFFFF);
+		auto write = reinterpret_cast<void (*)(void *, unsigned long, uint32_t)>((*reinterpret_cast<uintptr_t **>(manager))[0x130 / 8]);
+		write(manager, 0xC8258, duty);
+		*reinterpret_cast<uint32_t *>(c + 0xE58) = level;
+		return 0;
+	}
+	return FunctionCast(wrapKXSetBacklight, self->orgKXSetBacklight)(controller, level);
+}
+
 bool XE::wrapTGLGetOSInformation(void *controller) {
  const auto r=FunctionCast(wrapTGLGetOSInformation,callbackXE->orgTGLGetOSInformation)(controller);
  if(r)tglBeginBootstrapTrial(controller);

@@ -42,18 +42,23 @@ fixture = r'''
 #include <initializer_list>
 #include "kern_xelp_platform.hpp"
 static const char *qualified = "Darwin Kernel Version 20.6.0: Thu Jul  6 22:12:47 PDT 2023; root:xnu-7195.141.49.702.12~1/RELEASE_X86_64";
+static const char *tahoe = "Darwin Kernel Version 25.6.0: Tue Aug 18 17:46:40 PDT 2026; root:xnu-12377.161.15.700.19~2/RELEASE_X86_64";
 static const char *version = qualified;
 static std::set<std::string> args;
 bool checkKernelArgument(const char *name) { return args.count(name); }
 #define SYSLOG(...) ((void)0)
 #define IOLog(...) ((void)0)
+struct IORegistryEntry {
+ static IORegistryEntry *getRegistryRoot() { static IORegistryEntry root; return &root; }
+ bool setProperty(const char *, bool) { return true; }
+};
 static int kextIntelTGLFb, kextAppleIntelTGLCompat, kextIntelTGL;
 static struct { void onKextLoadForce(int *) {} } lilu;
 struct XE {
  XELP::Profile xeProfile;
  bool adlnRequested=false, adlnDetected=false, adlnKernelReady=false, adlnNativeRequested=false;
  bool display13FramebufferRequested=false, display13TraceEnabled=false;
- bool tglRequested=false, tglAcceleratorRequested=false, tglNoPanel=false;
+ bool tglRequested=false, tglAcceleratorRequested=false, tglNoPanel=false, tglTahoe=false;
  bool tglInactivePorts=false, tglPG1Poll=false, tglClockOrderRequested=false;
  bool tglProgramEnabled=false, tglTrainingLeaseRequested=false;
  struct { bool available=false; } modDVMTCalcFix;
@@ -106,6 +111,11 @@ int main() {
  assert(!xe.adlnNativeRequested && !xe.display13FramebufferRequested && !adlnNativeRCSProfileRequested);
  auto malformed=XELP::identify(0x46D28086,0);malformed.display=XELP::Display::XeD;
  xe=XE{};xe.selectProfile(malformed);assert(!xe.adlnRequested && !adlnNativeRCSProfileRequested);
+ // The 25G241 host path is exact-build only and has its own kill switch.
+ version=tahoe;
+ xe=boot({},0x9A498086);assert(xe.tglRequested && xe.tglTahoe && xe.currentGraphics==&kextIntelTGL);
+ xe=boot({"-wex-tahoe-off"},0x9A498086);assert(!xe.tglRequested && !xe.tglTahoe);
+ version=qualified;xe=boot({},0x9A498086);assert(xe.tglRequested && !xe.tglTahoe);
  args={};version="unqualified";
  xe=XE{};xe.init();xe.selectProfile(XELP::identify(0x46D28086,0));
  assert(xe.adlnRequested && !xe.adlnKernelReady && !xe.adlnNativeRequested && !xe.display13FramebufferRequested);

@@ -15,7 +15,7 @@ void DYLDPatches::init() {
 
 void DYLDPatches::processPatcher(KernelPatcher &patcher) {
 
-	return;
+	//return;
 	
 	/*auto *entry = IORegistryEntry::fromPath("/", gIODTPlane);
 	if (entry) {
@@ -46,7 +46,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 	
 	if (!UserPatcher::matchSharedCachePath(path)) {
 		
-		/*if ((!strncmp(path, binarydisplaypolicyd, arrsize(binarydisplaypolicyd))) )
+		if ((!strncmp(path, binarydisplaypolicyd, arrsize(binarydisplaypolicyd))) )
 		{
 			const DYLDPatch patches[] = {
 				{displaypolicydf3, displaypolicydr3, "displaypolicyd edid read"},
@@ -55,7 +55,9 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 			return;
 		}
 		
-	    if ((!strncmp(path, kCoreLSKDMSEPath, arrsize(kCoreLSKDMSEPath))) ||
+		return; // stop here!
+		
+	   /* if ((!strncmp(path, kCoreLSKDMSEPath, arrsize(kCoreLSKDMSEPath))) ||
 			(!strncmp(path, kCoreLSKDPath, arrsize(kCoreLSKDPath)))) {
 			const DYLDPatch patch = {kCoreLSKDOriginal, kCoreLSKDPatched, "CoreLSKD streaming CPUID to Haswell"};
 			patch.apply(const_cast<void *>(data), PAGE_SIZE);
@@ -187,7 +189,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 		return;
 	}
 
-	
+	/*
 
 		if (UNLIKELY(KernelPatcher::findAndReplace(const_cast<void *>(data), PAGE_SIZE, kVideoToolboxDRMModelOriginal,
 												   arrsize(kVideoToolboxDRMModelOriginal), BaseDeviceInfo::get().modelIdentifier, 20))) {
@@ -200,6 +202,6 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 		};
 		DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
 		
-	
+	*/
 	
 }

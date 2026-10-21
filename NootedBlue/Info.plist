@@ -793,6 +793,8 @@
 				<integer>1</integer>
 				<key>TTNFBuffDistribution</key>
 				<integer>0</integer>
+				<key>ThreadingMode</key>
+				<integer>0</integer>
 				<key>TransitionAmount</key>
 				<integer>14</integer>
 				<key>VRRSupport</key>
@@ -1000,6 +1002,8 @@
 				<key>SupportPSRwithExternalDisplay</key>
 				<integer>1</integer>
 				<key>TTNFBuffDistribution</key>
+				<integer>0</integer>
+				<key>ThreadingMode</key>
 				<integer>0</integer>
 				<key>TransitionAmount</key>
 				<integer>14</integer>

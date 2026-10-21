@@ -3,3 +3,6 @@ Lilu.kext
 MacKernelSDK
 __pycache__/
 .DS_Store
+Release alias
+/DerivedData
+Release alias

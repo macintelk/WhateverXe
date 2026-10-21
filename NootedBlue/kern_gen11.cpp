@@ -2470,6 +2470,7 @@ int Gen11::displayPortReadEDID(void *that,uint param_1,uint param_2,unsigned cha
 	
 	if (NBlue::callback->edidok)
 	memcpy(param_3, NBlue::callback->edid, 0x80);
+	//else panic ("xxx");
 	
 	/*unsigned char sum = 0;
 	int i = 0;

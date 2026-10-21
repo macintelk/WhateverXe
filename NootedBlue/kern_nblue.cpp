@@ -111,6 +111,13 @@ void NBlue::processPatcher(KernelPatcher &patcher) {
         SYSLOG("nblue", "Failed to create DeviceInfo");
     }*/
 	
+	this->edidok=false;
+	auto edid0 =(OSData*) this->iGPU->getProperty("edid" );
+	if (edid0)
+	{
+		this->edidok=true;
+		memcpy(this->edid, edid0->getBytesNoCopy(), 0x80);
+	}
 	
 	dyldpatches.processPatcher(patcher);
 	

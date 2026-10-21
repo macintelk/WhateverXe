@@ -1,0 +1,16845 @@
+
+#include "kern_gen11.hpp"
+#include <Headers/kern_api.hpp>
+#include "Firmware.hpp"
+
+static const char *pathG11FB = "/System/Library/Extensions/AppleIntelICLLPGraphicsFramebuffer.kext/Contents/MacOS/"
+                               "AppleIntelICLLPGraphicsFramebuffer";
+static const char *pathG11FBT = "/Library/Extensions/AppleIntelTGLGraphicsFramebuffer.kext/Contents/MacOS/"
+							   "AppleIntelTGLGraphicsFramebuffer";
+
+static const char *pathG11HW =
+    "/System/Library/Extensions/AppleIntelICLGraphics.kext/Contents/MacOS/AppleIntelICLGraphics";
+static const char *pathG11HWT =
+	"/System/Library/Extensions/AppleIntelTGLGraphics.kext/Contents/MacOS/AppleIntelTGLGraphics";
+static const char *pathG11HWTe =
+	"/Library/Extensions/AppleIntelTGLGraphics.kext/Contents/MacOS/AppleIntelTGLGraphics";
+
+static KernelPatcher::KextInfo kextG11FB {"com.apple.driver.AppleIntelICLLPGraphicsFramebuffer", &pathG11FB, 1, {}, {},
+    KernelPatcher::KextInfo::Unloaded};
+static KernelPatcher::KextInfo kextG11FBT {"com.apple.driver.AppleIntelTGLGraphicsFramebuffer", &pathG11FBT, 1, {}, {},
+	KernelPatcher::KextInfo::Unloaded};
+
+static KernelPatcher::KextInfo kextG11HW {"com.apple.driver.AppleIntelICLGraphics", &pathG11HW, 1, {}, {},
+    KernelPatcher::KextInfo::Unloaded};
+static KernelPatcher::KextInfo kextG11HWT {"com.apple.driver.AppleIntelTGLGraphics", &pathG11HWT, 1, {}, {},
+	KernelPatcher::KextInfo::Unloaded};
+static KernelPatcher::KextInfo kextG11HWTe {"com.apple.driver.AppleIntelTGLGraphics", &pathG11HWTe, 1, {}, {},
+	KernelPatcher::KextInfo::Unloaded};
+
+
+//globals
+void *ccont;
+void *ccont2;
+int bk=2;
+bool kexticl=false;
+bool kexttgld=false;
+bool kexttglp=false;
+IOFramebuffer *frame0;
+int hwu=4;
+int setpc=0;
+void *linkp;
+bool dpcdconf=false;
+int Report=-1;
+bool seng=false;
+void *gucp;
+bool isguc=false;
+
+Gen11 *Gen11::callback = nullptr;
+
+void Gen11::init() {
+	callback = this;
+	
+   // lilu.onKextLoadForce(&kextG11FB);
+	//lilu.onKextLoadForce(&kextG11FBT);
+	
+   /* lilu.onKextLoadForce(&kextG11HW);
+	lilu.onKextLoadForce(&kextG11HWT);
+	lilu.onKextLoadForce(&kextG11HWTe);
+	*/
+}
+
+bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
+
+	kextG11FBT=*NBlue::callback->framel;
+	
+	if (kextG11FBT.loadIndex == index) {
+
+		SYSLOG("nblue", "AppleIntelTGLGraphicsFramebuffer");
+		
+		bool isprod=false;
+		auto prod=patcher.solveSymbol(index, "__ZN24AppleIntelBaseController5startEP9IOService", address, size);
+		if (!prod) isprod=true;
+		kexttgld=!isprod;
+		kexttglp=isprod;
+		
+		if (isprod) {
+			KernelPatcher::SolveRequest solveRequestsp[] = {
+				{"_gPlatformInformationList", this->gPlatformInformationList},
+				{"__ZN31AppleIntelFramebufferController14disableCDClockEv", this->orgDisableCDClock},
+				{"__ZN31AppleIntelFramebufferController19setCDClockFrequencyEy", this->orgSetCDClockFrequency}
+			};
+			PANIC_COND(!patcher.solveMultiple( index,  solveRequestsp, address, size), "nblue",	"Failed to resolve symbols");
+		}
+		else
+		{
+			KernelPatcher::SolveRequest solveRequestsd[] = {
+				{"_gPlatformInformationList", this->gPlatformInformationList},
+				{"__ZN24AppleIntelBaseController14disableCDClockEv", this->orgDisableCDClock},
+				{"__ZN24AppleIntelBaseController19setCDClockFrequencyEy", this->orgSetCDClockFrequency}
+			};
+			PANIC_COND(!patcher.solveMultiple( index,  solveRequestsd, address, size), "nblue",	"Failed to resolve symbols");
+		}
+
+		
+		KernelPatcher::RouteRequest requests[] = {
+			{"__ZN16AppleIntelScaler4initE10IGScalerID", AppleIntelScalerinit,this->oAppleIntelScalerinit},
+			{"__ZN15AppleIntelPlane4initE9IGPlaneID", AppleIntelPlaneinit,this->oAppleIntelPlaneinit},
+			//{"__ZN31AppleIntelRegisterAccessManager14ReadRegister32Em",raReadRegister32, this->oraReadRegister32},
+			//{"__ZN31AppleIntelRegisterAccessManager15WriteRegister32Emj",raWriteRegister32, this->oraWriteRegister32},
+			{"__ZN21AppleIntelFramebuffer25setAttributeForConnectionEijm",wrapSetAttributeForConnection, this->owrapSetAttributeForConnection},
+			{"__ZN21AppleIntelFramebuffer25getAttributeForConnectionEijPm",fgetAttributeForConnection, this->ofgetAttributeForConnection},
+			//{"__ZN26AppleIntelDSBAccessManager13isDSBRegisterEj", ldozero},
+			//{"__ZN31AppleIntelRegisterAccessManager18isConflictRegisterEj", isConflictRegister},
+			{"__ZN14AppleIntelPort12linkTrainingEP18AGDCDPPortConfig_t",linkTraining, this->olinkTraining},
+			{"__ZN14AppleIntelPort8writeAUXEjPvj",writeAUX, this->owriteAUX},
+			{"__ZN14AppleIntelPort7readAUXEjPvj",readAUX, this->oreadAUX},
+			//{"__ZN21AppleIntelFramebuffer12getAttributeEjPm",fgetAttribute, this->ofgetAttribute},
+			{"__ZN21AppleIntelFramebuffer12setAttributeEjm",fsetAttribute, this->ofsetAttribute},
+			{"__ZN21AppleIntelFramebuffer19getPixelInformationEiiiP18IOPixelInformation",fgetPixelInformation, this->ofgetPixelInformation},
+			//{"__ZN15AppleIntelPlane18configurePlaneiCSCEP19FlipTransactionArgs10IGColorCtl",dovoid},
+			//{"__ZN15AppleIntelPlane17configurePlaneCUSEP19FlipTransactionArgs10IGColorCtl",dovoid},
+			{"__ZN21AppleIntelDisplayPath8initHDCPEv", dovoid},
+			{"__ZN17AppleIntelPortHAL4initEP10PortConfig",AppleIntelPortHALinit, this->oAppleIntelPortHALinit},
+			{"__ZN21AppleIntelDisplayPath13getLinkConfigEP16IOFBDPLinkConfig",getLinkConfig, this->ogetLinkConfig},
+			
+			//{"__ZN21AppleIntelFramebuffer19RestoreTransactionsEb",RestoreTransactions, this->oRestoreTransactions},
+			{"__ZN19AppleIntelPowerWell19enableDisplayEngineEv",enableDisplayEngine, this->oenableDisplayEngine},
+			{"__ZN19AppleIntelPowerWell23overridePowerWellsStateEb",overridePowerWellsState, this->ooverridePowerWellsState},
+			{"__ZN19AppleIntelPowerWell19disablePowerWellAuxEj",disablePowerWellAux, this->odisablePowerWellAux},
+			{"__ZN19AppleIntelPowerWell19disablePowerWellDDIEj",disablePowerWellDDI, this->odisablePowerWellDDI},
+			{"__ZN19AppleIntelPowerWell18disablePowerWellPGEj",disablePowerWellPG, this->odisablePowerWellPG},
+			{"__ZN21AppleIntelFramebuffer11initVRRCapsEv",initVRRCaps, this->oinitVRRCaps},
+			{"__ZN14AppleIntelPort19displayPortReadEDIDEjjPhj",displayPortReadEDID, this->odisplayPortReadEDID},
+			//{"__ZN21AppleIntelFramebuffer28setupInitialTransactionStateEj",fsetupInitialTransactionState, this->ofsetupInitialTransactionState},
+			//{"__ZN19AppleIntelPowerWell18enablePowerWellAuxEj",enablePowerWellAux, this->oenablePowerWellAux},
+
+			//{"__ZN14AppleIntelPort9setupPortEv",fsetupPort, this->ofsetupPort},
+			//{"__ZN14AppleIntelPort18resetSoftwareStateEv",fresetSoftwareState, this->ofresetSoftwareState},
+			
+			//{"__ZN21AppleIntelFramebuffer22PerformFlipTransactionEP30IOAccelDisplayPipeTransaction2yP21FlipTransactionParams",PerformFlipTransaction, this->oPerformFlipTransaction},
+			//{"__ZN21AppleIntelFramebuffer21PreProcessTransactionEj",PreProcessTransaction, this->oPreProcessTransaction},
+			//{"__ZN15AppleIntelPlane11updatePlaneEb",updatePlane, this->oupdatePlane},
+			
+			//{"__ZN15AppleIntelPlane10setupPlaneEP21AppleIntelDisplayPath",setupPlane2, this->osetupPlane2},
+			//{"__ZN15AppleIntelPlane14configurePlaneEP19FlipTransactionArgs",configurePlane, this->oconfigurePlane},
+			
+			
+			//{"__ZN15AppleIntelPlane11enablePlaneEb",enablePlane, this->oenablePlane},
+			//{"__ZN21AppleIntelFramebuffer28getInformationForDisplayModeEiP24IODisplayModeInformation",getInformationForDisplayMode, this->ogetInformationForDisplayMode},
+			{"__ZN14AppleIntelPort12getPortByDDIEj",getPortByDDI, this->ogetPortByDDI},
+			{"__ZN14AppleIntelPort11setPortModeENS_8PortModeE",setPortMode, this->osetPortMode},
+			
+			
+			//{"__ZN20IntelFBClientControl11doAttributeEjPmmS0_S0_P25IOExternalMethodArguments",wrapFBClientDoAttribute,	this->orgFBClientDoAttribute},
+			{"__ZN31AppleIntelFramebufferController10processCmdEjPmmS0_S0_",fbprocessCmd, this->ofbprocessCmd},
+			
+			//{"__ZN24AppleIntelBaseController21getCallbackCapabilityEP24AGDCCallbackCapability_t",getCallbackCapability, this->ogetCallbackCapability},
+			//{"__ZN24AppleIntelBaseController16GetGPUCapabilityEP19AGDCGPUCapability_t",GetGPUCapability, this->oGetGPUCapability},
+			
+			/*
+			{"__ZN21AppleIntelFramebuffer17prepareToExitWakeEv",dovoid},
+			{"__ZN21AppleIntelFramebuffer18prepareToExitSleepEv",dovoid},
+			{"__ZN21AppleIntelFramebuffer19prepareToEnterSleepEv",dovoid},
+			{"__ZN21AppleIntelFramebuffer18prepareToEnterWakeEv",dovoid},
+			*/
+			
+		};
+
+		PANIC_COND(!patcher.routeMultipleLong(index, requests, address, size), "nblue","Failed to route dp symbols");
+		
+		if (isprod) {
+			KernelPatcher::RouteRequest requestsp[] = {
+				
+				{"__ZN31AppleIntelFramebufferController18hwEnableInterruptsEv",hwEnableInterrupts, this->ohwEnableInterrupts},
+				{"__ZN31AppleIntelFramebufferController12disableHWDC6Ev",disableHWDC6, this->odisableHWDC6},
+				//{"__ZN31AppleIntelFramebufferController10enablePipeEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2",enablePipe, this->oenablePipe},
+				{"__ZN31AppleIntelFramebufferController13probeBootPipeEPbPN17AppleIntelPortHAL3DDIE",probeBootPipe, this->oprobeBootPipe},
+				{"__ZN31AppleIntelFramebufferController11initCDClockEv",initCDClock, this->oinitCDClock},
+				//{"__ZN31AppleIntelFramebufferController15configureReportEP19IOReportChannelListjPvS2_",configureReport, this->oconfigureReport},
+				{"__ZN19AppleIntelPowerWell4initEP31AppleIntelFramebufferController",AppleIntelPowerWellinit, this->oAppleIntelPowerWellinit},
+				{"__ZN31AppleIntelFramebufferController15hwSetPanelPowerEj",hwSetPanelPower, this->ohwSetPanelPower},
+				{"__ZN31AppleIntelFramebufferController11SetupParamsEP21AppleIntelFramebufferP21AppleIntelDisplayPathP10CRTCParamsPK29IODetailedTimingInformationV2",SetupParams,	this->oSetupParams},
+				{"__ZN31AppleIntelFramebufferController19setupPipeWatermarksEP21AppleIntelFramebufferP21AppleIntelDisplayPathP10CRTCParams",setupPipeWatermarks, this->osetupPipeWatermarks},
+				//{"__ZN31AppleIntelFramebufferController21probeCDClockFrequencyEv",wrapProbeCDClockFrequency,	this->orgProbeCDClockFrequency},
+				{"__ZN31AppleIntelFramebufferController17updateSliceConfigEj",updateSliceConfig, this->oupdateSliceConfig},
+				{"__ZN31AppleIntelFramebufferController18setAsyncSliceCountE13IGSliceConfig",setAsyncSliceCount, this->osetAsyncSliceCount},
+				{"__ZN31AppleIntelFramebufferController9hwGetCRTCEP21AppleIntelFramebufferP21AppleIntelDisplayPath",hwGetCRTC, this->ohwGetCRTC},
+				{"__ZN31AppleIntelFramebufferController21hwSetPanelPowerConfigEj", hwSetPanelPowerConfig,this->ohwSetPanelPowerConfig},
+				//{"__ZN31AppleIntelFramebufferController15enableVDDForAuxEP14AppleIntelPort",enableVDDForAux, this->oenableVDDForAux},
+				//{"__ZN31AppleIntelFramebufferController16disableVDDForAuxEv",disableVDDForAux, this->odisableVDDForAux},
+				{"__ZN21AppleIntelFramebuffer4initEP31AppleIntelFramebufferControllerj",AppleIntelFramebufferinit, this->oAppleIntelFramebufferinit},
+				{"__ZN31AppleIntelFramebufferController13FBMemMgr_InitEv", FBMemMgr_Init,this->oFBMemMgr_Init},
+				{"__ZN31AppleIntelFramebufferController23initPlatformWorkaroundsEv",initPlatformWorkarounds, this->oinitPlatformWorkarounds},
+				{"__ZN31AppleIntelFramebufferController16getOSInformationEv",getOSInformation, this->ogetOSInformation},
+				{"__ZN31AppleIntelFramebufferController18hwInitializeCStateEv",hwInitializeCState, this->ohwInitializeCState},
+				{"__ZN31AppleIntelFramebufferController20hwConfigureCustomAUXEb",hwConfigureCustomAUX, this->ohwConfigureCustomAUX},
+				
+			};
+			PANIC_COND(!patcher.routeMultipleLong(index, requestsp, address, size), "nblue","Failed to route p symbols");
+			
+		} else //debug version
+		{
+			KernelPatcher::RouteRequest requestsd[] = {
+				
+				{"__ZN24AppleIntelBaseController18hwEnableInterruptsEv",hwEnableInterrupts, this->ohwEnableInterrupts},
+				{"__ZN24AppleIntelBaseController12disableHWDC6Ev",disableHWDC6, this->odisableHWDC6},
+				{"__ZN24AppleIntelBaseController10enablePipeEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2",enablePipe, this->oenablePipe},
+				{"__ZN24AppleIntelBaseController13probeBootPipeEPbPN17AppleIntelPortHAL3DDIE",probeBootPipe, this->oprobeBootPipe},
+				{"__ZN24AppleIntelBaseController11initCDClockEv",initCDClock, this->oinitCDClock},
+				//{"__ZN24AppleIntelBaseController15configureReportEP19IOReportChannelListjPvS2_",configureReport, this->oconfigureReport},
+				{"__ZN19AppleIntelPowerWell4initEP24AppleIntelBaseController",AppleIntelPowerWellinit, this->oAppleIntelPowerWellinit},
+				{"__ZN24AppleIntelBaseController15hwSetPanelPowerEj",hwSetPanelPower, this->ohwSetPanelPower},
+				{"__ZN24AppleIntelBaseController11SetupParamsEP21AppleIntelFramebufferP21AppleIntelDisplayPathP10CRTCParamsPK29IODetailedTimingInformationV2",SetupParams,	this->oSetupParams},
+				{"__ZN24AppleIntelBaseController19setupPipeWatermarksEP21AppleIntelFramebufferP21AppleIntelDisplayPathP10CRTCParams",setupPipeWatermarks, this->osetupPipeWatermarks},
+				//{"__ZN24AppleIntelBaseController21probeCDClockFrequencyEv",wrapProbeCDClockFrequency,	this->orgProbeCDClockFrequency},
+				{"__ZN24AppleIntelBaseController17updateSliceConfigEj",updateSliceConfig, this->oupdateSliceConfig},
+				{"__ZN24AppleIntelBaseController18setAsyncSliceCountE13IGSliceConfig",setAsyncSliceCount, this->osetAsyncSliceCount},
+				{"__ZN24AppleIntelBaseController9hwGetCRTCEP21AppleIntelFramebufferP21AppleIntelDisplayPath",hwGetCRTC, this->ohwGetCRTC},
+				{"__ZN24AppleIntelBaseController21hwSetPanelPowerConfigEj", hwSetPanelPowerConfig,this->ohwSetPanelPowerConfig},
+				//{"__ZN24AppleIntelBaseController15enableVDDForAuxEP14AppleIntelPort",enableVDDForAux, this->oenableVDDForAux},
+				//{"__ZN24AppleIntelBaseController16disableVDDForAuxEv",disableVDDForAux, this->odisableVDDForAux},
+				{"__ZN21AppleIntelFramebuffer4initEP24AppleIntelBaseControllerj",AppleIntelFramebufferinit, this->oAppleIntelFramebufferinit},
+				{"__ZN24AppleIntelBaseController13FBMemMgr_InitEv", FBMemMgr_Init,this->oFBMemMgr_Init},
+				{"__ZN24AppleIntelBaseController23initPlatformWorkaroundsEv",initPlatformWorkarounds, this->oinitPlatformWorkarounds},
+				{"__ZN24AppleIntelBaseController16getOSInformationEv",getOSInformation, this->ogetOSInformation},
+				{"__ZN24AppleIntelBaseController18hwInitializeCStateEv",hwInitializeCState, this->ohwInitializeCState},
+				{"__ZN24AppleIntelBaseController20hwConfigureCustomAUXEb",hwConfigureCustomAUX, this->ohwConfigureCustomAUX},
+				
+			};
+			PANIC_COND(!patcher.routeMultipleLong(index, requestsd, address, size), "nblue","Failed to route d symbols");
+		}
+		
+
+		
+		//ReadRegister64
+		static const uint8_t f7[]= {0x83, 0xc0, 0xfc, 0x48, 0x39, 0xf0, 0x76, 0x11, 0x48, 0x8b, 0x47, 0x50, 0x48, 0xff, 0x05, 0xca, 0xf5, 0x0c, 0x00};
+		static const uint8_t r7[]= {0x83, 0xc0, 0xf8, 0x48, 0x39, 0xf0, 0x76, 0x11, 0x48, 0x8b, 0x47, 0x50, 0x48, 0xff, 0x05, 0xca, 0xf5, 0x0c, 0x00};
+		
+		static const uint8_t f7p[]= {0x83, 0xc0, 0xfc, 0x48, 0x39, 0xf0, 0x76, 0x11, 0x48, 0x8b, 0x47, 0x50, 0x48, 0xff, 0x05, 0x84, 0x40, 0x08, 0x00};
+		static const uint8_t r7p[]= {0x83, 0xc0, 0xf8, 0x48, 0x39, 0xf0, 0x76, 0x11, 0x48, 0x8b, 0x47, 0x50, 0x48, 0xff, 0x05, 0x84, 0x40, 0x08, 0x00};
+		
+		//dpcd print
+		static const uint8_t f8[]= {0x0f, 0x85, 0x40, 0x01, 0x00, 0x00, 0x48, 0xff, 0x05, 0xbd, 0xf6, 0x11, 0x00, 0x80, 0x7d, 0xb8, 0x10, 0x0f, 0x85, 0x2f, 0x01, 0x00, 0x00, 0x48, 0xff, 0x05, 0xa4, 0xf6, 0x11, 0x00, 0x80, 0x7d, 0xb9, 0xfa, 0x0f, 0x85, 0x1e, 0x01, 0x00, 0x00};
+		static const uint8_t r8[]= {0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x48, 0xff, 0x05, 0xbd, 0xf6, 0x11, 0x00, 0x80, 0x7d, 0xb8, 0x10, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x48, 0xff, 0x05, 0xa4, 0xf6, 0x11, 0x00, 0x80, 0x7d, 0xb9, 0xfa, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+		
+		static const uint8_t f8p[]= {0x0f, 0x85, 0xc7, 0x00, 0x00, 0x00, 0x48, 0xff, 0x05, 0x45, 0x8b, 0x0b, 0x00, 0x80, 0x7d, 0xb8, 0x10, 0x0f, 0x85, 0xb6, 0x00, 0x00, 0x00, 0x48, 0xff, 0x05, 0x2c, 0x8b, 0x0b, 0x00, 0x80, 0x7d, 0xb9, 0xfa, 0x0f, 0x85, 0xa5, 0x00, 0x00, 0x00};
+		static const uint8_t r8p[]= {0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x48, 0xff, 0x05, 0x45, 0x8b, 0x0b, 0x00, 0x80, 0x7d, 0xb8, 0x10, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x48, 0xff, 0x05, 0x2c, 0x8b, 0x0b, 0x00, 0x80, 0x7d, 0xb9, 0xfa, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+		
+		//builtin
+		static const uint8_t f9[]= {0xf6, 0x40, 0x14, 0x08, 0x75, 0x0d};
+		static const uint8_t r9[]= {0xf6, 0x40, 0x14, 0x08, 0xeb, 0x0d};
+		
+		static const uint8_t f9p[]= {0xf6, 0x40, 0x14, 0x08, 0x75, 0x0a};
+		static const uint8_t r9p[]= {0xf6, 0x40, 0x14, 0x08, 0xeb, 0x0a};
+		
+		
+		//probeportmode hookcase fix
+		static const uint8_t f13[]= {0xff, 0x91, 0x90, 0x01, 0x00, 0x00, 0x83, 0xf8, 0x02, 0x0f, 0x84, 0xec, 0x00, 0x00, 0x00};
+		static const uint8_t r13[]= {0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+		
+		static const uint8_t f13b[]= {0xff, 0x90, 0x90, 0x01, 0x00, 0x00, 0x49, 0x8b, 0x0e, 0x4c, 0x89, 0xf7, 0x89, 0xc6, 0xff, 0x91, 0x38, 0x01, 0x00, 0x00};
+		static const uint8_t r13b[]= {0xc7, 0xc0, 0x01, 0x00, 0x00, 0x00, 0x49, 0x8b, 0x0e, 0x4c, 0x89, 0xf7, 0x89, 0xc6, 0xff, 0x91, 0x38, 0x01, 0x00, 0x00};
+
+		//probeportmode hookcase fix
+		static const uint8_t f13p[]= {0xff, 0x91, 0x78, 0x01, 0x00, 0x00, 0x83, 0xf8, 0x02, 0x74, 0x64};
+		static const uint8_t r13p[]= {0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+		
+		static const uint8_t f13pb[]= {0xff, 0x90, 0x78, 0x01, 0x00, 0x00, 0x49, 0x8b, 0x0e, 0x4c, 0x89, 0xf7, 0x89, 0xc6, 0xff, 0x91, 0x38, 0x01, 0x00, 0x00};
+		static const uint8_t r13pb[]= {0xc7, 0xc0, 0x01, 0x00, 0x00, 0x00, 0x49, 0x8b, 0x0e, 0x4c, 0x89, 0xf7, 0x89, 0xc6, 0xff, 0x91, 0x38, 0x01, 0x00, 0x00};
+
+		//getPathByPipe disable logs
+		static const uint8_t f15[]= {0x74, 0x36, 0x48, 0xff, 0x05, 0x7e, 0x51, 0x08, 0x00, 0x44, 0x89, 0x3c, 0x24, 0x48, 0x8d, 0x15, 0x4d, 0x88, 0x03, 0x00, 0x4c, 0x8d, 0x05, 0x28, 0x8a, 0x03, 0x00};
+		static const uint8_t r15[]= {0xeb, 0x36, 0x48, 0xff, 0x05, 0x7e, 0x51, 0x08, 0x00, 0x44, 0x89, 0x3c, 0x24, 0x48, 0x8d, 0x15, 0x4d, 0x88, 0x03, 0x00, 0x4c, 0x8d, 0x05, 0x28, 0x8a, 0x03, 0x00};
+		
+		//getHPDState register
+		static const uint8_t f19[]= {0xbe, 0x70, 0x44, 0x04, 0x00};
+		static const uint8_t r19[]= {0xbe, 0xa0, 0x38, 0x16, 0x00};
+		
+		
+		//savenvram
+		static const uint8_t f20[]= {0xff, 0x90, 0xf8, 0x09, 0x00, 0x00, 0x41, 0x89, 0xc6, 0x48, 0x85, 0xdb, 0x74, 0x17};
+		static const uint8_t r20[]= {0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x48, 0x85, 0xdb, 0x74, 0x17};
+		
+		static const uint8_t f20p[]= {0xff, 0x90, 0xf8, 0x09, 0x00, 0x00, 0x41, 0x89, 0xc6, 0x48, 0x85, 0xdb, 0x74, 0x17};
+		static const uint8_t r20p[]= {0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x48, 0x85, 0xdb, 0x74, 0x17};
+
+		//production ver fix register adresses if pipe=0
+		static const uint8_t f24bp[]= {0x83, 0x78, 0x08, 0x00, 0x75, 0x0c};
+		static const uint8_t r24bp[]= {0x83, 0x78, 0x08, 0x00, 0xeb, 0x0c};
+				
+		static const uint8_t f24cp[]= {0x00, 0x4c, 0x89, 0xea, 0x75, 0x12};
+		static const uint8_t r24cp[]= {0x00, 0x4c, 0x89, 0xea, 0xeb, 0x12};
+				
+		static const uint8_t f24dp[]= {0x83, 0x78, 0x08, 0x00, 0x75, 0x0d};
+		static const uint8_t r24dp[]= {0x83, 0x78, 0x08, 0x00, 0xeb, 0x0d};
+				
+		//debug ver fix register adresses if pipe=0
+		static const uint8_t f24b[]= {0x83, 0x78, 0x08, 0x00, 0x75, 0x0c};
+		static const uint8_t r24b[]= {0x83, 0x78, 0x08, 0x00, 0xeb, 0x0c};
+				
+		static const uint8_t f24c[]= {0x48, 0x8b, 0x55, 0xd0, 0x75, 0x13};
+		static const uint8_t r24c[]= {0x48, 0x8b, 0x55, 0xd0, 0xeb, 0x13};
+				
+		static const uint8_t f24d[]= {0x83, 0x78, 0x08, 0x00, 0x75, 0x0d};
+		static const uint8_t r24d[]= {0x83, 0x78, 0x08, 0x00, 0xeb, 0x0d};
+		
+		//linktrainig 2 lines
+		static const uint8_t f25[]= {0x77, 0x77, 0x00, 0x00};
+		static const uint8_t r25[]= {0x77, 0x00, 0x00, 0x00};
+
+		//plane
+		static const uint8_t f26[]= {0xe8, 0xb1, 0x6c, 0x0e, 0x00, 0x48, 0x8b, 0x7b, 0x70, 0xbe, 0x00, 0x05, 0x00, 0x00, 0x03, 0xb3, 0xb8, 0x00, 0x00, 0x00, 0x8b, 0x93, 0x4c, 0x01, 0x00, 0x00};
+		static const uint8_t r26[]= {0xe8, 0xb1, 0x6c, 0x0e, 0x00, 0x48, 0x8b, 0x7b, 0x70, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x03, 0xb3, 0xb8, 0x00, 0x00, 0x00, 0x8b, 0x93, 0x20, 0x01, 0x00, 0x00};
+		
+		static const uint8_t f26p[]= {0xe8, 0x31, 0x12, 0x09, 0x00, 0x48, 0x8b, 0x7b, 0x70, 0xbe, 0x00, 0x05, 0x00, 0x00, 0x03, 0xb3, 0xb8, 0x00, 0x00, 0x00, 0x8b, 0x93, 0x4c, 0x01, 0x00, 0x00};
+		static const uint8_t r26p[]= {0xe8, 0x31, 0x12, 0x09, 0x00, 0x48, 0x8b, 0x7b, 0x70, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x03, 0xb3, 0xb8, 0x00, 0x00, 0x00, 0x8b, 0x93, 0x20, 0x01, 0x00, 0x00};
+
+		
+		
+		if (isprod){
+			LookupPatchPlus const patchesp[] = {// tgl production kext
+				{&kextG11FBT, f7p, r7p, arrsize(f7p),	1},
+				{&kextG11FBT, f8p, r8p, arrsize(f8p),	1},
+				//{&kextG11FBT, f9p, r9p, arrsize(f9p),	1},
+				{&kextG11FBT, f13p, r13p, arrsize(f13p),	1},
+				{&kextG11FBT, f13pb, r13pb, arrsize(f13pb),	1},
+				{&kextG11FBT, f19, r19, arrsize(f19),	1},
+				{&kextG11FBT, f20p, r20p, arrsize(f20p),	1},
+				{&kextG11FBT, f24bp, r24bp, arrsize(f24bp),	14},
+				{&kextG11FBT, f24cp, r24cp, arrsize(f24cp),	1},
+				{&kextG11FBT, f24dp, r24dp, arrsize(f24dp),	4},
+				{&kextG11FBT, f25, r25, arrsize(f25),	6},
+				//{&kextG11FBT, f26p, r26p, arrsize(f26p),	1},
+				
+			};
+			PANIC_COND(!LookupPatchPlus::applyAll(patcher, patchesp , address, size), "nblue", "kextG11FBT Failed to apply production patches!");
+		}
+		else {
+			LookupPatchPlus const patches[] = {// tgl debug kext
+				{&kextG11FBT, f7, r7, arrsize(f7),	1},
+				{&kextG11FBT, f8, r8, arrsize(f8),	1},
+				//{&kextG11FBT, f9, r9, arrsize(f9),	1},
+				{&kextG11FBT, f13, r13, arrsize(f13),	1},
+				{&kextG11FBT, f13b, r13b, arrsize(f13b),	1},
+				{&kextG11FBT, f15, r15, arrsize(f15),	1},
+				{&kextG11FBT, f19, r19, arrsize(f19),	1},
+				{&kextG11FBT, f20, r20, arrsize(f20),	1},
+				{&kextG11FBT, f24b, r24b, arrsize(f24b),	11},
+				{&kextG11FBT, f24c, r24c, arrsize(f24c),	1},
+				{&kextG11FBT, f24d, r24d, arrsize(f24d),	6},
+				{&kextG11FBT, f25, r25, arrsize(f25),	6},
+				//{&kextG11FBT, f26, r26, arrsize(f26),	1},
+				
+			};
+			PANIC_COND(!LookupPatchPlus::applyAll(patcher, patches , address, size), "nblue", "kextG11FBT Failed to apply dbg patches!");
+		}
+		return true;
+		
+	}
+
+    return false;
+}
+
+uint32_t intel_de_rmw(struct intel_display *display, uint32_t reg, uint32_t clear, uint32_t set)
+{
+	uint32_t old, val;
+	old = NBlue::callback->readReg32( reg);
+	val = (old & ~clear) | set;
+	NBlue::callback->writeReg32( reg, val);
+	return old;
+}
+
+uint32_t intel_de_read(struct intel_display *display, uint32_t reg)
+{
+	return NBlue::callback->readReg32(reg);
+}
+void intel_de_write(struct intel_display *display, uint32_t reg, uint32_t val)
+{
+	NBlue::callback->writeReg32( reg, val);
+}
+void intel_de_posting_read(struct intel_display *display, uint32_t reg)
+{
+	NBlue::callback->readReg32(reg);
+}
+
+static inline int intel_uncore_write_and_verify(struct intel_display *display,
+												u32 reg, u32 val,
+						u32 mask, u32 expected_val)
+{
+	u32 reg_val;
+
+	intel_de_write(display, reg, val);
+	reg_val = intel_de_read(display, reg);
+	
+	return (reg_val & mask) != expected_val ? -EINVAL : 0;
+}
+
+void  Gen11::initPlatformWorkarounds(void *that)
+{
+	if (kexticl)
+	{
+		//PlatformWorkarounds
+		getMember<volatile uint32_t>(that, 0xc1c)=
+	 /*FB_FLAG_ENABLE_SLICE_FEATURES|FB_FLAG_ENABLE_BACKLIGHT_REG_CONTROL|*/FB_FLAG_LIMIT_4K_SOURCE_SIZE|
+		/*FB_FLAG_DISABLE_FEATURE_IPS|FB_FLAG_ALTERNATE_PWM_INCREMENT2|
+		FB_FLAG_ALTERNATE_PWM_INCREMENT1|FB_FLAG_DISABLE_HIGH_BITRATE_MODE2|*/
+		/*FB_FLAG_FORCE_POWER_ALWAYS_CONNECTED|*/FB_FLAG_AVOID_FAST_LINK_TRAINING;
+		
+		//ig boot flags
+		getMember<volatile uint32_t>(that, 0xc10)=/*FB_FLAG_DISABLE_HIGH_BITRATE_MODE2|*/FB_FLAG_BOOST_PIXEL_FREQUENCY_LIMIT;
+		
+	}
+	else
+	{
+		//PlatformWorkarounds
+		getMember<volatile uint32_t>(that, 0xc5c)=
+		/*FB_FLAG_ALTERNATE_PWM_INCREMENT1|FB_FLAG_ENABLE_SLICE_FEATURES|*/
+		/*FB_FLAG_FORCE_POWER_ALWAYS_CONNECTED|*/FB_FLAG_AVOID_FAST_LINK_TRAINING/*| FB_FLAG_ENABLE_BACKLIGHT_REG_CONTROL*/|FB_FLAG_LIMIT_4K_SOURCE_SIZE;
+		
+		//ig boot flags
+		getMember<volatile uint32_t>(that, 0xc58)=/*FB_FLAG_ENABLE_BACKLIGHT_REG_CONTROL|*/FB_FLAG_BOOST_PIXEL_FREQUENCY_LIMIT;
+	}
+}
+
+uint64_t  Gen11::getOSInformation2(void *that)
+{//icl
+	if (NBlue::callback->intel_opregion_setup()!=0) panic("BAD BIOS");
+
+	
+	struct FramebufferICLLP *pinfo =static_cast<FramebufferICLLP *>(callback->gPlatformInformationList);
+	int p=0x6;
+	
+	pinfo[p].flags=
+	FB_FLAG_DISABLE_PIPE_SCRAMBLE/*|FB_FLAG_FRAMEBUFFER_COMPRESSION|FB_FLAG_ALLOW_CONNECTOR_RECOVER|FB_FLAG_ENABLE_DITHERING|
+	FB_FLAG_LIMIT_4K_SOURCE_SIZE|FB_FLAG_BOOST_PIXEL_FREQUENCY_LIMIT|*/
+	/*FB_FLAG_ENABLE_BACKLIGHT_REG_CONTROL|*/|FB_FLAG_AVOID_FAST_LINK_TRAINING;
+	
+	
+		pinfo[p].camelliaVersion=0;
+	
+		pinfo[p].fislaptop=1;
+		pinfo[p].fPipeCount=3;
+		pinfo[p].fPortCount=3;
+		pinfo[p].fInfoFramebufferCount=2;
+
+		pinfo[p].fSliceCount=1;
+		pinfo[p].fEuCount=8;
+		pinfo[p].fSubSliceCount=6;
+	
+	//pinfo[p].fVideoTurboFreq=270000000;
+	
+	
+	for (int i = 0; i < 6; i++) {
+		pinfo[p].connectors[i].index=NBlue::callback->i915b->display->bconnectors[i].index;
+		pinfo[p].connectors[i].busId=NBlue::callback->i915b->display->bconnectors[i].busId;
+		pinfo[p].connectors[i].pipe=NBlue::callback->i915b->display->bconnectors[i].pipe;
+		pinfo[p].connectors[i].pad=NBlue::callback->i915b->display->bconnectors[i].pad;
+		pinfo[p].connectors[i].type=NBlue::callback->i915b->display->bconnectors[i].type;
+		pinfo[p].connectors[i].flags=NBlue::callback->i915b->display->bconnectors[i].flags;
+	}
+	
+	//pinfo[p].connectors[1].type=ConnectorDummy;
+	//pinfo[p].connectors[0].pipe=1;
+	//pinfo[p].connectors[0].flags-=CNConnectorAlwaysConnected;
+	
+	
+	OSArray *connectorArray = OSArray::withCapacity(6);
+	for (int i = 0; i < 6; i++) {
+		OSDictionary *connectorDict = OSDictionary::withCapacity(10);
+		connectorDict->setObject("Index", OSNumber::withNumber(pinfo[p].connectors[i].index, 32));
+		connectorDict->setObject("busId", OSNumber::withNumber(pinfo[p].connectors[i].busId, 32));
+		connectorDict->setObject("pipe", OSNumber::withNumber(pinfo[p].connectors[i].pipe, 32));
+		connectorDict->setObject("pad", OSNumber::withNumber(pinfo[p].connectors[i].pad, 32));
+		connectorDict->setObject("type", OSNumber::withNumber(pinfo[p].connectors[i].type, 32));
+		connectorDict->setObject("flags", OSNumber::withNumber(pinfo[p].connectors[i].flags, 32));
+		connectorArray->setObject(connectorDict);
+		connectorDict->release();
+	}
+	NBlue::callback->iGPU->setProperty("Driver_Connectors", connectorArray);
+	connectorArray->release();
+	
+	auto ret=FunctionCast(getOSInformation2, callback->ogetOSInformation2)(that );
+	return ret;
+}
+
+uint64_t  Gen11::getOSInformation(void *that)
+{//tgl
+	
+	if (NBlue::callback->intel_opregion_setup()!=0) panic("BAD BIOS");
+
+	struct PlatformInfo *pinfo =static_cast<PlatformInfo *>(callback->gPlatformInformationList);
+	
+	int p=1;
+	pinfo[p].fInfoFlags=
+	FB_FLAG_DISABLE_PIPE_SCRAMBLE/*|FB_FLAG_FRAMEBUFFER_COMPRESSION|FB_FLAG_ENABLE_BACKLIGHT_REG_CONTROL*/
+	/*|FB_FLAG_FORCE_POWER_ALWAYS_CONNECTED*/|FB_FLAG_AVOID_FAST_LINK_TRAINING/*|FB_FLAG_ALLOW_CONNECTOR_RECOVER
+	|FB_FLAG_USE_VIDEO_TURBO|FB_FLAG_ALTERNATE_PWM_INCREMENT2*/;
+	
+	
+		pinfo[p].cameliav=0;
+		//CamelliaTcon2=2 BanksiaTcon=3
+	
+		pinfo[p].fislaptop=1;
+		pinfo[p].fPipeCount=3;
+		pinfo[p].fInfoPortCount=3;
+		pinfo[p].fInfoFramebufferCount=2;
+
+		pinfo[p].fSliceCount=1;
+		pinfo[p].fmaxEuCount=8;
+		pinfo[p].fsubslices=6;
+	
+	//pinfo[p].fInfoFBCompressionMemorySize=	0xB6D000;
+	//pinfo[p].fVideoTurboFreq=270000000;
+	
+	
+	for (int i = 0; i < 6; i++) {
+		pinfo[p].connectors[i].index=NBlue::callback->i915b->display->bconnectors[i].index;
+		pinfo[p].connectors[i].busId=NBlue::callback->i915b->display->bconnectors[i].busId;
+		pinfo[p].connectors[i].pipe=NBlue::callback->i915b->display->bconnectors[i].pipe;
+		pinfo[p].connectors[i].pad=NBlue::callback->i915b->display->bconnectors[i].pad;
+		pinfo[p].connectors[i].type=NBlue::callback->i915b->display->bconnectors[i].type;
+		pinfo[p].connectors[i].flags=NBlue::callback->i915b->display->bconnectors[i].flags;
+	}
+	
+	//pinfo[p].connectors[1].type=ConnectorDummy;
+	//pinfo[p].connectors[0].pipe=1;
+	
+		
+	OSArray *connectorArray = OSArray::withCapacity(6);
+	for (int i = 0; i < 6; i++) {
+		OSDictionary *connectorDict = OSDictionary::withCapacity(10);
+		connectorDict->setObject("Index", OSNumber::withNumber(pinfo[p].connectors[i].index, 32));
+		connectorDict->setObject("busId", OSNumber::withNumber(pinfo[p].connectors[i].busId, 32));
+		connectorDict->setObject("pipe", OSNumber::withNumber(pinfo[p].connectors[i].pipe, 32));
+		connectorDict->setObject("pad", OSNumber::withNumber(pinfo[p].connectors[i].pad, 32));
+		connectorDict->setObject("type", OSNumber::withNumber(pinfo[p].connectors[i].type, 32));
+		connectorDict->setObject("flags", OSNumber::withNumber(pinfo[p].connectors[i].flags, 32));
+		connectorArray->setObject(connectorDict);
+		connectorDict->release();
+	}
+	NBlue::callback->iGPU->setProperty("Driver_Connectors", connectorArray);
+	connectorArray->release();
+	
+	auto ret=FunctionCast(getOSInformation, callback->ogetOSInformation)(that );
+	return ret;
+}
+
+
+uint32_t Gen11::wrapPavpSessionCallback0( void *intelAccelerator, int32_t sessionCommand, uint32_t sessionAppId, uint32_t *a4, bool flag) {
+	
+	if (sessionCommand == 4) {
+		return kIOReturnTimeout;
+	}
+
+	return FunctionCast(wrapPavpSessionCallback0, callback->orgPavpSessionCallback0)(intelAccelerator, sessionCommand, sessionAppId, a4, flag);
+}
+
+unsigned long Gen11::wrapPavpSessionCallback( void *intelAccelerator, int32_t sessionCommand, uint32_t sessionAppId, uint32_t *a4, bool flag) {
+	
+	if (sessionCommand == 4) {
+		return kIOReturnTimeout;
+	}
+
+	return FunctionCast(wrapPavpSessionCallback, callback->orgPavpSessionCallback)(intelAccelerator, sessionCommand, sessionAppId, a4, flag);
+}
+
+
+
+int Gen11::dozero()
+{
+	return 0;
+}
+
+uint Gen11::udozero()
+{
+	return 0;
+}
+
+u64 Gen11::ldozero()
+{
+	return 0;
+}
+
+u64 Gen11::ldone()
+{
+	return 1;
+}
+
+void Gen11::dovoid()
+{
+}
+
+bool Gen11::dotrue()
+{
+	return true;
+}
+
+bool Gen11::dofalse()
+{
+	return false;
+}
+
+
+
+void Gen11::FBMemMgr_Init(void *that)
+{
+	FunctionCast(FBMemMgr_Init, callback->oFBMemMgr_Init)(that);
+	ccont2=that;
+	callback->rmmioPtr=(getMember<volatile UInt32 *>(that, kexticl ? 0x9b8 : 0x9b0));
+	callback->rmmioLen = getMember<uint32_t>(that, 0xC78);
+	if (kexticl) ccont=that;
+	else
+	ccont = getMember<void *>(that, 0xc40);
+	
+}
+
+uint32_t Gen11::AppleIntelFramebufferinit(void *frame,void *cont,uint param_2)
+{
+	if (!kexticl) {
+		getMember<void *>(frame, 0x4a40) = ccont;
+		getMember<void *>(frame, 0xc40) = ccont;
+	}
+	auto ret=FunctionCast(AppleIntelFramebufferinit, callback->oAppleIntelFramebufferinit)(frame,cont,param_2 );
+	if (param_2==0) frame0=(IOFramebuffer *)frame;
+	
+	return ret;
+}
+
+uint64_t  Gen11::AppleIntelPlaneinit(void *that,uint param_1)
+{
+	auto ret= FunctionCast(AppleIntelPlaneinit, callback->oAppleIntelPlaneinit)(that,param_1 );
+	getMember<void *>(that, 0x90) = ccont;
+	return ret;
+}
+
+unsigned long Gen11::AppleIntelScalerinit(void *that,uint param_1)
+{
+	auto ret=  FunctionCast(AppleIntelScalerinit, callback->oAppleIntelScalerinit)(that,param_1 );
+	getMember<void *>(that, 0x28) = ccont;
+	return ret;
+}
+
+
+
+
+
+
+void Gen11::hwGetCRTC(void *that,void *param_1,void *param_2)
+{
+	FunctionCast(hwGetCRTC, callback->ohwGetCRTC)(that,param_1,param_2 );
+	
+	//uint32_t fbNum = getMember<uint32_t>(param_1, 0x1dc);
+	//if (fbNum!=0) return;
+	
+	if (bk==2){
+		NBlue::callback->parse_backlight();
+		bk=1;
+	}
+	
+	if (bk==1){
+		
+		//bklfrequency
+		getMember<uint32_t>(that, kexticl ? 0xe54 : kexttgld ? 0xe6c : 0x60)=NBlue::callback->i915b->display->panel.backlight.pwm_level_max;
+		
+		//bkllvl
+		if (getMember<uint32_t>(that, kexticl ? 0xe4c : kexttgld ? 0xe64 : 0xe58)<NBlue::callback->i915b->display->panel.backlight.level)
+		getMember<uint32_t>(that, kexticl ? 0xe4c : kexttgld ? 0xe64 : 0xe58)=NBlue::callback->i915b->display->panel.backlight.level;
+		
+		if (getMember<uint32_t>(that, kexticl ? 0xe50 : kexttgld ? 0xe68 : 0xe5c)>NBlue::callback->i915b->display->panel.backlight.level)
+			getMember<uint32_t>(that, kexticl ? 0xe4c : kexttgld ? 0xe64 : 0xe58)=getMember<uint32_t>(that, kexticl ? 0xe50 : kexttgld ? 0xe68 : 0xe5c);
+		
+		//bkllvl_saved
+		if (getMember<uint32_t>(that, kexticl ? 0xe50 : kexttgld ? 0xe68 : 0xe5c)<NBlue::callback->i915b->display->panel.backlight.level)
+		getMember<uint32_t>(that, kexticl ? 0xe50 : kexttgld ? 0xe68 : 0xe5c)=NBlue::callback->i915b->display->panel.backlight.level;
+		
+		
+		u32 pwm_ctl;
+
+		pwm_ctl = NBlue::callback->readReg32( BXT_BLC_PWM_CTL(NBlue::callback->i915b->display->panel.backlight.controller));
+		if (pwm_ctl & BXT_BLC_PWM_ENABLE) {
+			pwm_ctl &= ~BXT_BLC_PWM_ENABLE;
+			NBlue::callback->writeReg32( BXT_BLC_PWM_CTL(NBlue::callback->i915b->display->panel.backlight.controller),
+					   pwm_ctl);
+		}
+
+		NBlue::callback->writeReg32( BXT_BLC_PWM_FREQ(NBlue::callback->i915b->display->panel.backlight.controller),
+									NBlue::callback->i915b->display->panel.backlight.pwm_level_max);
+
+		NBlue::callback->writeReg32( BXT_BLC_PWM_DUTY(NBlue::callback->i915b->display->panel.backlight.controller), NBlue::callback->i915b->display->panel.backlight.level);
+
+		pwm_ctl = 0;
+		if (NBlue::callback->i915b->display->panel.backlight.active_low_pwm)
+			pwm_ctl |= BXT_BLC_PWM_POLARITY;
+
+		NBlue::callback->writeReg32( BXT_BLC_PWM_CTL(NBlue::callback->i915b->display->panel.backlight.controller), pwm_ctl);
+		NBlue::callback->readReg32( BXT_BLC_PWM_CTL(NBlue::callback->i915b->display->panel.backlight.controller));
+		NBlue::callback->writeReg32( BXT_BLC_PWM_CTL(NBlue::callback->i915b->display->panel.backlight.controller),
+				   pwm_ctl | BXT_BLC_PWM_ENABLE);
+
+	}
+
+}
+
+
+void Gen11::hwSetPanelPowerConfig(void *that, uint param_1)
+{
+	struct intel_display *display=NBlue::callback->i915b->display;
+	if (bk==2){
+		NBlue::callback->parse_backlight();
+		bk=1;
+	}
+	
+	if (kexticl) getMember<uint32_t>(that, 0xd00)= param_1;
+	else getMember<uint32_t>(that, 0xd48)= param_1;
+	
+	struct intel_pps_delays p = NBlue::callback->i915b->display->panel.pps.pps_delays;
+
+
+	if (kexttgld)
+	{
+		getMember<uint32_t>(that, 0x1550)= p.backlight_on;
+		getMember<uint32_t>(that, 0x1554)= p.backlight_off;
+		getMember<uint32_t>(that, 0x1558) = p.power_up;
+		getMember<uint32_t>(that, 0x155c)= p.power_down;
+		getMember<uint32_t>(that, 0x1560)= p.power_cycle;
+	}
+	else
+	{
+		getMember<uint32_t>(that, 0x1548)= p.backlight_on;
+		getMember<uint32_t>(that, 0x1550)= p.backlight_off;
+		getMember<uint32_t>(that, 0x154c) = p.power_up;
+		getMember<uint32_t>(that, 0x1554)= p.power_down;
+		getMember<uint32_t>(that, 0x1558)= p.power_cycle;
+	}
+	
+	struct pps_registers regs=NBlue::callback->i915b->display->panel.regs;
+	
+	
+	uint32_t PCH_PP_ON_DELAYS = REG_FIELD_PREP(PANEL_POWER_UP_DELAY_MASK, p.power_up) |
+		REG_FIELD_PREP(PANEL_LIGHT_ON_DELAY_MASK, p.backlight_on);
+	uint32_t PCH_PP_OFF_DELAYS = REG_FIELD_PREP(PANEL_LIGHT_OFF_DELAY_MASK, p.backlight_off) |
+		REG_FIELD_PREP(PANEL_POWER_DOWN_DELAY_MASK, p.power_down);
+
+	NBlue::callback->writeReg32(regs.pp_on, PCH_PP_ON_DELAYS);
+	NBlue::callback->writeReg32(regs.pp_off, PCH_PP_OFF_DELAYS);
+
+	int div = NBlue::callback->i915b->display->panel.rawclk_freq / 1000;
+	
+	if (NBlue::callback->readReg32(regs.pp_div)!=-1)
+		NBlue::callback->writeReg32( regs.pp_div,
+				   REG_FIELD_PREP(PP_REFERENCE_DIVIDER_MASK,
+						  (100 * div) / 2 - 1) |
+				   REG_FIELD_PREP(PANEL_POWER_CYCLE_DELAY_MASK,
+						  DIV_ROUND_UP(p.power_cycle, 1000) + 1));
+	else
+		intel_de_rmw(display, regs.pp_ctrl, BXT_POWER_CYCLE_DELAY_MASK,
+				 REG_FIELD_PREP(BXT_POWER_CYCLE_DELAY_MASK,
+						DIV_ROUND_UP(p.power_cycle, 1000) + 1));
+	
+
+	if (kexticl)
+	{
+		getMember<uint32_t>(that, 0xd30)=PCH_PP_ON_DELAYS;
+		getMember<uint32_t>(that, 0xd34)=PCH_PP_OFF_DELAYS;
+		getMember<uint32_t>(that, 0xd38) = NBlue::callback->readReg32(regs.pp_ctrl);
+	}
+	else
+	{
+		getMember<uint32_t>(that, 0xd78)=PCH_PP_ON_DELAYS;
+		getMember<uint32_t>(that, 0xd7c)=PCH_PP_OFF_DELAYS;
+		getMember<uint32_t>(that, 0xd80) = NBlue::callback->readReg32(regs.pp_ctrl);
+	}
+
+}
+
+static unsigned long cAddress(unsigned long address)  {
+
+	if ( ((address >= 0x6F000 && address <= 0x6FFFF) || (address >= 0x7F000 && address <= 0x7FFFF))) {
+			return address - 0xF000;
+	}
+	
+	if (address == 0x64040 || address == 0x64044)
+			return address - 0x64040 + 0x60540;
+	
+	if (address >= 0x640F0 && address <= 0x640FC)
+			return address - 0x640F0 + 0x605F0;
+	
+	
+	switch (address) {
+			case 0x164000: return 0x164284;
+			case 0x164004: return 0x164288;
+			case 0x164080: return 0x16428C;
+			case 0x164084: return 0x164290;
+			default: break;
+	}
+	
+	return address;
+}
+
+uint32_t Gen11::raReadRegister32(void *that,unsigned long param_1)
+{
+	if (that==nullptr) that=ccont;
+	if (kexticl) param_1=cAddress(param_1);
+	return FunctionCast(raReadRegister32, callback->oraReadRegister32)(that,param_1);
+};
+
+void Gen11::raWriteRegister32(void *that,unsigned long param_1, UInt32 param_2)
+{
+	if (that==nullptr) that=ccont;
+	if (kexticl) param_1=cAddress(param_1);
+	FunctionCast(raWriteRegister32, callback->oraWriteRegister32)( that,param_1,param_2);
+	
+};
+
+static bool edp_have_panel_vdd(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_panel *panel=&display->panel;
+	
+	//lockdep_assert_held(&display->pps.mutex);
+
+	//if ((display->platform.valleyview || display->platform.cherryview) &&
+	//	intel_dp->pps.vlv_pps_pipe == INVALID_PIPE)
+	//	return false;
+
+	return intel_de_read(display, panel->regs.pp_ctrl) & EDP_FORCE_VDD;
+}
+
+static  u32 ilk_get_pp_control(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_panel *panel=&display->panel;
+	u32 control;
+
+	//lockdep_assert_held(&display->pps.mutex);
+
+	control = intel_de_read(display, panel->regs.pp_ctrl);
+	if (( !HAS_DDI(display) &&
+			(control & PANEL_UNLOCK_MASK) != PANEL_UNLOCK_REGS)) {
+		control &= ~PANEL_UNLOCK_MASK;
+		control |= PANEL_UNLOCK_REGS;
+	}
+	return control;
+}
+
+static bool edp_have_panel_power(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_panel *panel=&display->panel;
+
+	//lockdep_assert_held(&display->pps.mutex);
+
+	//if ((display->platform.valleyview || display->platform.cherryview) &&
+	//	intel_dp->pps.vlv_pps_pipe == INVALID_PIPE)
+	//	return false;
+
+	return (intel_de_read(display, panel->regs.pp_stat) & PP_ON) != 0;
+}
+
+static void wait_panel_power_cycle(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_panel *panel=&display->panel;
+	
+	uint32_t mask=IDLE_CYCLE_MASK;
+	uint32_t value=IDLE_CYCLE_VALUE;
+	uint32_t sleep_us=10 * 1000;
+	uint64_t timeout_us=5000 * 1000;
+	bool sleep_before_op=true;
+
+	AbsoluteTime deadline;
+	uint64_t nanos;
+	
+	if (timeout_us) {
+		nanos = timeout_us * 1000;
+		clock_interval_to_absolutetime_interval(
+			nanos, kNanosecondScale, &deadline);
+		deadline += mach_absolute_time();
+	}
+	
+	if (sleep_before_op && sleep_us) {
+		uint32_t min_us = (sleep_us >> 2) + 1;
+		if (sleep_us >= 1000) {
+			IOSleep(sleep_us / 1000);
+		} else {
+			IODelay(sleep_us);
+		}
+	}
+	
+	for (;;) {
+		uint32_t val;
+		bool expired = false;
+		
+		if (timeout_us) {
+			AbsoluteTime now = mach_absolute_time();
+			if (CMP_ABSOLUTETIME(&now, &deadline) > 0) {
+				expired = true;
+			}
+		}
+		
+		val = intel_de_read(display, panel->regs.pp_stat);
+		
+		if ((val & mask) == value) {
+			return ;//kIOReturnSuccess;
+		}
+		
+		if (expired) {
+			return ;//kIOReturnTimeout;
+		}
+		
+		if (sleep_us) {
+			if (sleep_us >= 1000) {
+				IOSleep(sleep_us / 1000);
+			} else {
+				IODelay(sleep_us);
+			}
+		}
+	}
+	
+	
+	
+	
+}
+
+static void intel_pps_vdd_off()
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_dp *intel_dp=&display->intel_dp0;
+	struct intel_panel *panel=&display->panel;
+	u32 pp;
+	u32 pp_stat_reg, pp_ctrl_reg;
+
+	//lockdep_assert_held(&display->pps.mutex);
+
+	//drm_WARN_ON(display->drm, intel_dp->pps.want_panel_vdd);
+
+	//if (!edp_have_panel_vdd(intel_dp))
+	//	return;
+
+	pp = ilk_get_pp_control(intel_dp);
+	pp &= ~EDP_FORCE_VDD;
+
+	pp_stat_reg = panel->regs.pp_stat;
+	pp_ctrl_reg = panel->regs.pp_ctrl;
+
+	intel_de_write(display, pp_ctrl_reg, pp);
+	intel_de_posting_read(display, pp_ctrl_reg);
+
+	/*if ((pp & PANEL_POWER_ON) == 0) {
+		intel_dp->pps.panel_power_off_time = ktime_get_boottime();
+		intel_dp_invalidate_source_oui(intel_dp);
+	}
+
+	intel_display_power_put(display,
+				intel_aux_power_domain(dig_port),
+				fetch_and_zero(&intel_dp->pps.vdd_wakeref));*/
+}
+
+bool intel_pps_vdd_on()
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_dp *intel_dp=&display->intel_dp0;
+	struct intel_panel *panel=&display->panel;
+	u32 pp;
+	u32 pp_stat_reg, pp_ctrl_reg;
+	bool need_to_disable = !intel_dp->pps.want_panel_vdd;
+
+	//if (!intel_dp_is_edp(intel_dp))
+	//	return false;
+
+	//lockdep_assert_held(&display->pps.mutex);
+
+	//cancel_delayed_work(&intel_dp->pps.panel_vdd_work);
+	intel_dp->pps.want_panel_vdd = true;
+
+	if (edp_have_panel_vdd(intel_dp))
+		return need_to_disable;
+
+	//drm_WARN_ON(display->drm, intel_dp->pps.vdd_wakeref);
+	//intel_dp->pps.vdd_wakeref = intel_display_power_get(display,
+	//							intel_aux_power_domain(dig_port));
+
+	pp_stat_reg = panel->regs.pp_stat;
+	pp_ctrl_reg = panel->regs.pp_ctrl;
+
+	if (!edp_have_panel_power(intel_dp))
+		wait_panel_power_cycle(intel_dp);
+
+	pp = ilk_get_pp_control(intel_dp);
+	pp |= EDP_FORCE_VDD;
+
+	intel_de_write(display, pp_ctrl_reg, pp);
+	intel_de_posting_read(display, pp_ctrl_reg);
+
+
+	if (!edp_have_panel_power(intel_dp)) {
+		//msleep(intel_dp->pps.panel_power_up_delay);
+		IOSleep(intel_dp->pps.panel_power_up_delay);
+	}
+
+	return need_to_disable;
+}
+
+uint32_t Gen11::enableVDDForAux(void *that,void *param_1)
+{
+	//auto ret= FunctionCast(enableVDDForAux, callback->oenableVDDForAux)( that,param_1);
+	intel_pps_vdd_on();
+	//if (ret==0xe00002eb) {
+		if (getMember<bool>(that, 0xe62 ) == true) {
+			//IOFramebuffer *r= (IOFramebuffer *)getMember<void *>(that, 0xd60);
+			frame0->setProperty("AAPL,LCD-PowerState-ON", true);
+		}
+	//}
+	return 0;
+
+};
+
+uint64_t Gen11::enableVDDForAux2(void *that,void *param_1)
+{//icl
+	//auto ret= FunctionCast(enableVDDForAux2, callback->oenableVDDForAux2)( that,param_1);
+	intel_pps_vdd_on();
+	//if (ret==0xe00002eb) {
+		if (getMember<bool>(that, 0xe48) == true) {
+			//IOFramebuffer *r= (IOFramebuffer *)getMember<void *>(that, 0xd18);
+			frame0->setProperty("AAPL,LCD-PowerState-ON", true);
+		}
+	//}
+	return 0;
+
+};
+
+uint64_t Gen11::disableVDDForAux2(void *that,void *param_1)
+{//icl
+	//auto ret= FunctionCast(disableVDDForAux2, callback->odisableVDDForAux2)( that,param_1);
+	intel_pps_vdd_off();
+	//if (ret==0xe00002eb) {
+		if (getMember<bool>(that, 0xe48) == true) {
+			//IOFramebuffer *r= (IOFramebuffer *)getMember<void *>(that, 0xd18);
+			//frame0->setProperty("AAPL,LCD-PowerState-ON", false);
+		}
+	//}
+	return 0;
+
+};
+
+uint64_t Gen11::disableVDDForAux(void *that)
+{
+	//auto ret= FunctionCast(disableVDDForAux, callback->odisableVDDForAux)( that);
+	intel_pps_vdd_off();
+	//if (ret==0xe00002eb) {
+		if (getMember<bool>(that,  0xe62 ) == true) {
+			//IOFramebuffer *r= (IOFramebuffer *)getMember<void *>(that, 0xd60);
+			//frame0->setProperty("AAPL,LCD-PowerState-ON", false);
+		}
+	//}
+	return 0;
+
+};
+
+IOReturn Gen11::fgetAttributeForConnection(void* framebuffer, int32_t connectIndex, uint32_t attribute,
+										  unsigned long *value)
+{
+	const auto ret = FunctionCast(fgetAttributeForConnection, callback->ofgetAttributeForConnection)(
+																									 framebuffer, connectIndex, attribute, value);
+	
+	//uint32_t fbNum = getMember<uint32_t>(framebuffer, 0x1dc);
+	//if (!fbNum) return 0xe00002c7;
+	
+	if (attribute != 'bklt') { return ret; }
+	
+	if (attribute == 'bklt')
+	{
+	u32 v=NBlue::callback->i915b->display->panel.backlight.level;
+	if (getMember<uint32_t>(ccont2, kexticl ? 0xe4c: kexttgld ? 0xe64 : 0xe58)<v)  getMember<uint32_t>(ccont2, kexticl ? 0xe4c: kexttgld ? 0xe64 : 0xe58)=v;
+	
+	*value=getMember<uint32_t>(ccont2, kexticl ? 0xe4c: kexttgld ? 0xe64 : 0xe58);
+	value[1] = 0;
+	value[2] = 0xffff;
+	}
+	
+	return kIOReturnSuccess;
+};
+
+
+
+uint32_t Gen11::fsetAttribute(void *that, uint param_1, unsigned long param_2)
+{
+	uint32_t fbNum = getMember<uint32_t>(that, 0x1dc);
+	
+	auto ret= FunctionCast(fsetAttribute, callback->ofsetAttribute)(that, param_1, param_2);
+	
+	/*if (param_1=='wsrv'){
+		if (param_2==0x11){
+			//FunctionCast(fsetAttribute, callback->ofsetAttribute)(that, param_1, 4);
+			getMember<uint32_t>(frame0, kexticl ? 0xe45 : 0x4210)=1;///fWSAAState2
+			getMember<uint32_t>(frame0, kexticl ? 0xe45 : 0x420c)=4;///fWSAAState
+		}
+	}*/
+	
+	return ret;
+}
+
+uint32_t Gen11::configureReport	(void *that,void *param_1,uint param_2,void *param_3,void *param_4)
+{
+	
+	auto ret=FunctionCast(configureReport, callback->oconfigureReport)(that ,param_1,param_2,param_3,param_4);
+	
+	if (Report==-1)
+	{
+		Report=0;
+
+		getMember<uint32_t>(frame0, kexticl ? 0x87c4 : 0x4284)=2;//sleepmode
+		fsetAttribute(frame0, 'powr',0);
+		IOSleep(1);
+		getMember<uint32_t>(frame0, kexticl ? 0x87c4 : 0x4284)=0;//sleepmode
+		fsetAttribute(frame0, 'powr',2);
+		IOSleep(1);
+	}
+	
+	
+	return ret;
+}
+
+uint32_t Gen11::fgetAttribute(void *that, uint param_1, unsigned long *param_2)
+{
+
+	return FunctionCast(fgetAttribute, callback->ofgetAttribute)(that, param_1, param_2);
+}
+
+unsigned long  Gen11::fcallPlatformFunction(void *that,void *param_1,bool param_2,void *param_3,void *param_4,void *param_5,void *param_6)
+{
+	
+	return FunctionCast(fcallPlatformFunction, callback->ofcallPlatformFunction)(that, param_1, param_2, param_3, param_4, param_5, param_6);
+}
+
+uint64_t Gen11::getInformationForDisplayMode(void *that,int param_1,void *param_2)
+{
+	
+	uint32_t fbNum = getMember<uint32_t>(that, 0x1dc);
+	if (fbNum!=0) return 0xe00002c7;
+	
+	auto ret = FunctionCast(getInformationForDisplayMode, callback->ogetInformationForDisplayMode)(that,param_1,param_2);
+	return ret;
+}
+IOReturn Gen11::wrapSetAttributeForConnection(void* framebuffer, int32_t connectIndex, uint32_t attribute,
+											  unsigned long value)
+{
+	const auto ret = FunctionCast(wrapSetAttributeForConnection, callback->owrapSetAttributeForConnection)(
+																										   framebuffer, connectIndex, attribute, value);
+	
+
+	if (attribute != 'bklt') { return ret; }
+	
+	if (value<NBlue::callback->i915b->display->panel.backlight.level)  value=NBlue::callback->i915b->display->panel.backlight.level;
+	
+	NBlue::callback->writeReg32( BXT_BLC_PWM_DUTY(NBlue::callback->i915b->display->panel.backlight.controller), value);
+	getMember<uint32_t>(ccont2, kexticl ? 0xe4c: kexttgld ? 0xe64 : 0xe58)=value;
+	return kIOReturnSuccess;
+};
+
+void Gen11::initVRRCaps(void *that)
+{
+	
+	uint32_t fbNum = getMember<uint32_t>(that, 0x1dc);
+	if (!fbNum) return FunctionCast(initVRRCaps, callback->oinitVRRCaps)(that);
+	
+	if (kexticl){
+		getMember<uint8_t>(that, 0x8f75)=0;//IsVRRSupported
+		getMember<uint8_t>(that, 0x8f76)=0;//IsASFUSupported
+		getMember<uint8_t>(that, 0x8f77)=0;
+		getMember<uint8_t>(that, 0x8f78)=0;
+		getMember<uint8_t>(that, 0x8f79)=0;
+		getMember<uint8_t>(that, 0x8f7a)=0;
+	}
+	else
+	{
+		getMember<uint8_t>(that, 0x4a35)=0;//IsVRRSupported
+		getMember<uint8_t>(that, 0x4a36)=0;//IsASFUSupported
+		getMember<uint8_t>(that, 0x4a37)=0;
+		getMember<uint8_t>(that, 0x4a38)=0;
+		getMember<uint8_t>(that, 0x4a39)=0;
+		getMember<uint8_t>(that, 0x4a3a)=0;
+	}
+	//FunctionCast(initVRRCaps, callback->oinitVRRCaps)(that);
+}
+
+void Gen11::fsetupInitialTransactionState(void *that,uint param_1)
+{
+	 FunctionCast(fsetupInitialTransactionState, callback->ofsetupInitialTransactionState)(that, param_1);
+}
+
+
+
+void Gen11::RestoreTransactions(void *that,bool param_1)
+{
+	return FunctionCast(RestoreTransactions, callback->oRestoreTransactions)(that, param_1);
+}
+
+uint64_t Gen11::getCallbackCapability(void *that,void *param_1)
+{
+	*(u32 *)param_1 = 0xd;
+	return 0;
+}
+
+uint64_t Gen11::GetGPUCapability(void *that,void *param_1)
+{
+	auto ret=FunctionCast(GetGPUCapability, callback->oGetGPUCapability)(that, param_1);
+
+	return ret;
+}
+
+void  Gen11::overridePowerWellsState(void *that,bool param_1)
+{
+	return FunctionCast(overridePowerWellsState, callback->ooverridePowerWellsState)(that, param_1);
+}
+
+void  Gen11::disableHWDC6(void *that)
+{
+	return FunctionCast(disableHWDC6, callback->odisableHWDC6)(that);
+}
+
+uint64_t Gen11::setPortMode(void *that,int param_2)
+{
+	return FunctionCast(setPortMode, callback->osetPortMode)( that,param_2);
+}
+
+void * Gen11::getPortByDDI(uint param_1)
+{
+	return FunctionCast(getPortByDDI, callback->ogetPortByDDI)( param_1);
+}
+
+int Gen11::probeBootPipe(void *that,bool *param_1,void *param_2)
+{
+	return FunctionCast(probeBootPipe, callback->oprobeBootPipe)(that, param_1,param_2);
+}
+
+uint64_t Gen11::PreProcessTransaction(void *that,uint param_1)
+{
+	auto ret= FunctionCast(PreProcessTransaction, callback->oPreProcessTransaction)(that, param_1);
+	return ret;
+}
+
+uint64_t Gen11::hwEnableInterrupts(void *that)
+{
+	auto ret= FunctionCast(hwEnableInterrupts, callback->ohwEnableInterrupts)(that);
+	return ret;
+}
+
+
+int Gen11::fbprocessCmd(void *that,uint param_1,unsigned long *param_2,unsigned long param_3,unsigned long *param_4,unsigned long *param_5)
+{
+	/*if (param_1 == 1) {
+	  _DAT_0016dc38 = _DAT_0016dc38 + 1;
+	  uVar5 = 0xe00002c2;
+	  if ((param_5 != (ulong *)0x0) && (_DAT_0016dc48 = _DAT_0016dc48 + 1, 0x2b < *param_5)) {
+		_DAT_0016dc40 = _DAT_0016dc40 + 1;
+		*(undefined4 *)(param_4 + 5) = DAT_001beae8;
+		param_4[4] = DAT_001beae0;
+		param_4[3] = ram0x001bead8;
+		param_4[2] = s_AppleIntelBaseController_001beac4._12_8_;
+		param_4[1] = s_AppleIntelBaseController_001beac4._4_8_;
+		*param_4 = __id;
+		*param_5 = 0x2c;
+		uVar5 = 0;
+	  }
+	  break;
+	}
+	*/
+	if (param_1 == 0x2001)
+	{
+		return 0;
+	}
+	auto ret= FunctionCast(fbprocessCmd, callback->ofbprocessCmd)(that, param_1, param_2, param_3, param_4, param_5);
+	return ret;
+}
+
+
+
+
+
+static u32 icl_plane_ctl_flip(unsigned int reflect)
+{
+	switch (reflect) {
+	case 0:
+		break;
+	case DRM_MODE_REFLECT_X:
+		return PLANE_CTL_FLIP_HORIZONTAL;
+	case DRM_MODE_REFLECT_Y:
+	default:
+	}
+
+	return 0;
+}
+
+
+
+int skl_format_to_fourcc(int format, bool rgb_order, bool alpha)
+{
+	switch (format) {
+		default:
+		case PLANE_CTL_FORMAT_XRGB_8888:
+			if (rgb_order) {
+				if (alpha)
+					return DRM_FORMAT_ABGR8888;
+				else
+					return DRM_FORMAT_XBGR8888;
+			} else {
+				if (alpha)
+					return DRM_FORMAT_ARGB8888;
+				else
+					return DRM_FORMAT_XRGB8888;
+			}
+		case PLANE_CTL_FORMAT_XRGB_2101010:
+			if (rgb_order) {
+				if (alpha)
+					return DRM_FORMAT_ABGR2101010;
+				else
+					return DRM_FORMAT_XBGR2101010;
+			} else {
+				if (alpha)
+					return DRM_FORMAT_ARGB2101010;
+				else
+					return DRM_FORMAT_XRGB2101010;
+			}
+	}
+}
+
+static u32 skl_plane_ctl_format(u32 pixel_format)
+{
+	switch (pixel_format) {
+	case DRM_FORMAT_XBGR8888:
+	case DRM_FORMAT_ABGR8888:
+		return PLANE_CTL_FORMAT_XRGB_8888 | PLANE_CTL_ORDER_RGBX;
+	case DRM_FORMAT_XRGB8888:
+	case DRM_FORMAT_ARGB8888:
+		return PLANE_CTL_FORMAT_XRGB_8888;
+	case DRM_FORMAT_XBGR2101010:
+	case DRM_FORMAT_ABGR2101010:
+		return PLANE_CTL_FORMAT_XRGB_2101010 | PLANE_CTL_ORDER_RGBX;
+	case DRM_FORMAT_XRGB2101010:
+	case DRM_FORMAT_ARGB2101010:
+		return PLANE_CTL_FORMAT_XRGB_2101010;
+	}
+
+	return 0;
+}
+
+
+static u32 skl_plane_ctl_tiling(u64 fb_modifier)
+{
+	switch (fb_modifier) {
+	case DRM_FORMAT_MOD_LINEAR:
+		break;
+	case I915_FORMAT_MOD_X_TILED:
+		return PLANE_CTL_TILED_X;
+	case I915_FORMAT_MOD_Y_TILED:
+		return PLANE_CTL_TILED_Y;
+	case I915_FORMAT_MOD_4_TILED:
+		return PLANE_CTL_TILED_4;
+	case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
+		return PLANE_CTL_TILED_4 |
+			PLANE_CTL_RENDER_DECOMPRESSION_ENABLE |
+			PLANE_CTL_CLEAR_COLOR_DISABLE;
+	case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
+		return PLANE_CTL_TILED_4 |
+			PLANE_CTL_MEDIA_DECOMPRESSION_ENABLE |
+			PLANE_CTL_CLEAR_COLOR_DISABLE;
+	case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
+		return PLANE_CTL_TILED_4 | PLANE_CTL_RENDER_DECOMPRESSION_ENABLE;
+	case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS:
+		return PLANE_CTL_TILED_4 |
+			PLANE_CTL_RENDER_DECOMPRESSION_ENABLE |
+			PLANE_CTL_CLEAR_COLOR_DISABLE;
+	case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC:
+		return PLANE_CTL_TILED_4 | PLANE_CTL_RENDER_DECOMPRESSION_ENABLE;
+	case I915_FORMAT_MOD_4_TILED_MTL_MC_CCS:
+		return PLANE_CTL_TILED_4 | PLANE_CTL_MEDIA_DECOMPRESSION_ENABLE;
+	case I915_FORMAT_MOD_4_TILED_BMG_CCS:
+	case I915_FORMAT_MOD_4_TILED_LNL_CCS:
+		return PLANE_CTL_TILED_4 | PLANE_CTL_RENDER_DECOMPRESSION_ENABLE;
+	case I915_FORMAT_MOD_Y_TILED_CCS:
+	case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
+		return PLANE_CTL_TILED_Y | PLANE_CTL_RENDER_DECOMPRESSION_ENABLE;
+	case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
+		return PLANE_CTL_TILED_Y |
+			   PLANE_CTL_RENDER_DECOMPRESSION_ENABLE |
+			   PLANE_CTL_CLEAR_COLOR_DISABLE;
+	case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
+		return PLANE_CTL_TILED_Y | PLANE_CTL_MEDIA_DECOMPRESSION_ENABLE;
+	case I915_FORMAT_MOD_Yf_TILED:
+		return PLANE_CTL_TILED_YF;
+	case I915_FORMAT_MOD_Yf_TILED_CCS:
+		return PLANE_CTL_TILED_YF | PLANE_CTL_RENDER_DECOMPRESSION_ENABLE;
+	default:
+	}
+
+	return 0;
+}
+
+static u32 skl_plane_ctl_rotate(unsigned int rotate)
+{
+	switch (rotate) {
+	case DRM_MODE_ROTATE_0:
+		break;
+
+	case DRM_MODE_ROTATE_90:
+		return PLANE_CTL_ROTATE_270;
+	case DRM_MODE_ROTATE_180:
+		return PLANE_CTL_ROTATE_180;
+	case DRM_MODE_ROTATE_270:
+		return PLANE_CTL_ROTATE_90;
+	default:
+	}
+
+	return 0;
+}
+
+unsigned int intel_tile_size(struct intel_display *display)
+{
+	return DISPLAY_VER(display) == 2 ? 2048 : 4096;
+}
+
+
+static const struct drm_format_info gen12_ccs_formats[] = {
+	{ .format = DRM_FORMAT_XRGB8888, .depth = 24, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_XBGR8888, .depth = 24, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_ARGB8888, .depth = 32, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_ABGR8888, .depth = 32, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_XRGB2101010, .depth = 30, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_XBGR2101010, .depth = 30, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_ARGB2101010, .depth = 30, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_ABGR2101010, .depth = 30, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_XRGB16161616F, .depth = 0, .num_planes = 2,
+	  .char_per_block = { 8, 1 }, .block_w = { 1, 1 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_XBGR16161616F, .depth = 0, .num_planes = 2,
+	  .char_per_block = { 8, 1 }, .block_w = { 1, 1 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_ARGB16161616F, .depth = 0, .num_planes = 2,
+	  .char_per_block = { 8, 1 }, .block_w = { 1, 1 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_ABGR16161616F, .depth = 0, .num_planes = 2,
+	  .char_per_block = { 8, 1 }, .block_w = { 1, 1 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_YUYV, .num_planes = 2,
+	  .char_per_block = { 2, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 2, .vsub = 1, .is_yuv = true },
+	{ .format = DRM_FORMAT_YVYU, .num_planes = 2,
+	  .char_per_block = { 2, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 2, .vsub = 1, .is_yuv = true },
+	{ .format = DRM_FORMAT_UYVY, .num_planes = 2,
+	  .char_per_block = { 2, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 2, .vsub = 1, .is_yuv = true },
+	{ .format = DRM_FORMAT_VYUY, .num_planes = 2,
+	  .char_per_block = { 2, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 2, .vsub = 1, .is_yuv = true },
+	{ .format = DRM_FORMAT_XYUV8888, .num_planes = 2,
+	  .char_per_block = { 4, 1 }, .block_w = { 1, 2 }, .block_h = { 1, 1 },
+	  .hsub = 1, .vsub = 1, .is_yuv = true },
+	{ .format = DRM_FORMAT_NV12, .num_planes = 4,
+	  .char_per_block = { 1, 2, 1, 1 }, .block_w = { 1, 1, 4, 4 }, .block_h = { 1, 1, 1, 1 },
+	  .hsub = 2, .vsub = 2, .is_yuv = true },
+	{ .format = DRM_FORMAT_P010, .num_planes = 4,
+	  .char_per_block = { 2, 4, 1, 1 }, .block_w = { 1, 1, 2, 2 }, .block_h = { 1, 1, 1, 1 },
+	  .hsub = 2, .vsub = 2, .is_yuv = true },
+	{ .format = DRM_FORMAT_P012, .num_planes = 4,
+	  .char_per_block = { 2, 4, 1, 1 }, .block_w = { 1, 1, 2, 2 }, .block_h = { 1, 1, 1, 1 },
+	  .hsub = 2, .vsub = 2, .is_yuv = true },
+	{ .format = DRM_FORMAT_P016, .num_planes = 4,
+	  .char_per_block = { 2, 4, 1, 1 }, .block_w = { 1, 1, 2, 2 }, .block_h = { 1, 1, 1, 1 },
+	  .hsub = 2, .vsub = 2, .is_yuv = true },
+};
+
+/*
+ * Same as gen12_ccs_formats[] above, but with additional surface used
+ * to pass Clear Color information in plane 2 with 64 bits of data.
+ */
+static const struct drm_format_info gen12_ccs_cc_formats[] = {
+	{ .format = DRM_FORMAT_XRGB8888, .depth = 24, .num_planes = 3,
+	  .char_per_block = { 4, 1, 0 }, .block_w = { 1, 2, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_XBGR8888, .depth = 24, .num_planes = 3,
+	  .char_per_block = { 4, 1, 0 }, .block_w = { 1, 2, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_ARGB8888, .depth = 32, .num_planes = 3,
+	  .char_per_block = { 4, 1, 0 }, .block_w = { 1, 2, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_ABGR8888, .depth = 32, .num_planes = 3,
+	  .char_per_block = { 4, 1, 0 }, .block_w = { 1, 2, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_XRGB2101010, .depth = 30, .num_planes = 3,
+	  .char_per_block = { 4, 1, 0 }, .block_w = { 1, 2, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_XBGR2101010, .depth = 30, .num_planes = 3,
+	  .char_per_block = { 4, 1, 0 }, .block_w = { 1, 2, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_ARGB2101010, .depth = 30, .num_planes = 3,
+	  .char_per_block = { 4, 1, 0 }, .block_w = { 1, 2, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_ABGR2101010, .depth = 30, .num_planes = 3,
+	  .char_per_block = { 4, 1, 0 }, .block_w = { 1, 2, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_XRGB16161616F, .depth = 0, .num_planes = 3,
+	  .char_per_block = { 8, 1, 0 }, .block_w = { 1, 1, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_XBGR16161616F, .depth = 0, .num_planes = 3,
+	  .char_per_block = { 8, 1, 0 }, .block_w = { 1, 1, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_ARGB16161616F, .depth = 0, .num_planes = 3,
+	  .char_per_block = { 8, 1, 0 }, .block_w = { 1, 1, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_ABGR16161616F, .depth = 0, .num_planes = 3,
+	  .char_per_block = { 8, 1, 0 }, .block_w = { 1, 1, 0 }, .block_h = { 1, 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+};
+
+static const struct drm_format_info gen12_flat_ccs_cc_formats[] = {
+	{ .format = DRM_FORMAT_XRGB8888, .depth = 24, .num_planes = 2,
+	  .char_per_block = { 4, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_XBGR8888, .depth = 24, .num_planes = 2,
+	  .char_per_block = { 4, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_ARGB8888, .depth = 32, .num_planes = 2,
+	  .char_per_block = { 4, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_ABGR8888, .depth = 32, .num_planes = 2,
+	  .char_per_block = { 4, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_XRGB2101010, .depth = 30, .num_planes = 2,
+	  .char_per_block = { 4, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_XBGR2101010, .depth = 30, .num_planes = 2,
+	  .char_per_block = { 4, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_ARGB2101010, .depth = 30, .num_planes = 2,
+	  .char_per_block = { 4, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_ABGR2101010, .depth = 30, .num_planes = 2,
+	  .char_per_block = { 4, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_XRGB16161616F, .depth = 0, .num_planes = 2,
+	  .char_per_block = { 8, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_XBGR16161616F, .depth = 0, .num_planes = 2,
+	  .char_per_block = { 8, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, },
+	{ .format = DRM_FORMAT_ARGB16161616F, .depth = 0, .num_planes = 2,
+	  .char_per_block = { 8, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+	{ .format = DRM_FORMAT_ABGR16161616F, .depth = 0, .num_planes = 2,
+	  .char_per_block = { 8, 0 }, .block_w = { 1, 0 }, .block_h = { 1, 0 },
+	  .hsub = 1, .vsub = 1, .has_alpha = true },
+};
+
+static const struct drm_format_info skl_ccs_formats[] = {
+	{ .format = DRM_FORMAT_XRGB8888, .depth = 24, .num_planes = 2,
+	  .cpp = { 4, 1, }, .hsub = 8, .vsub = 16, },
+	{ .format = DRM_FORMAT_XBGR8888, .depth = 24, .num_planes = 2,
+	  .cpp = { 4, 1, }, .hsub = 8, .vsub = 16, },
+	{ .format = DRM_FORMAT_ARGB8888, .depth = 32, .num_planes = 2,
+	  .cpp = { 4, 1, }, .hsub = 8, .vsub = 16, .has_alpha = true, },
+	{ .format = DRM_FORMAT_ABGR8888, .depth = 32, .num_planes = 2,
+	  .cpp = { 4, 1, }, .hsub = 8, .vsub = 16, .has_alpha = true, },
+	{ .format = DRM_FORMAT_XRGB2101010, .depth = 30, .num_planes = 2,
+	  .cpp = { 4, 1, }, .hsub = 8, .vsub = 16, },
+	{ .format = DRM_FORMAT_XBGR2101010, .depth = 30, .num_planes = 2,
+	  .cpp = { 4, 1, }, .hsub = 8, .vsub = 16, },
+	{ .format = DRM_FORMAT_ARGB2101010, .depth = 30, .num_planes = 2,
+	  .cpp = { 4, 1, }, .hsub = 8, .vsub = 16, .has_alpha = true, },
+	{ .format = DRM_FORMAT_ABGR2101010, .depth = 30, .num_planes = 2,
+	  .cpp = { 4, 1, }, .hsub = 8, .vsub = 16, .has_alpha = true, },
+};
+
+	
+
+static const struct intel_modifier_desc intel_modifiers[] = {
+	{
+		.modifier = I915_FORMAT_MOD_4_TILED_LNL_CCS,
+		.display_ver = { 20,(u8) -1 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_4,
+	}, {
+		.modifier = I915_FORMAT_MOD_4_TILED_BMG_CCS,
+		.display_ver = { 14,(u8) -1 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_4 | INTEL_PLANE_CAP_NEED64K_PHYS,
+	}, {
+		.modifier = I915_FORMAT_MOD_4_TILED_MTL_MC_CCS,
+		.display_ver = { 14, 14 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_4 | INTEL_PLANE_CAP_CCS_MC,
+
+		.ccs.packed_aux_planes = BIT(1),
+		.ccs.planar_aux_planes = BIT(2) | BIT(3),
+
+		FORMAT_OVERRIDE(gen12_ccs_formats),
+	}, {
+		.modifier = I915_FORMAT_MOD_4_TILED_MTL_RC_CCS,
+		.display_ver = { 14, 14 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_4 | INTEL_PLANE_CAP_CCS_RC,
+
+		.ccs.packed_aux_planes = BIT(1),
+
+		FORMAT_OVERRIDE(gen12_ccs_formats),
+	}, {
+		.modifier = I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC,
+		.display_ver = { 14, 14 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_4 | INTEL_PLANE_CAP_CCS_RC_CC,
+
+		.ccs.cc_planes = BIT(2),
+		.ccs.packed_aux_planes = BIT(1),
+
+		FORMAT_OVERRIDE(gen12_ccs_cc_formats),
+	}, {
+		.modifier = I915_FORMAT_MOD_4_TILED_DG2_MC_CCS,
+		.display_ver = { 13, 13 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_4 | INTEL_PLANE_CAP_CCS_MC,
+	}, {
+		.modifier = I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC,
+		.display_ver = { 13, 13 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_4 | INTEL_PLANE_CAP_CCS_RC_CC,
+
+		.ccs.cc_planes = BIT(1),
+
+		FORMAT_OVERRIDE(gen12_flat_ccs_cc_formats),
+	}, {
+		.modifier = I915_FORMAT_MOD_4_TILED_DG2_RC_CCS,
+		.display_ver = { 13, 13 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_4 | INTEL_PLANE_CAP_CCS_RC,
+	}, {
+		.modifier = I915_FORMAT_MOD_4_TILED,
+		.display_ver = { 13, (u8)-1 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_4,
+	}, {
+		.modifier = I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS,
+		.display_ver = { 12, 13 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_Y | INTEL_PLANE_CAP_CCS_MC,
+
+		.ccs.packed_aux_planes = BIT(1),
+		.ccs.planar_aux_planes = BIT(2) | BIT(3),
+
+		FORMAT_OVERRIDE(gen12_ccs_formats),
+	}, {
+		.modifier = I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS,
+		.display_ver = { 12, 13 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_Y | INTEL_PLANE_CAP_CCS_RC,
+
+		.ccs.packed_aux_planes = BIT(1),
+
+		FORMAT_OVERRIDE(gen12_ccs_formats),
+	}, {
+		.modifier = I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC,
+		.display_ver = { 12, 13 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_Y | INTEL_PLANE_CAP_CCS_RC_CC,
+
+		.ccs.cc_planes = BIT(2),
+		.ccs.packed_aux_planes = BIT(1),
+
+		FORMAT_OVERRIDE(gen12_ccs_cc_formats),
+	}, {
+		.modifier = I915_FORMAT_MOD_Yf_TILED_CCS,
+		.display_ver = { 9, 11 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_Yf | INTEL_PLANE_CAP_CCS_RC,
+
+		.ccs.packed_aux_planes = BIT(1),
+
+		FORMAT_OVERRIDE(skl_ccs_formats),
+	}, {
+		.modifier = I915_FORMAT_MOD_Y_TILED_CCS,
+		.display_ver = { 9, 11 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_Y | INTEL_PLANE_CAP_CCS_RC,
+
+		.ccs.packed_aux_planes = BIT(1),
+
+		FORMAT_OVERRIDE(skl_ccs_formats),
+	}, {
+		.modifier = I915_FORMAT_MOD_Yf_TILED,
+		.display_ver = { 9, 11 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_Yf,
+	}, {
+		.modifier = I915_FORMAT_MOD_Y_TILED,
+		.display_ver = { 9, 13 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_Y,
+	}, {
+		.modifier = I915_FORMAT_MOD_X_TILED,
+		.display_ver = { 0, 29 },
+		.plane_caps = INTEL_PLANE_CAP_TILING_X,
+	}, {
+		.modifier = DRM_FORMAT_MOD_LINEAR,
+		.display_ver = { 0, (u8)-1 },
+	},
+};
+
+#define HAS_128B_Y_TILING(__display)	(!(__display)->platform.i915g && !(__display)->platform.i915gm)
+
+static const struct intel_modifier_desc *lookup_modifier_or_null(u64 modifier)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(intel_modifiers); i++)
+		if (intel_modifiers[i].modifier == modifier)
+			return &intel_modifiers[i];
+
+	return NULL;
+}
+
+static const struct intel_modifier_desc *lookup_modifier(u64 modifier)
+{
+	const struct intel_modifier_desc *md = lookup_modifier_or_null(modifier);
+
+	if ((!md))
+		return &intel_modifiers[0];
+
+	return md;
+}
+
+static bool format_is_yuv_semiplanar(const struct intel_modifier_desc *md,
+					 const struct drm_format_info *info)
+{
+	if (!info->is_yuv)
+		return false;
+
+	if (hweight8(md->ccs.planar_aux_planes) == 2)
+		return info->num_planes == 4;
+	else
+		return info->num_planes == 2;
+}
+
+static u8 ccs_aux_plane_mask(const struct intel_modifier_desc *md,
+				 const struct drm_format_info *format)
+{
+	if (format_is_yuv_semiplanar(md, format))
+		return md->ccs.planar_aux_planes;
+	else
+		return md->ccs.packed_aux_planes;
+}
+
+bool intel_fb_is_ccs_aux_plane(const struct drm_framebuffer *fb, int color_plane)
+{
+	const struct intel_modifier_desc *md = lookup_modifier(fb->modifier);
+
+	return ccs_aux_plane_mask(md, fb->format) & BIT(color_plane);
+}
+
+int intel_fb_rc_ccs_cc_plane(const struct drm_framebuffer *fb)
+{
+	const struct intel_modifier_desc *md = lookup_modifier(fb->modifier);
+
+	if (!md->ccs.cc_planes)
+		return -1;
+
+
+	return ilog2((int)md->ccs.cc_planes);
+}
+
+static bool is_gen12_ccs_cc_plane(const struct drm_framebuffer *fb, int color_plane)
+{
+	return intel_fb_rc_ccs_cc_plane(fb) == color_plane;
+}
+
+
+unsigned int
+intel_tile_width_bytes(const struct drm_framebuffer *fb, int color_plane)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	unsigned int cpp = fb->format->cpp[color_plane];
+
+	switch (fb->modifier) {
+	case DRM_FORMAT_MOD_LINEAR:
+		return intel_tile_size(display);
+	case I915_FORMAT_MOD_X_TILED:
+		if (DISPLAY_VER(display) == 2)
+			return 128;
+		else
+			return 512;
+	case I915_FORMAT_MOD_4_TILED_BMG_CCS:
+	case I915_FORMAT_MOD_4_TILED_LNL_CCS:
+	case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
+	case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
+	case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
+	case I915_FORMAT_MOD_4_TILED:
+		/*
+		 * Each 4K tile consists of 64B(8*8) subtiles, with
+		 * same shape as Y Tile(i.e 4*16B OWords)
+		 */
+		return 128;
+	case I915_FORMAT_MOD_Y_TILED_CCS:
+		if (intel_fb_is_ccs_aux_plane(fb, color_plane))
+			return 128;
+	case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS:
+	case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC:
+	case I915_FORMAT_MOD_4_TILED_MTL_MC_CCS:
+	case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
+	case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
+	case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
+		if (intel_fb_is_ccs_aux_plane(fb, color_plane) ||
+			is_gen12_ccs_cc_plane(fb, color_plane))
+			return 64;
+	case I915_FORMAT_MOD_Y_TILED:
+		if (HAS_128B_Y_TILING(display))
+			return 128;
+		else
+			return 512;
+	case I915_FORMAT_MOD_Yf_TILED_CCS:
+		if (intel_fb_is_ccs_aux_plane(fb, color_plane))
+			return 128;
+	case I915_FORMAT_MOD_Yf_TILED:
+		switch (cpp) {
+		case 1:
+			return 64;
+		case 2:
+		case 4:
+			return 128;
+		case 8:
+		case 16:
+			return 256;
+		default:
+			return cpp;
+		}
+		break;
+	default:
+		return cpp;
+	}
+}
+
+
+
+
+
+	
+
+
+static const struct drm_format_info *
+	lookup_format_info(const struct drm_format_info formats[],
+			   int num_formats, u32 format)
+	{
+		int i;
+
+		for (i = 0; i < num_formats; i++) {
+			if (formats[i].format == format)
+				return &formats[i];
+		}
+
+		return NULL;
+	}
+	
+	
+	
+const struct drm_format_info *
+intel_fb_get_format_info(u32 pixel_format, u64 modifier)
+{
+	const struct intel_modifier_desc *md = lookup_modifier_or_null(modifier);
+
+	if (!md || !md->formats)
+		return NULL;
+
+	return lookup_format_info(md->formats, md->format_count, pixel_format);
+}
+
+static inline bool drm_rotation_90_or_270(unsigned int rotation)
+{
+	return rotation & (DRM_MODE_ROTATE_90 | DRM_MODE_ROTATE_270);
+}
+
+unsigned int intel_tile_height(const struct drm_framebuffer *fb, int color_plane)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+
+	return intel_tile_size(display) /
+		intel_tile_width_bytes(fb, color_plane);
+}
+
+static bool check_modifier_display_ver_range(const struct intel_modifier_desc *md,
+						 u8 display_ver_from, u8 display_ver_until)
+{
+	return md->display_ver.from <= display_ver_until &&
+		display_ver_from <= md->display_ver.until;
+}
+
+
+
+
+static bool intel_fb_is_gen12_ccs_aux_plane(const struct drm_framebuffer *fb, int color_plane)
+{
+	const struct intel_modifier_desc *md = lookup_modifier(fb->modifier);
+
+	return check_modifier_display_ver_range(md, 12, 14) &&
+		   ccs_aux_plane_mask(md, fb->format) & BIT(color_plane);
+}
+
+
+
+bool is_surface_linear(const struct drm_framebuffer *fb, int color_plane)
+{
+	return fb->modifier == DRM_FORMAT_MOD_LINEAR ||
+		   intel_fb_is_gen12_ccs_aux_plane(fb, color_plane) ||
+		   is_gen12_ccs_cc_plane(fb, color_plane);
+}
+
+static unsigned int skl_plane_stride_mult(const struct drm_framebuffer *fb,
+										  int color_plane, unsigned int rotation)
+{
+	if (is_surface_linear(fb, color_plane))
+		return 64;
+	else if (drm_rotation_90_or_270(rotation))
+		return intel_tile_height(fb, color_plane);
+	else
+		return intel_tile_width_bytes(fb, color_plane);
+}
+
+const struct drm_format_info *__drm_format_info(u32 format)
+{
+	static const struct drm_format_info formats[] = {
+		{ .format = DRM_FORMAT_C1,		.depth = 1,  .num_planes = 1,
+		  .char_per_block = { 1, }, .block_w = { 8, }, .block_h = { 1, }, .hsub = 1, .vsub = 1, .is_color_indexed = true },
+		{ .format = DRM_FORMAT_C2,		.depth = 2,  .num_planes = 1,
+		  .char_per_block = { 1, }, .block_w = { 4, }, .block_h = { 1, }, .hsub = 1, .vsub = 1, .is_color_indexed = true },
+		{ .format = DRM_FORMAT_C4,		.depth = 4,  .num_planes = 1,
+		  .char_per_block = { 1, }, .block_w = { 2, }, .block_h = { 1, }, .hsub = 1, .vsub = 1, .is_color_indexed = true },
+		{ .format = DRM_FORMAT_C8,		.depth = 8,  .num_planes = 1, .cpp = { 1, 0, 0 }, .hsub = 1, .vsub = 1, .is_color_indexed = true },
+		{ .format = DRM_FORMAT_D1,		.depth = 1,  .num_planes = 1,
+		  .char_per_block = { 1, }, .block_w = { 8, }, .block_h = { 1, }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_D2,		.depth = 2,  .num_planes = 1,
+		  .char_per_block = { 1, }, .block_w = { 4, }, .block_h = { 1, }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_D4,		.depth = 4,  .num_planes = 1,
+		  .char_per_block = { 1, }, .block_w = { 2, }, .block_h = { 1, }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_D8,		.depth = 8,  .num_planes = 1, .cpp = { 1, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_R1,		.depth = 1,  .num_planes = 1,
+		  .char_per_block = { 1, }, .block_w = { 8, }, .block_h = { 1, }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_R2,		.depth = 2,  .num_planes = 1,
+		  .char_per_block = { 1, }, .block_w = { 4, }, .block_h = { 1, }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_R4,		.depth = 4,  .num_planes = 1,
+		  .char_per_block = { 1, }, .block_w = { 2, }, .block_h = { 1, }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_R8,		.depth = 8,  .num_planes = 1, .cpp = { 1, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_R10,		.depth = 10, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_R12,		.depth = 12, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_RGB332,		.depth = 8,  .num_planes = 1, .cpp = { 1, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_BGR233,		.depth = 8,  .num_planes = 1, .cpp = { 1, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_XRGB4444,	.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_XBGR4444,	.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_RGBX4444,	.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_BGRX4444,	.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_ARGB4444,	.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_ABGR4444,	.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_RGBA4444,	.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_BGRA4444,	.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_XRGB1555,	.depth = 15, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_XBGR1555,	.depth = 15, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_RGBX5551,	.depth = 15, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_BGRX5551,	.depth = 15, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_ARGB1555,	.depth = 15, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_ABGR1555,	.depth = 15, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_RGBA5551,	.depth = 15, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_BGRA5551,	.depth = 15, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_RGB565,		.depth = 16, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_BGR565,		.depth = 16, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+#ifdef __BIG_ENDIAN
+		{ .format = DRM_FORMAT_XRGB1555 | DRM_FORMAT_BIG_ENDIAN, .depth = 15, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN, .depth = 16, .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 1, .vsub = 1 },
+#endif
+		{ .format = DRM_FORMAT_RGB888,		.depth = 24, .num_planes = 1, .cpp = { 3, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_BGR888,		.depth = 24, .num_planes = 1, .cpp = { 3, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_XRGB8888,	.depth = 24, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_XBGR8888,	.depth = 24, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_RGBX8888,	.depth = 24, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_BGRX8888,	.depth = 24, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_RGB565_A8,	.depth = 24, .num_planes = 2, .cpp = { 2, 1, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_BGR565_A8,	.depth = 24, .num_planes = 2, .cpp = { 2, 1, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_XRGB2101010,	.depth = 30, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_XBGR2101010,	.depth = 30, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_RGBX1010102,	.depth = 30, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_BGRX1010102,	.depth = 30, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_ARGB2101010,	.depth = 30, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_ABGR2101010,	.depth = 30, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_RGBA1010102,	.depth = 30, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_BGRA1010102,	.depth = 30, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_RGB161616,	.depth = 0,
+		  .num_planes = 1, .char_per_block = { 6, 0, 0 },
+		  .block_w = { 1, 0, 0 }, .block_h = { 1, 0, 0 },
+		  .hsub = 1, .vsub = 1, .has_alpha = false },
+		{ .format = DRM_FORMAT_BGR161616,	.depth = 0,
+		  .num_planes = 1, .char_per_block = { 6, 0, 0 },
+		  .block_w = { 1, 0, 0 }, .block_h = { 1, 0, 0 },
+		  .hsub = 1, .vsub = 1, .has_alpha = false },
+		{ .format = DRM_FORMAT_ARGB8888,	.depth = 32, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_ABGR8888,	.depth = 32, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_RGBA8888,	.depth = 32, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_BGRA8888,	.depth = 32, .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_XRGB16161616F,	.depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_XBGR16161616F,	.depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_ARGB16161616F,	.depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_ABGR16161616F,	.depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_AXBXGXRX106106106106, .depth = 0, .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_XRGB16161616,	.depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_XBGR16161616,	.depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1 },
+		{ .format = DRM_FORMAT_ARGB16161616,	.depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_ABGR16161616,	.depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_RGB888_A8,	.depth = 32, .num_planes = 2, .cpp = { 3, 1, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_BGR888_A8,	.depth = 32, .num_planes = 2, .cpp = { 3, 1, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_XRGB8888_A8,	.depth = 32, .num_planes = 2, .cpp = { 4, 1, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_XBGR8888_A8,	.depth = 32, .num_planes = 2, .cpp = { 4, 1, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_RGBX8888_A8,	.depth = 32, .num_planes = 2, .cpp = { 4, 1, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_BGRX8888_A8,	.depth = 32, .num_planes = 2, .cpp = { 4, 1, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true },
+		{ .format = DRM_FORMAT_YUV410,		.depth = 0,  .num_planes = 3, .cpp = { 1, 1, 1 }, .hsub = 4, .vsub = 4, .is_yuv = true },
+		{ .format = DRM_FORMAT_YVU410,		.depth = 0,  .num_planes = 3, .cpp = { 1, 1, 1 }, .hsub = 4, .vsub = 4, .is_yuv = true },
+		{ .format = DRM_FORMAT_YUV411,		.depth = 0,  .num_planes = 3, .cpp = { 1, 1, 1 }, .hsub = 4, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_YVU411,		.depth = 0,  .num_planes = 3, .cpp = { 1, 1, 1 }, .hsub = 4, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_YUV420,		.depth = 0,  .num_planes = 3, .cpp = { 1, 1, 1 }, .hsub = 2, .vsub = 2, .is_yuv = true },
+		{ .format = DRM_FORMAT_YVU420,		.depth = 0,  .num_planes = 3, .cpp = { 1, 1, 1 }, .hsub = 2, .vsub = 2, .is_yuv = true },
+		{ .format = DRM_FORMAT_YUV422,		.depth = 0,  .num_planes = 3, .cpp = { 1, 1, 1 }, .hsub = 2, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_YVU422,		.depth = 0,  .num_planes = 3, .cpp = { 1, 1, 1 }, .hsub = 2, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_YUV444,		.depth = 0,  .num_planes = 3, .cpp = { 1, 1, 1 }, .hsub = 1, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_YVU444,		.depth = 0,  .num_planes = 3, .cpp = { 1, 1, 1 }, .hsub = 1, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_NV12,		.depth = 0,  .num_planes = 2, .cpp = { 1, 2, 0 }, .hsub = 2, .vsub = 2, .is_yuv = true },
+		{ .format = DRM_FORMAT_NV21,		.depth = 0,  .num_planes = 2, .cpp = { 1, 2, 0 }, .hsub = 2, .vsub = 2, .is_yuv = true },
+		{ .format = DRM_FORMAT_NV16,		.depth = 0,  .num_planes = 2, .cpp = { 1, 2, 0 }, .hsub = 2, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_NV61,		.depth = 0,  .num_planes = 2, .cpp = { 1, 2, 0 }, .hsub = 2, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_NV24,		.depth = 0,  .num_planes = 2, .cpp = { 1, 2, 0 }, .hsub = 1, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_NV42,		.depth = 0,  .num_planes = 2, .cpp = { 1, 2, 0 }, .hsub = 1, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_YUYV,		.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 2, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_YVYU,		.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 2, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_UYVY,		.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 2, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_VYUY,		.depth = 0,  .num_planes = 1, .cpp = { 2, 0, 0 }, .hsub = 2, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_XYUV8888,	.depth = 0,  .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_VUY888,          .depth = 0,  .num_planes = 1, .cpp = { 3, 0, 0 }, .hsub = 1, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_AYUV,		.depth = 0,  .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true, .is_yuv = true },
+		{ .format = DRM_FORMAT_Y210,            .depth = 0,  .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 2, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_Y212,            .depth = 0,  .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 2, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_Y216,            .depth = 0,  .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 2, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_Y410,            .depth = 0,  .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true, .is_yuv = true },
+		{ .format = DRM_FORMAT_Y412,            .depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true, .is_yuv = true },
+		{ .format = DRM_FORMAT_Y416,            .depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1, .has_alpha = true, .is_yuv = true },
+		{ .format = DRM_FORMAT_XVYU2101010,	.depth = 0,  .num_planes = 1, .cpp = { 4, 0, 0 }, .hsub = 1, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_XVYU12_16161616,	.depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_XVYU16161616,	.depth = 0,  .num_planes = 1, .cpp = { 8, 0, 0 }, .hsub = 1, .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_Y0L0,		.depth = 0,  .num_planes = 1,
+		  .char_per_block = { 8, 0, 0 }, .block_w = { 2, 0, 0 }, .block_h = { 2, 0, 0 },
+		  .hsub = 2, .vsub = 2, .has_alpha = true, .is_yuv = true },
+		{ .format = DRM_FORMAT_X0L0,		.depth = 0,  .num_planes = 1,
+		  .char_per_block = { 8, 0, 0 }, .block_w = { 2, 0, 0 }, .block_h = { 2, 0, 0 },
+		  .hsub = 2, .vsub = 2, .is_yuv = true },
+		{ .format = DRM_FORMAT_Y0L2,		.depth = 0,  .num_planes = 1,
+		  .char_per_block = { 8, 0, 0 }, .block_w = { 2, 0, 0 }, .block_h = { 2, 0, 0 },
+		  .hsub = 2, .vsub = 2, .has_alpha = true, .is_yuv = true },
+		{ .format = DRM_FORMAT_X0L2,		.depth = 0,  .num_planes = 1,
+		  .char_per_block = { 8, 0, 0 }, .block_w = { 2, 0, 0 }, .block_h = { 2, 0, 0 },
+		  .hsub = 2, .vsub = 2, .is_yuv = true },
+		{ .format = DRM_FORMAT_P010,            .depth = 0,  .num_planes = 2,
+		  .char_per_block = { 2, 4, 0 }, .block_w = { 1, 1, 0 }, .block_h = { 1, 1, 0 },
+		  .hsub = 2, .vsub = 2, .is_yuv = true},
+		{ .format = DRM_FORMAT_P012,		.depth = 0,  .num_planes = 2,
+		  .char_per_block = { 2, 4, 0 }, .block_w = { 1, 1, 0 }, .block_h = { 1, 1, 0 },
+		   .hsub = 2, .vsub = 2, .is_yuv = true},
+		{ .format = DRM_FORMAT_P016,		.depth = 0,  .num_planes = 2,
+		  .char_per_block = { 2, 4, 0 }, .block_w = { 1, 1, 0 }, .block_h = { 1, 1, 0 },
+		  .hsub = 2, .vsub = 2, .is_yuv = true},
+		{ .format = DRM_FORMAT_P210,		.depth = 0,
+		  .num_planes = 2, .char_per_block = { 2, 4, 0 },
+		  .block_w = { 1, 1, 0 }, .block_h = { 1, 1, 0 }, .hsub = 2,
+		  .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_VUY101010,	.depth = 0,
+		  .num_planes = 1, .cpp = { 0, 0, 0 }, .hsub = 1, .vsub = 1,
+		  .is_yuv = true },
+		{ .format = DRM_FORMAT_YUV420_8BIT,     .depth = 0,
+		  .num_planes = 1, .cpp = { 0, 0, 0 }, .hsub = 2, .vsub = 2,
+		  .is_yuv = true },
+		{ .format = DRM_FORMAT_YUV420_10BIT,    .depth = 0,
+		  .num_planes = 1, .cpp = { 0, 0, 0 }, .hsub = 2, .vsub = 2,
+		  .is_yuv = true },
+		{ .format = DRM_FORMAT_NV15,		.depth = 0,
+		  .num_planes = 2, .char_per_block = { 5, 5, 0 },
+		  .block_w = { 4, 2, 0 }, .block_h = { 1, 1, 0 }, .hsub = 2,
+		  .vsub = 2, .is_yuv = true },
+		{ .format = DRM_FORMAT_NV20,		.depth = 0,
+		  .num_planes = 2, .char_per_block = { 5, 5, 0 },
+		  .block_w = { 4, 2, 0 }, .block_h = { 1, 1, 0 }, .hsub = 2,
+		  .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_NV30,		.depth = 0,
+		  .num_planes = 2, .char_per_block = { 5, 5, 0 },
+		  .block_w = { 4, 2, 0 }, .block_h = { 1, 1, 0 }, .hsub = 1,
+		  .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_Q410,		.depth = 0,
+		  .num_planes = 3, .char_per_block = { 2, 2, 2 },
+		  .block_w = { 1, 1, 1 }, .block_h = { 1, 1, 1 }, .hsub = 1,
+		  .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_Q401,		.depth = 0,
+		  .num_planes = 3, .char_per_block = { 2, 2, 2 },
+		  .block_w = { 1, 1, 1 }, .block_h = { 1, 1, 1 }, .hsub = 1,
+		  .vsub = 1, .is_yuv = true },
+		{ .format = DRM_FORMAT_P030,            .depth = 0,  .num_planes = 2,
+		  .char_per_block = { 4, 8, 0 }, .block_w = { 3, 3, 0 }, .block_h = { 1, 1, 0 },
+		  .hsub = 2, .vsub = 2, .is_yuv = true},
+		{ .format = DRM_FORMAT_S010,            .depth = 0,  .num_planes = 3,
+		  .char_per_block = { 2, 2, 2 }, .block_w = { 1, 1, 1 }, .block_h = { 1, 1, 1 },
+		  .hsub = 2, .vsub = 2, .is_yuv = true},
+		{ .format = DRM_FORMAT_S210,            .depth = 0,  .num_planes = 3,
+		  .char_per_block = { 2, 2, 2 }, .block_w = { 1, 1, 1 }, .block_h = { 1, 1, 1 },
+		  .hsub = 2, .vsub = 1, .is_yuv = true},
+		{ .format = DRM_FORMAT_S410,            .depth = 0,  .num_planes = 3,
+		  .char_per_block = { 2, 2, 2 }, .block_w = { 1, 1, 1 }, .block_h = { 1, 1, 1 },
+		  .hsub = 1, .vsub = 1, .is_yuv = true},
+		{ .format = DRM_FORMAT_S012,            .depth = 0,  .num_planes = 3,
+		  .char_per_block = { 2, 2, 2 }, .block_w = { 1, 1, 1 }, .block_h = { 1, 1, 1 },
+		  .hsub = 2, .vsub = 2, .is_yuv = true},
+		{ .format = DRM_FORMAT_S212,            .depth = 0,  .num_planes = 3,
+		  .char_per_block = { 2, 2, 2 }, .block_w = { 1, 1, 1 }, .block_h = { 1, 1, 1 },
+		  .hsub = 2, .vsub = 1, .is_yuv = true},
+		{ .format = DRM_FORMAT_S412,            .depth = 0,  .num_planes = 3,
+		  .char_per_block = { 2, 2, 2 }, .block_w = { 1, 1, 1 }, .block_h = { 1, 1, 1 },
+		  .hsub = 1, .vsub = 1, .is_yuv = true},
+		{ .format = DRM_FORMAT_S016,            .depth = 0,  .num_planes = 3,
+		  .char_per_block = { 2, 2, 2 }, .block_w = { 1, 1, 1 }, .block_h = { 1, 1, 1 },
+		  .hsub = 2, .vsub = 2, .is_yuv = true},
+		{ .format = DRM_FORMAT_S216,            .depth = 0,  .num_planes = 3,
+		  .char_per_block = { 2, 2, 2 }, .block_w = { 1, 1, 1 }, .block_h = { 1, 1, 1 },
+		  .hsub = 2, .vsub = 1, .is_yuv = true},
+		{ .format = DRM_FORMAT_S416,            .depth = 0,  .num_planes = 3,
+		  .char_per_block = { 2, 2, 2 }, .block_w = { 1, 1, 1 }, .block_h = { 1, 1, 1 },
+		  .hsub = 1, .vsub = 1, .is_yuv = true},
+	};
+
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(formats); ++i) {
+		if (formats[i].format == format)
+			return &formats[i];
+	}
+
+	return NULL;
+}
+
+const struct drm_format_info *drm_format_info(u32 format)
+{
+	const struct drm_format_info *info;
+
+	info = __drm_format_info(format);
+	return info;
+}
+
+const struct drm_format_info *
+drm_get_format_info(u32 pixel_format, u64 modifier)
+{
+	const struct drm_format_info *info = NULL;
+
+	info=intel_fb_get_format_info(pixel_format,modifier);
+	
+
+	if (!info)
+		info = drm_format_info(pixel_format);
+
+	return info;
+}
+
+
+unsigned int
+intel_fb_align_height(const struct drm_framebuffer *fb,
+			  int color_plane, unsigned int height)
+{
+	unsigned int tile_height = intel_tile_height(fb, color_plane);
+
+	return ALIGN2(height, tile_height);
+}
+
+
+
+
+static void plaenp(void *that,void *param_1, bool isconfig)
+{
+	u32 planeID=getMember<uint32_t>(that, 0x7c);
+	
+	enum plane_id plane_id = static_cast<enum plane_id>(planeID);
+	enum pipe pipe=PIPE_A;
+	int fourcc, pixel_format;
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct drm_framebuffer *fb=&display->fb0;
+	u32 val, base, offset, stride_mult, tiling, alpha;
+	uint64_t modifier;
+	u32 color_ctl;
+	u8 rotation = 0;
+	u32 rc_mask;
+	int aligned_height;
+	int size;
+	u32 plane_ctl;
+	
+	val = intel_de_read(display, PLANE_CTL(pipe, plane_id));
+	
+	switch (val & PLANE_CTL_ROTATE_MASK) {
+	case PLANE_CTL_ROTATE_0:
+		rotation = DRM_MODE_ROTATE_0;
+		break;
+	case PLANE_CTL_ROTATE_90:
+		rotation = DRM_MODE_ROTATE_270;
+		break;
+	case PLANE_CTL_ROTATE_180:
+		rotation = DRM_MODE_ROTATE_180;
+		break;
+	case PLANE_CTL_ROTATE_270:
+		rotation = DRM_MODE_ROTATE_90;
+		break;
+	}
+	
+	//if (fb->format->format) goto skipp;
+	
+	pixel_format = val & PLANE_CTL_FORMAT_MASK_ICL;
+	
+	
+	color_ctl = intel_de_read(display, PLANE_COLOR_CTL(pipe, plane_id));
+	alpha = REG_FIELD_GET(PLANE_COLOR_ALPHA_MASK, color_ctl);
+	
+	fourcc = skl_format_to_fourcc(pixel_format,val & PLANE_CTL_ORDER_RGBX, alpha);
+	
+	tiling = val & PLANE_CTL_TILED_MASK;
+	
+	//tiling=PLANE_CTL_TILED_X;// force if need
+	
+	switch (tiling) {
+		case PLANE_CTL_TILED_LINEAR:
+			fb->modifier = DRM_FORMAT_MOD_LINEAR;
+			return; // ignore as non desktop mode
+			break;
+		case PLANE_CTL_TILED_X:
+			fb->modifier = I915_FORMAT_MOD_X_TILED;
+			if (isconfig) getMember<int>(param_1, kexticl ? 0x44 : 0x3c)=0;//tiling
+			if (!isconfig) getMember<u8>(frame0,  kexticl ? 0x8f58 : 0x4a18)=0;
+			break;
+		case PLANE_CTL_TILED_Y:
+			if (isconfig) getMember<int>(param_1, kexticl ? 0x44 : 0x3c)=1;//tiling
+			if (!isconfig) getMember<u8>(frame0, kexticl ? 0x8f58 : 0x4a18)=1;
+			if (val & PLANE_CTL_RENDER_DECOMPRESSION_ENABLE)
+				if (DISPLAY_VER(display) >= 14)
+					fb->modifier = I915_FORMAT_MOD_4_TILED_MTL_RC_CCS;
+				else if (DISPLAY_VER(display) >= 12)
+					fb->modifier = I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS;
+				else
+					fb->modifier = I915_FORMAT_MOD_Y_TILED_CCS;
+			else if (val & PLANE_CTL_MEDIA_DECOMPRESSION_ENABLE)
+				if (DISPLAY_VER(display) >= 14)
+					fb->modifier = I915_FORMAT_MOD_4_TILED_MTL_MC_CCS;
+				else
+					fb->modifier = I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS;
+			else
+				fb->modifier = I915_FORMAT_MOD_Y_TILED;
+			break;
+		case PLANE_CTL_TILED_YF:
+			if (isconfig) getMember<int>(param_1, kexticl ? 0x44 : 0x3c)=1;//tiling
+			if (!isconfig) getMember<u8>(frame0, kexticl ? 0x8f58 : 0x4a18)=1;
+			if (HAS_4TILE(display)) {
+				rc_mask = PLANE_CTL_RENDER_DECOMPRESSION_ENABLE |
+						  PLANE_CTL_CLEAR_COLOR_DISABLE;
+
+				if ((val & rc_mask) == rc_mask)
+					fb->modifier = I915_FORMAT_MOD_4_TILED_DG2_RC_CCS;
+				else if (val & PLANE_CTL_MEDIA_DECOMPRESSION_ENABLE)
+					fb->modifier = I915_FORMAT_MOD_4_TILED_DG2_MC_CCS;
+				else if (val & PLANE_CTL_RENDER_DECOMPRESSION_ENABLE)
+					fb->modifier = I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC;
+				else
+					fb->modifier = I915_FORMAT_MOD_4_TILED;
+			} else {
+				if (val & PLANE_CTL_RENDER_DECOMPRESSION_ENABLE)
+					fb->modifier = I915_FORMAT_MOD_Yf_TILED_CCS;
+				else
+					fb->modifier = I915_FORMAT_MOD_Yf_TILED;
+			}
+			break;
+			
+	}
+	
+	fb->format=drm_get_format_info(fourcc,fb->modifier);
+	
+	
+	
+	
+	
+	if (DISPLAY_VER(display) >= 11 && val & PLANE_CTL_FLIP_HORIZONTAL)
+		rotation |= DRM_MODE_REFLECT_X;
+	
+	base = intel_de_read(display, PLANE_SURF(pipe, plane_id)) & PLANE_SURF_ADDR_MASK;
+	offset = intel_de_read(display, PLANE_OFFSET(pipe, plane_id));
+	
+	
+	val = intel_de_read(display, PLANE_SIZE(pipe, plane_id));
+	fb->height = REG_FIELD_GET(PLANE_HEIGHT_MASK, val) + 1;
+	fb->width = REG_FIELD_GET(PLANE_WIDTH_MASK, val) + 1;
+	
+	val = intel_de_read(display, PLANE_STRIDE(pipe, plane_id));
+	stride_mult = skl_plane_stride_mult(fb, 0, DRM_MODE_ROTATE_0);
+
+	fb->pitches[0] = REG_FIELD_GET(PLANE_STRIDE__MASK, val) * stride_mult;
+
+	aligned_height = intel_fb_align_height(fb, 0, fb->height);
+
+
+	size = fb->pitches[0] * aligned_height;
+	
+skipp:
+	
+	plane_ctl=PLANE_CTL_ENABLE;
+	plane_ctl |= skl_plane_ctl_format(fb->format->format);
+	plane_ctl |= skl_plane_ctl_tiling(fb->modifier);
+	plane_ctl |= skl_plane_ctl_rotate(rotation & DRM_MODE_ROTATE_MASK);
+	
+	
+	if (DISPLAY_VER(display) >= 11)
+		plane_ctl |= icl_plane_ctl_flip(rotation &
+						DRM_MODE_REFLECT_MASK);
+	
+	//if (key->flags & I915_SET_COLORKEY_DESTINATION)
+		//plane_ctl |= PLANE_CTL_KEY_ENABLE_DESTINATION;
+	//else if (key->flags & I915_SET_COLORKEY_SOURCE)
+		//plane_ctl |= PLANE_CTL_KEY_ENABLE_SOURCE;
+	
+	//if (intel_display_wa(display, INTEL_DISPLAY_WA_22012358565))
+		//plane_ctl |= adlp_plane_ctl_arb_slots(plane_state);
+	
+	//plane_ctl |= PLANE_CTL_ASYNC_FLIP;
+	
+	u32 tmp = intel_de_read(display, SKL_BOTTOM_COLOR(pipe));
+
+	if (tmp & SKL_BOTTOM_COLOR_GAMMA_ENABLE)
+		plane_ctl |= PLANE_CTL_PIPE_GAMMA_ENABLE;
+	
+	if (tmp & SKL_BOTTOM_COLOR_CSC_ENABLE)
+		plane_ctl |= PLANE_CTL_PIPE_CSC_ENABLE;
+	
+
+
+	u32 gamma_mode = intel_de_read(display, GAMMA_MODE(pipe));
+	u32 csc_mode = intel_de_read(display, PIPE_CSC_MODE(pipe));
+	
+	//getMember<uint32_t>(frame0, 0x45a8)=gamma_mode;//fColorMode
+	
+	u32 plane_color_ctl = PLANE_COLOR_PLANE_GAMMA_DISABLE;
+	
+	if (tmp & SKL_BOTTOM_COLOR_GAMMA_ENABLE)
+		plane_color_ctl |= PLANE_COLOR_PIPE_GAMMA_ENABLE;
+
+	if (tmp & SKL_BOTTOM_COLOR_CSC_ENABLE)
+		plane_color_ctl |= PLANE_COLOR_PIPE_CSC_ENABLE;
+	
+	//if (plane_state->force_black)
+		//plane_color_ctl |= PLANE_COLOR_PLANE_CSC_ENABLE;
+
+	//if (plane_state->hw.degamma_lut)
+		//plane_color_ctl |= PLANE_COLOR_PRE_CSC_GAMMA_ENABLE;
+
+	//if (plane_state->hw.ctm)
+		//plane_color_ctl |= PLANE_COLOR_PLANE_CSC_ENABLE;
+
+	//if (plane_state->hw.gamma_lut) {
+		//plane_color_ctl &= ~PLANE_COLOR_PLANE_GAMMA_DISABLE;
+		//if (drm_color_lut32_size(plane_state->hw.gamma_lut) != 32)
+			//plane_color_ctl |= PLANE_COLOR_POST_CSC_GAMMA_MULTSEG_ENABLE;
+	//}
+
+	
+	u32 applestride = getMember<uint32_t>(frame0, kexticl ? 0x8874 : 0x4334);
+	u32 stride = applestride / skl_plane_stride_mult(fb, 0, rotation);
+	
+	NBlue::callback->iGPU->setProperty("PLANE_CTL", plane_ctl,32);
+	NBlue::callback->iGPU->setProperty("PLANE_STRIDE", stride,32);
+	
+	getMember<uint32_t>(that, 0x100)=plane_ctl;//PLANE_CTL
+	//getMember<uint32_t>(that, 0x104)=plane_color_ctl;//PLANE_COLOR_CTL
+	//getMember<uint32_t>(that, 0x120)=base;//PLANE_SURF  icl bar0 tgl bar 2 ???????
+	//getMember<uint32_t>(that, 0x110)=offset;//PLANE_OFFSET
+	//getMember<uint32_t>(that, 0x11c)=size;//PLANE_SIZE
+	getMember<uint32_t>(that, 0x118)=stride;//PLANE_STRIDE
+
+	//getMember<uint32_t>(that, 0x100)=0x84000400;//PLANE_CTL linux 0x84000400
+	//getMember<uint32_t>(that, 0x118)=0xd;//PLANE_STRIDE linux 0x0000000d
+	
+}
+
+void  Gen11::configurePlane(void *that,void *param_1)
+{
+	FunctionCast(configurePlane, callback->oconfigurePlane)(that, param_1);
+	plaenp(that,param_1,true);
+	
+}
+
+
+void Gen11::setupPlane(void *that,void *param_1,int param_2)
+{//icl
+	FunctionCast(setupPlane, callback->osetupPlane)(that ,param_1,param_2);
+	plaenp(that,param_1,false);
+}
+
+void Gen11::setupPlane2(void *that,void *param_1)
+{ //tgl
+	FunctionCast(setupPlane2, callback->osetupPlane2)(that ,param_1);
+	plaenp(that,param_1,false);
+}
+
+
+int Gen11::PerformFlipTransaction(void *that,void *param_1,unsigned long long param_2, void *param_3)
+{
+	/*
+	u32 fWSAAState=getMember<uint32_t>(that, kexticl ? 0xe45 : 0x420c);//fWSAAState
+	u8 fOnline=getMember<uint8_t>(that, kexticl ? 0xe45 : 0x1e0);//fOnline
+	int fTransactionState=getMember<int>(that, kexticl ? 0xe45 : 0x4004);
+	u32 fWSAAState2=getMember<uint32_t>(that, kexticl ? 0xe45 : 0x4210);
+	
+	void *FlipTransactionArgs =getMember<void*>(param_3, 0x8);
+	void* dpath=getMember<void*>(that, kexticl ? 0xe45 : 0x4a08);
+	void *pla=getMember<void*>(dpath, kexticl ? 0xe45 : 0x32c8);
+	*/
+	auto ret= FunctionCast(PerformFlipTransaction, callback->oPerformFlipTransaction)(that, param_1,param_2,param_3);
+	
+	
+	return ret;
+}
+
+void Gen11::enablePlane(void *that,bool param_1)
+{
+	FunctionCast(enablePlane, callback->oenablePlane)(that, param_1);
+}
+
+
+
+void  Gen11::disablePowerWellAux(void *that,uint param_1)
+{
+	FunctionCast(disablePowerWellAux, callback->odisablePowerWellAux)(that, param_1);
+}
+
+void  Gen11::enablePowerWellAux(void *that,uint param_1)
+{
+	return FunctionCast(enablePowerWellAux, callback->oenablePowerWellAux)(that, param_1);
+}
+
+void  Gen11::disablePowerWellDDI(void *that,uint param_1)
+{
+	return FunctionCast(disablePowerWellDDI, callback->odisablePowerWellDDI)(that, param_1);
+}
+
+void  Gen11::disablePowerWellPG(void *that,uint param_1)
+{
+	return FunctionCast(disablePowerWellPG, callback->odisablePowerWellPG)(that, param_1);
+}
+
+typedef struct EDIDStruct {
+	char Header[8];
+	char Serial[10];
+	char Version[2];
+	char BasicParams[5];
+	char Chroma[10];
+	char Established[3];
+	char Standard[16];
+	char Descriptor1[18];
+	char Descriptor2[18];
+	char Descriptor3[18];
+	char Descriptor4[18];
+	char Extensions;
+	char Checksum;
+} EDIDStruct_t;
+
+
+int Gen11::displayPortReadEDID(void *that,uint param_1,uint param_2,unsigned char *param_3,uint param_4)
+{
+	auto ret= FunctionCast(displayPortReadEDID, callback->odisplayPortReadEDID)(that, param_1, param_2, param_3, param_4);
+
+	PortConfig *pc=(PortConfig *)getMember<void*>(that, kexticl ? 0x440 : 0x548);
+	if (pc->index != 0) return ret;
+
+	struct EDIDStruct *EDIDStructure=(struct EDIDStruct *)param_3;
+	
+	if (NBlue::callback->edidok)
+	memcpy(param_3, NBlue::callback->edid, 0x80);
+	
+	/*unsigned char sum = 0;
+	int i = 0;
+
+	for (i = 0; i < 127; i++)
+	   sum += param_3[i];
+
+	sum=((unsigned char)((((unsigned short)0x100) - sum) & 0xFF));
+	
+	EDIDStructure->Checksum=sum;*/
+	
+	return ret;
+}
+
+
+void Gen11::updateSliceConfig(void *that, uint32_t val)
+{
+	IGSliceConfig requestedConfig;
+	requestedConfig.raw = val;
+	if (requestedConfig.getSubSliceCount()>4) requestedConfig.setSubSliceCount(4);
+	
+	if (requestedConfig.getEUCount()>8) requestedConfig.setEUCount(8);
+	if (requestedConfig.getSliceCount()!=1) requestedConfig.setSliceCount(1);
+	
+	FunctionCast(updateSliceConfig, callback->oupdateSliceConfig)( that,requestedConfig.raw);
+}
+
+void Gen11::setAsyncSliceCount(void *that, uint32_t val)
+{
+	IGSliceConfig requestedConfig;
+	requestedConfig.raw = val;
+	if (requestedConfig.getSubSliceCount()>4) requestedConfig.setSubSliceCount(4);
+	
+	if (requestedConfig.getEUCount()>8) requestedConfig.setEUCount(8);
+	if (requestedConfig.getSliceCount()!=1) requestedConfig.setSliceCount(1);
+	
+	FunctionCast(setAsyncSliceCount, callback->osetAsyncSliceCount)( that,requestedConfig.raw);
+}
+
+unsigned long  Gen11::setSliceConfig(void *that, uint32_t val)
+{
+	IGSliceConfig requestedConfig;
+	requestedConfig.raw = val;
+	if (requestedConfig.getSubSliceCount()>4) requestedConfig.setSubSliceCount(4);
+	
+	if (requestedConfig.getEUCount()>8) requestedConfig.setEUCount(8);
+	if (requestedConfig.getSliceCount()!=1) requestedConfig.setSliceCount(1);
+	
+	getMember<uint32_t>(that, kexticl ? 0x12cc : 0xdd8)=requestedConfig.getSliceCount();//REQSlices
+	getMember<uint32_t>(that, kexticl ? 0xdd8 : 0xde0)=requestedConfig.getEUCount();//MAXeus
+	getMember<uint32_t>(that, kexticl ? 0xddc : 0xde4)=requestedConfig.getEUCount();//MINeus
+	getMember<uint32_t>(that, kexticl ? 0x12d0 : 0xddc)=requestedConfig.getSubSliceCount();//REQNumSubSlices
+
+	
+	return FunctionCast(setSliceConfig, callback->osetSliceConfig)( that,requestedConfig.raw);
+}
+
+void Gen11::setAsyncSliceCount2(void *that, uint32_t val)
+{
+	IGSliceConfig requestedConfig;
+	requestedConfig.raw = val;
+	if (requestedConfig.getSubSliceCount()>4) requestedConfig.setSubSliceCount(4);
+	
+	if (requestedConfig.getEUCount()>8) requestedConfig.setEUCount(8);
+	if (requestedConfig.getSliceCount()!=1) requestedConfig.setSliceCount(1);
+	
+	FunctionCast(setAsyncSliceCount2, callback->osetAsyncSliceCount2)( that,requestedConfig.raw);
+}
+
+
+
+
+bool Gen11::fconfigureDevice(void *param_1)
+{
+	auto ret= FunctionCast(fconfigureDevice, callback->ofconfigureDevice)( param_1);
+	return ret;
+}
+
+uint64_t Gen11::finitDeviceMemory(void *that)
+{
+	auto ret= FunctionCast(finitDeviceMemory, callback->ofinitDeviceMemory)( that);
+
+	return ret;
+}
+
+static void _wa_add(struct i915_wa_list *wal, const struct i915_wa *wa)
+{
+	unsigned int addr = i915_mmio_reg_offset(wa->reg);
+	struct drm_i915_private *i915 = wal->gt->i915;
+	unsigned int start = 0, end = wal->count;
+	const unsigned int grow = WA_LIST_CHUNK;
+	struct i915_wa *wa_;
+
+	if (IS_ALIGNED(wal->count, grow)) { /* Either uninitialized or full. */
+		struct i915_wa *list;
+		size_t new_size = ALIGN2(wal->count + 1, grow) * sizeof(struct i915_wa);
+		size_t old_size = wal->count * sizeof(struct i915_wa);
+
+		list = (struct i915_wa *)IOMalloc(new_size);
+		if (!list) {
+			return;
+		}
+
+		if (wal->list) {
+			memcpy(list, wal->list, old_size);
+			IOFree(wal->list, old_size);
+		}
+
+		wal->list = list;
+	}
+
+	while (start < end) {
+		unsigned int mid = start + (end - start) / 2;
+
+		if (i915_mmio_reg_offset(wal->list[mid].reg) < addr) {
+			start = mid + 1;
+		} else if (i915_mmio_reg_offset(wal->list[mid].reg) > addr) {
+			end = mid;
+		} else {
+			wa_ = &wal->list[mid];
+
+			if ((wa->clr | wa_->clr) && !(wa->clr & ~wa_->clr)) {
+				wa_->set &= ~wa->clr;
+			}
+
+			wal->wa_count++;
+			wa_->set |= wa->set;
+			wa_->clr |= wa->clr;
+			wa_->read |= wa->read;
+			return;
+		}
+	}
+
+	wal->wa_count++;
+	wa_ = &wal->list[wal->count++];
+	*wa_ = *wa;
+
+	while (wa_-- > wal->list) {
+		if (i915_mmio_reg_offset(wa_[1].reg) >
+			i915_mmio_reg_offset(wa_[0].reg))
+			break;
+
+		swap(wa_[1], wa_[0]);
+	}
+}
+
+static void wa_add(struct i915_wa_list *wal, u32 reg,
+		   u32 clear, u32 set, u32 read_mask, bool masked_reg)
+{
+	struct i915_wa wa = {
+		.reg  = reg,
+		.clr  = clear,
+		.set  = set,
+		.read = read_mask,
+		.masked_reg = masked_reg,
+	};
+
+	_wa_add(wal, &wa);
+}
+
+static void wa_mcr_add(struct i915_wa_list *wal, u32 reg,
+			   u32 clear, u32 set, u32 read_mask, bool masked_reg)
+{
+	struct i915_wa wa = {
+		.mcr_reg = reg,
+		.clr  = clear,
+		.set  = set,
+		.read = read_mask,
+		.masked_reg = masked_reg,
+		.is_mcr = 1,
+	};
+
+	_wa_add(wal, &wa);
+}
+
+static void
+wa_write_clr_set(struct i915_wa_list *wal, u32 reg, u32 clear, u32 set)
+{
+	wa_add(wal, reg, clear, set, clear | set, false);
+}
+
+static void
+wa_mcr_write_clr_set(struct i915_wa_list *wal, u32 reg, u32 clear, u32 set)
+{
+	wa_mcr_add(wal, reg, clear, set, clear | set, false);
+}
+
+static void
+wa_write(struct i915_wa_list *wal, u32 reg, u32 set)
+{
+	wa_write_clr_set(wal, reg, ~0, set);
+}
+
+static void
+wa_write_or(struct i915_wa_list *wal, u32 reg, u32 set)
+{
+	wa_write_clr_set(wal, reg, set, set);
+}
+
+static void
+wa_mcr_write_or(struct i915_wa_list *wal, u32 reg, u32 set)
+{
+	wa_mcr_write_clr_set(wal, reg, set, set);
+}
+
+static void
+wa_write_clr(struct i915_wa_list *wal, u32 reg, u32 clr)
+{
+	wa_write_clr_set(wal, reg, clr, 0);
+}
+
+static void
+wa_mcr_write_clr(struct i915_wa_list *wal, u32 reg, u32 clr)
+{
+	wa_mcr_write_clr_set(wal, reg, clr, 0);
+}
+
+
+static void
+wa_masked_en(struct i915_wa_list *wal, u32 reg, u32 val)
+{
+	wa_add(wal, reg, 0, REG_MASKED_FIELD_ENABLE(val), val, true);
+}
+
+static void
+wa_mcr_masked_en(struct i915_wa_list *wal, u32 reg, u32 val)
+{
+	wa_mcr_add(wal, reg, 0, REG_MASKED_FIELD_ENABLE(val), val, true);
+}
+
+static void
+wa_masked_dis(struct i915_wa_list *wal, u32 reg, u32 val)
+{
+	wa_add(wal, reg, 0, REG_MASKED_FIELD_DISABLE(val), val, true);
+}
+
+static void
+wa_mcr_masked_dis(struct i915_wa_list *wal, u32 reg, u32 val)
+{
+	wa_mcr_add(wal, reg, 0, REG_MASKED_FIELD_DISABLE(val), val, true);
+}
+
+static void
+wa_masked_field_set(struct i915_wa_list *wal, u32 reg,
+			u32 mask, u32 val)
+{
+	wa_add(wal, reg, 0, REG_MASKED_FIELD(mask, val), mask, true);
+}
+
+static void
+wa_mcr_masked_field_set(struct i915_wa_list *wal, u32 reg,
+			u32 mask, u32 val)
+{
+	wa_mcr_add(wal, reg, 0, REG_MASKED_FIELD(mask, val), mask, true);
+}
+static void wa_list_apply(const struct i915_wa_list *wal)
+{
+	struct intel_gt *gt = wal->gt;
+	struct drm_i915_private *i915=gt->i915;
+	struct intel_display *display = i915->display;
+	
+	unsigned long flags;
+	struct i915_wa *wa;
+	unsigned int i;
+
+	if (!wal->count)
+		return;
+/*
+	fw = wal_get_fw_for_rmw(uncore, wal);
+
+	intel_gt_mcr_lock(gt, &flags);
+	spin_lock(&uncore->lock);
+	intel_uncore_forcewake_get__locked(uncore, fw);
+*/
+	
+	for (i = 0, wa = wal->list; i < wal->count; i++, wa++) {
+		u32 val, old = 0;
+
+		/* open-coded rmw due to steering */
+		if (wa->clr)
+			old = wa->is_mcr ?
+			intel_de_read(display, wa->mcr_reg) :
+			intel_de_read(display, wa->reg);
+		val = (old & ~wa->clr) | wa->set;
+		if (val != old || !wa->clr) {
+			if (wa->is_mcr)
+				intel_de_write(display, wa->mcr_reg, val);
+			else
+				intel_de_write(display, wa->reg, val);
+		}
+
+		/*if (IS_ENABLED(CONFIG_DRM_I915_DEBUG_GEM)) {
+			u32 val = wa->is_mcr ?
+				intel_gt_mcr_read_any_fw(gt, wa->mcr_reg) :
+			intel_de_read(uncore, wa->reg);
+
+			wa_verify(gt, wa, val, wal->name, "application");
+		}*/
+	}
+
+	/*intel_uncore_forcewake_put__locked(uncore, fw);
+	spin_unlock(&uncore->lock);
+	intel_gt_mcr_unlock(gt, flags);*/
+}
+
+
+static void
+wa_14011060649(struct intel_gt *gt, struct i915_wa_list *wal)
+{
+	struct intel_engine_cs *engine;
+	int id2;
+
+	for_each_engine(engine, gt, id2) {
+		if (engine->classb != VIDEO_DECODE_CLASS ||
+			(engine->instance % 2))
+			continue;
+
+		wa_write_or(wal, VDBOX_CGCTL3F10(engine->mmio_base),
+				IECPUNIT_CLKGATE_DIS);
+	}
+}
+
+
+static void __set_mcr_steering(struct i915_wa_list *wal,
+				   u32 steering_reg,
+				   unsigned int slice, unsigned int subslice)
+{
+	u32 mcr, mcr_mask;
+
+	mcr = GEN11_MCR_SLICE(slice) | GEN11_MCR_SUBSLICE(subslice);
+	mcr_mask = GEN11_MCR_SLICE_MASK | GEN11_MCR_SUBSLICE_MASK;
+
+	wa_write_clr_set(wal, steering_reg, mcr_mask, mcr);
+}
+
+unsigned int
+intel_sseu_get_hsw_subslices(const struct sseu_dev_info *sseu, u8 slice)
+{
+	//WARN_ON(sseu->has_xehp_dss);
+	if ((slice >= sseu->max_slices))
+		return 0;
+
+	return sseu->subslice_mask.hsw[slice];
+}
+
+static void __add_mcr_wa(struct intel_gt *gt, struct i915_wa_list *wal,
+			 unsigned int slice, unsigned int subslice)
+{
+	__set_mcr_steering(wal, GEN8_MCR_SELECTOR, slice, subslice);
+
+	gt->default_steering.groupid = slice;
+	gt->default_steering.instanceid = subslice;
+
+	//debug_dump_steering(gt);
+}
+
+static void
+icl_wa_init_mcr(struct intel_gt *gt, struct i915_wa_list *wal)
+{
+	const struct sseu_dev_info *sseu = &gt->info.sseu;
+	unsigned int subslice;
+
+	//GEM_BUG_ON(GRAPHICS_VER(gt->i915) < 11);
+	//GEM_BUG_ON(hweight8(sseu->slice_mask) > 1);
+
+	subslice = __ffs(intel_sseu_get_hsw_subslices(sseu, 0));
+
+	if (gt->info.l3bank_mask & BIT(subslice))
+		gt->steering_table[L3BANK] = NULL;
+
+	__add_mcr_wa(gt, wal, 0, subslice);
+}
+
+static void
+gen12_gt_workarounds_init(struct intel_gt *gt, struct i915_wa_list *wal)
+{
+	icl_wa_init_mcr(gt, wal);
+
+	wa_14011060649(gt, wal);
+
+	wa_mcr_write_or(wal, GEN10_DFR_RATIO_EN_AND_CHICKEN, DFR_DISABLE);
+	
+	wa_add(wal, GEN7_MISCCPCTL, GEN12_DOP_CLOCK_GATE_RENDER_ENABLE,
+		   0, 0, false);
+	
+}
+
+
+static u32 guc_ctl_debug_flags(struct intel_guc *guc)
+{
+	u32 flags = 0;
+	
+	//if (!GUC_LOG_LEVEL_IS_VERBOSE(level))
+		flags |= GUC_LOG_DISABLED;
+	/*else
+		flags |= GUC_LOG_LEVEL_TO_VERBOSITY(level) <<
+			 GUC_LOG_VERBOSITY_SHIFT;
+*/
+	return flags;
+}
+
+
+static inline bool intel_guc_submission_is_supported(struct intel_guc *guc)
+{
+	return guc->submission_supported;
+}
+
+static inline bool intel_guc_submission_is_wanted(struct intel_guc *guc)
+{
+	return guc->submission_selected;
+}
+
+static inline bool intel_guc_submission_is_used(struct intel_guc *guc)
+{
+	return intel_guc_submission_is_wanted(guc);
+}
+
+static u32 guc_ctl_feature_flags(struct intel_guc *guc)
+{
+	u32 flags = 0;
+	
+	/*
+	 * Enable PXP GuC autoteardown flow.
+	 * NB: MTL does things differently.
+	 */
+	//if (HAS_PXP(gt->i915) && !IS_METEORLAKE(gt->i915))
+	//	flags |= GUC_CTL_ENABLE_GUC_PXP_CTL;
+
+	if (!intel_guc_submission_is_used(guc))
+		flags |= GUC_CTL_DISABLE_SCHEDULER;
+
+	//if (intel_guc_slpc_is_used(guc))
+	//	flags |= GUC_CTL_ENABLE_SLPC;
+
+	return flags;
+}
+
+static void _guc_log_init_sizes(struct intel_guc_log *log)
+{
+	static const struct guc_log_section sections[GUC_LOG_SECTIONS_LIMIT] = {
+		{
+			GUC_LOG_CRASH_MASK >> GUC_LOG_CRASH_SHIFT,
+			GUC_LOG_LOG_ALLOC_UNITS,
+			GUC_LOG_DEFAULT_CRASH_BUFFER_SIZE,
+			"crash dump"
+		},
+		{
+			GUC_LOG_DEBUG_MASK >> GUC_LOG_DEBUG_SHIFT,
+			GUC_LOG_LOG_ALLOC_UNITS,
+			GUC_LOG_DEFAULT_DEBUG_BUFFER_SIZE,
+			"debug",
+		},
+		{
+			GUC_LOG_CAPTURE_MASK >> GUC_LOG_CAPTURE_SHIFT,
+			GUC_LOG_CAPTURE_ALLOC_UNITS,
+			GUC_LOG_DEFAULT_CAPTURE_BUFFER_SIZE,
+			"capture",
+		}
+	};
+	int i;
+
+	for (i = 0; i < GUC_LOG_SECTIONS_LIMIT; i++)
+		log->sizes[i].bytes = sections[i].default_val;
+
+	if (log->sizes[GUC_LOG_SECTIONS_DEBUG].bytes >= SZ_1M &&
+		GUC_LOG_DEFAULT_CRASH_BUFFER_SIZE < SZ_1M)
+		log->sizes[GUC_LOG_SECTIONS_CRASH].bytes = SZ_1M;
+
+	for (i = 0; i < GUC_LOG_SECTIONS_LIMIT; i++) {
+		if ((log->sizes[i].bytes % SZ_1M) == 0) {
+			log->sizes[i].units = SZ_1M;
+			log->sizes[i].flag = sections[i].flag;
+		} else {
+			log->sizes[i].units = SZ_4K;
+			log->sizes[i].flag = 0;
+		}
+
+		if (!IS_ALIGNED(log->sizes[i].bytes, log->sizes[i].units))
+		log->sizes[i].count = log->sizes[i].bytes / log->sizes[i].units;
+
+		if (!log->sizes[i].count) {
+		} else {
+			log->sizes[i].count--;
+		}
+
+		if (log->sizes[i].count > sections[i].max) {
+			log->sizes[i].count = sections[i].max;
+		}
+	}
+
+	if (log->sizes[GUC_LOG_SECTIONS_CRASH].units != log->sizes[GUC_LOG_SECTIONS_DEBUG].units) {
+		log->sizes[GUC_LOG_SECTIONS_CRASH].units = log->sizes[GUC_LOG_SECTIONS_DEBUG].units;
+		log->sizes[GUC_LOG_SECTIONS_CRASH].count = 0;
+	}
+
+	log->sizes_initialised = true;
+}
+
+static inline u64 __i915_vma_offset(struct i915_vma *vma)
+{
+	//return (u64) vma;//Gen11::callback->fgetGPUVirtualAddress(vma);
+	return vma->node.start;// + vma->guard;
+}
+static inline u64 i915_vma_offset(struct i915_vma *vma)
+{
+	//GEM_BUG_ON(!drm_mm_node_allocated(&vma->node));
+	return __i915_vma_offset(vma);
+}
+
+static inline u32 i915_ggtt_offset(struct i915_vma *vma)
+{
+	/*GEM_BUG_ON(!i915_vma_is_ggtt(vma));
+	GEM_BUG_ON(!drm_mm_node_allocated(&vma->node));
+	GEM_BUG_ON(upper_32_bits(i915_vma_offset(vma)));
+	GEM_BUG_ON(upper_32_bits(i915_vma_offset(vma) +
+				 i915_vma_size(vma) - 1));*/
+	return lower_32_bits(i915_vma_offset(vma));
+}
+
+static inline u32 intel_guc_ggtt_offset(struct intel_guc *guc,
+										struct i915_vma *vma)
+{
+	u32 offset = i915_ggtt_offset(vma);
+
+	//GEM_BUG_ON(offset < i915_ggtt_pin_bias(vma));
+	//GEM_BUG_ON(range_overflows_t(u64, offset, vma->size, GUC_GGTT_TOP));
+
+	return offset;
+}
+
+static u32 guc_ctl_log_params_flags(struct intel_guc *guc)
+{
+	u32 offset, flags=0;
+	struct intel_guc_log *log = &guc->log;
+	//GEM_BUG_ON(!log->sizes_initialised);
+
+	offset = intel_guc_ggtt_offset(guc, log->vma) >> PAGE_SHIFT;
+
+	if (guc->fw.file_selected.ver.major >= 70)
+	{
+		flags = GUC_LOG_VALID |
+		GUC_LOG_NOTIFY_ON_HALF_FULL |
+		log->sizes[GUC_LOG_SECTIONS_DEBUG].flag |
+		log->sizes[GUC_LOG_SECTIONS_CAPTURE].flag |
+		(log->sizes[GUC_LOG_SECTIONS_CRASH].count << GUC_LOG_CRASH_SHIFT) |
+		(log->sizes[GUC_LOG_SECTIONS_DEBUG].count << GUC_LOG_DEBUG_SHIFT) |
+		(log->sizes[GUC_LOG_SECTIONS_CAPTURE].count << GUC_LOG_CAPTURE_SHIFT) |
+		(offset << GUC_LOG_BUF_ADDR_SHIFT);
+	}
+	else
+	{
+	
+	#if (((CRASH_BUFFER_SIZE) % SZ_1M) == 0)
+	#define LOG_UNIT SZ_1M
+	#define LOG_FLAG GUC_LOG_LOG_ALLOC_UNITS
+	#else
+	#define LOG_UNIT SZ_4K
+	#define LOG_FLAG 0
+	#endif
+
+	#if (((CAPTURE_BUFFER_SIZE) % SZ_1M) == 0)
+	#define CAPTURE_UNIT SZ_1M
+	#define CAPTURE_FLAG GUC_LOG_CAPTURE_ALLOC_UNITS
+	#else
+	#define CAPTURE_UNIT SZ_4K
+	#define CAPTURE_FLAG 0
+	#endif
+		
+		flags = GUC_LOG_VALID |
+		GUC_LOG_NOTIFY_ON_HALF_FULL |
+		CAPTURE_FLAG |
+		LOG_FLAG |
+		((CRASH_BUFFER_SIZE / LOG_UNIT - 1) << GUC_LOG_CRASH_SHIFT) |
+		((DEBUG_BUFFER_SIZE / LOG_UNIT - 1) << GUC_LOG_DEBUG_SHIFT) |
+		((CAPTURE_BUFFER_SIZE / CAPTURE_UNIT - 1) << GUC_LOG_CAPTURE_SHIFT) |
+		(offset << GUC_LOG_BUF_ADDR_SHIFT);
+	}
+	return flags;
+}
+
+static u32 guc_ctl_ads_flags(struct intel_guc *guc)
+{
+	u32 ads = intel_guc_ggtt_offset(guc, guc->ads_vma) >> PAGE_SHIFT;
+	u32 flags = ads << GUC_ADS_ADDR_SHIFT;
+
+	return flags;
+
+}
+
+
+static u32 guc_ctl_wa_flags(struct intel_guc *guc)
+{
+	u32 flags = 0;
+	struct intel_gt *gt = guc->gt;
+	
+	/* Wa_22012773006:gen11,gen12 < XeHP */
+	if (GRAPHICS_VER(gt->i915) >= 11 &&
+		GRAPHICS_VER_FULL(gt->i915) < IP_VER(12, 55))
+		flags |= GUC_WA_POLLCS;
+
+	/* Wa_14014475959 */
+	/*if (IS_GFX_GT_IP_STEP(gt, IP_VER(12, 70), STEP_A0, STEP_B0) ||
+		IS_DG2(gt->i915))
+		flags |= GUC_WA_HOLD_CCS_SWITCHOUT;*/
+
+	/* Wa_16019325821 */
+	/* Wa_14019159160 */
+	//if (IS_GFX_GT_IP_RANGE(gt, IP_VER(12, 70), IP_VER(12, 74)))
+	//	flags |= GUC_WA_RCS_CCS_SWITCHOUT;
+
+	/*
+	 * Wa_14012197797
+	 * Wa_22011391025
+	 *
+	 * The same WA bit is used for both and 22011391025 is applicable to
+	 * all DG2.
+	 *
+	 * Platforms post DG2 prevent this issue in hardware by stalling
+	 * submissions. With this flag GuC will schedule as to avoid such
+	 * stalls.
+	 */
+	/*if (IS_DG2(gt->i915) ||
+		(CCS_MASK(gt) && GRAPHICS_VER_FULL(gt->i915) >= IP_VER(12, 70)))
+		flags |= GUC_WA_DUAL_QUEUE;
+*/
+	/* Wa_22011802037: graphics version 11/12 */
+	//if (intel_engine_reset_needs_wa_22011802037(gt))
+	if (guc->fw.file_selected.ver.major >= 70)
+		flags |= GUC_WA_PRE_PARSER;
+
+	/*
+	 * Wa_22012727170
+	 * Wa_22012727685
+	 */
+//	if (IS_DG2_G11(gt->i915))
+	//	flags |= GUC_WA_CONTEXT_ISOLATION;
+
+	/*
+	 * Wa_14018913170: Applicable to all platforms supported by i915 so
+	 * don't bother testing for all X/Y/Z platforms explicitly.
+	 */
+	if (guc->fw.file_selected.ver.major >= 70)
+	if (GUC_FIRMWARE_VER(guc) >= MAKE_GUC_VER(70, 7, 0))
+		flags |= GUC_WA_ENABLE_TSC_CHECK_ON_RC6;
+
+	return flags;
+}
+
+static u32 guc_ctl_devid(struct intel_guc *guc)
+{
+	
+	return (NBlue::callback->deviceId << 16) | NBlue::callback->pciRevision;
+}
+
+
+static void guc_init_params(struct intel_guc *guc)
+{
+	u32 *params = guc->params;
+	//BUILD_BUG_ON(sizeof(guc->params) != GUC_CTL_MAX_DWORDS * sizeof(u32));
+
+	params[GUC_CTL_LOG_PARAMS] = guc_ctl_log_params_flags(guc);
+	params[GUC_CTL_FEATURE] = guc_ctl_feature_flags(guc);
+	params[GUC_CTL_DEBUG] = guc_ctl_debug_flags(guc);
+	params[GUC_CTL_ADS] = guc_ctl_ads_flags(guc);
+	params[GUC_CTL_WA] = guc_ctl_wa_flags(guc);
+	params[GUC_CTL_DEVID] = guc_ctl_devid(guc);
+
+
+}
+
+void intel_guc_write_params(struct intel_guc *guc, void *m_accelerator)
+{
+	int i;
+	struct intel_display *display = NBlue::callback->i915b->display;
+
+	
+	//intel_uncore_forcewake_get(uncore, FORCEWAKE_GT);
+	
+	//Gen11::callback->SafeForceWake(m_accelerator, true, 4);
+	intel_de_write(display,  SOFT_SCRATCH(0), 0);
+
+	for (i = 0; i < GUC_CTL_MAX_DWORDS; i++)
+		intel_de_write(display,  SOFT_SCRATCH(1 + i), guc->params[i]);
+
+	//Gen11::callback->SafeForceWake(m_accelerator, false, 4);
+	//intel_uncore_forcewake_put(uncore, FORCEWAKE_GT);
+}
+
+
+static u32 guc_ctl_debug_flags0(struct intel_guc *guc)
+{
+	u32 flags = 0;
+
+		flags |= GUC_LOG_DISABLED;
+
+	return flags;
+}
+
+static u32 guc_ctl_feature_flags0(struct intel_guc *guc)
+{
+	u32 flags = 0;
+
+	if (!intel_guc_submission_is_used(guc))
+		flags |= GUC_CTL_DISABLE_SCHEDULER;
+	
+
+	return flags;
+}
+
+static u32 guc_ctl_ctxinfo_flags0(struct intel_guc *guc)
+{
+	u32 flags = 0;
+
+	if (intel_guc_submission_is_used(guc)) {
+		u32 ctxnum, base;
+
+		base = intel_guc_ggtt_offset(guc, guc->stage_desc_pool);
+		ctxnum = GUC_MAX_STAGE_DESCRIPTORS / 16; // 0x40
+
+		base >>= PAGE_SHIFT;
+		flags |= (base << GUC_CTL_BASE_ADDR_SHIFT) |
+			(ctxnum << GUC_CTL_CTXNUM_IN16_SHIFT);
+	}
+	return flags;
+}
+
+static u32 guc_ctl_log_params_flags0(struct intel_guc *guc)
+{
+	u32 offset = intel_guc_ggtt_offset(guc, guc->log.vma) >> PAGE_SHIFT;
+	u32 flags;
+
+	#if (((CRASH_BUFFER_SIZE) % SZ_1M) == 0)
+	#define UNIT SZ_1M
+	#define FLAG GUC_LOG_ALLOC_IN_MEGABYTE
+	#else
+	#define UNIT SZ_4K
+	#define FLAG 0
+	#endif
+
+	flags = GUC_LOG_VALID |
+		GUC_LOG_NOTIFY_ON_HALF_FULL |
+		FLAG |
+		((CRASH_BUFFER_SIZE / UNIT - 1) << GUC_LOG_CRASH_SHIFT) |
+		((DPC_BUFFER_SIZE / UNIT - 1) << GUC_LOG_DPC_SHIFT) |
+		((ISR_BUFFER_SIZE / UNIT - 1) << GUC_LOG_ISR_SHIFT) |
+		(offset << GUC_LOG_BUF_ADDR_SHIFT);
+
+	#undef UNIT
+	#undef FLAG
+
+	return flags;
+}
+
+static u32 guc_ctl_ads_flags0(struct intel_guc *guc)
+{
+	u32 ads = intel_guc_ggtt_offset(guc, guc->ads_vma) >> PAGE_SHIFT;
+	u32 flags = ads << GUC_ADS_ADDR_SHIFT;
+
+	return flags;
+}
+
+static void guc_init_params0(struct intel_guc *guc)
+{
+	u32 *params = guc->params;
+	int i;
+
+	params[0] = guc_ctl_ctxinfo_flags0(guc);
+	params[1] = guc_ctl_log_params_flags0(guc);
+	params[3] = guc_ctl_feature_flags0(guc);
+	params[4] = guc_ctl_debug_flags0(guc);
+	params[5] = guc_ctl_ads_flags0(guc);
+	
+	params[2] =0;
+}
+
+static inline bool guc_load_done(u32 *status, bool *success)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	u32 val = intel_de_read(display, GUC_STATUS);
+	u32 uk_val = REG_FIELD_GET(GS_UKERNEL_MASK, val);
+	u32 br_val = REG_FIELD_GET(GS_BOOTROM_MASK, val);
+
+	*status = val;
+	switch (uk_val) {
+	case INTEL_GUC_LOAD_STATUS_READY:
+		*success = true;
+		return true;
+
+	case INTEL_GUC_LOAD_STATUS_ERROR_DEVID_BUILD_MISMATCH:
+	case INTEL_GUC_LOAD_STATUS_GUC_PREPROD_BUILD_MISMATCH:
+	case INTEL_GUC_LOAD_STATUS_ERROR_DEVID_INVALID_GUCTYPE:
+	case INTEL_GUC_LOAD_STATUS_HWCONFIG_ERROR:
+	case INTEL_GUC_LOAD_STATUS_DPC_ERROR:
+	case INTEL_GUC_LOAD_STATUS_EXCEPTION:
+	case INTEL_GUC_LOAD_STATUS_INIT_DATA_INVALID:
+	case INTEL_GUC_LOAD_STATUS_MPU_DATA_INVALID:
+	case INTEL_GUC_LOAD_STATUS_INIT_MMIO_SAVE_RESTORE_INVALID:
+	case INTEL_GUC_LOAD_STATUS_KLV_WORKAROUND_INIT_ERROR:
+		*success = false;
+		return true;
+	}
+
+	switch (br_val) {
+	case INTEL_BOOTROM_STATUS_NO_KEY_FOUND:
+	case INTEL_BOOTROM_STATUS_RSA_FAILED:
+	case INTEL_BOOTROM_STATUS_PAVPC_FAILED:
+	case INTEL_BOOTROM_STATUS_WOPCM_FAILED:
+	case INTEL_BOOTROM_STATUS_LOADLOC_FAILED:
+	case INTEL_BOOTROM_STATUS_JUMP_FAILED:
+	case INTEL_BOOTROM_STATUS_RC6CTXCONFIG_FAILED:
+	case INTEL_BOOTROM_STATUS_MPUMAP_INCORRECT:
+	case INTEL_BOOTROM_STATUS_EXCEPTION:
+	case INTEL_BOOTROM_STATUS_PROD_KEY_CHECK_FAILURE:
+		*success = false;
+		return true;
+	}
+
+	return false;
+}
+
+static void wa_init_start(struct i915_wa_list *wal, struct intel_gt *gt,
+			  const char *name, const char *engine_name)
+{
+	wal->gt = gt;
+	wal->name = name;
+	wal->engine_name = engine_name;
+}
+
+
+static void wa_init_finish(struct i915_wa_list *wal)
+{
+	if (!IS_ALIGNED(wal->count, WA_LIST_CHUNK)) {
+		
+		size_t new_size = wal->count * sizeof(struct i915_wa);
+		struct i915_wa *list = (struct i915_wa *)IOMalloc(new_size);
+
+		if (list) {
+			memcpy(list, wal->list, new_size);
+			
+			size_t old_size = ((wal->count + WA_LIST_CHUNK - 1) / WA_LIST_CHUNK) * WA_LIST_CHUNK * sizeof(struct i915_wa);
+			
+			IOFree(wal->list, old_size);
+			
+			wal->list = list;
+		}
+	}
+
+	if (!wal->count)
+		return;
+}
+
+
+
+
+static IOReturn __intel_de_wait_for_register(struct intel_display *display,
+											  uint32_t reg,
+											  uint32_t mask,
+											  uint32_t value,
+											  uint32_t timeout_us,
+											  uint32_t *out_val,
+											  bool is_atomic)
+{
+	AbsoluteTime deadline, now;
+	uint64_t timeout_ns = (uint64_t)timeout_us * NSEC_PER_USEC;
+	uint64_t delta_abs;
+	
+	nanoseconds_to_absolutetime(timeout_ns, &delta_abs);
+	clock_absolutetime_interval_to_deadline(delta_abs, &deadline);
+	
+	uint32_t wait_us = 10;
+	const uint32_t wait_max_us = 1000;
+	uint32_t reg_value;
+	IOReturn ret = kIOReturnError;
+	
+	if (timeout_us <= 10) {
+		is_atomic = true;
+		wait_us = 1;
+	}
+	
+	for (;;) {
+		now = mach_absolute_time();
+		
+		__asm__ volatile("" ::: "memory");
+		
+		reg_value = intel_de_read(display, reg);
+		
+		if ((reg_value & mask) == value) {
+			ret = kIOReturnSuccess;
+			break;
+		}
+		
+		if (CMP_ABSOLUTETIME(&now, &deadline)) {
+			ret = kIOReturnTimeout;
+			break;
+		}
+		
+		if (is_atomic || wait_us < 1000) {
+			IOPause((unsigned int)(wait_us * NSEC_PER_USEC));
+		} else {
+			IOSleep(wait_us / 1000);
+		}
+		
+		if (wait_us < wait_max_us) {
+			wait_us <<= 1;
+		}
+	}
+	
+	if (out_val != NULL) {
+		*out_val = reg_value;
+	}
+	
+	return ret;
+}
+
+
+static IOReturn intel_de_wait_for_register(struct intel_display *display,
+										   uint32_t reg,
+											uint32_t mask,
+											uint32_t value,
+											uint32_t fast_timeout_us,
+											uint32_t slow_timeout_us,
+											uint32_t *out_value,
+											bool is_atomic)
+{
+	IOReturn ret = kIOReturnError;
+	if (fast_timeout_us != 0) {
+		ret = __intel_de_wait_for_register(display, reg, mask, value,
+										   fast_timeout_us,
+										   out_value, is_atomic);
+	}
+	if (ret != kIOReturnSuccess && slow_timeout_us != 0) {
+		ret = __intel_de_wait_for_register(display, reg, mask, value,
+										   slow_timeout_us,
+										   out_value, is_atomic);
+	}
+	return ret;
+}
+
+
+IOReturn intel_de_wait_ms(struct intel_display *display,
+						  uint32_t reg,
+						  uint32_t mask,
+						  uint32_t value,
+						  unsigned int timeout_ms,
+						  uint32_t *out_value)
+{
+	IOReturn ret;
+	ret = intel_de_wait_for_register(display, reg, mask, value,
+									 2,
+									 timeout_ms * 1000,
+									 out_value,
+									 false);
+	
+	return ret;
+}
+
+
+
+int intel_de_wait_for_set_ms(struct intel_display *display, u32 reg,
+							 u32 mask, unsigned int timeout_ms)
+{
+	return intel_de_wait_ms(display, reg, mask, mask, timeout_ms, NULL);
+}
+
+int intel_de_wait_for_clear_ms(struct intel_display *display, u32 reg,
+							   u32 mask, unsigned int timeout_ms)
+{
+	return intel_de_wait_ms(display, reg, mask, 0, timeout_ms, NULL);
+}
+
+void intel_gt_init_workarounds(struct intel_gt *gt)
+{
+	struct i915_wa_list *wal = &gt->wa_list;
+
+	wa_init_start(wal, gt, "GT", "global");
+	gen12_gt_workarounds_init(gt, wal);
+	wa_init_finish(wal);
+}
+
+static bool __wopcm_regs_locked(
+				u32 *guc_wopcm_base, u32 *guc_wopcm_size)
+{
+
+	u32 reg_base = NBlue::callback->readReg32( DMA_GUC_WOPCM_OFFSET);
+	u32 reg_size = NBlue::callback->readReg32( GUC_WOPCM_SIZE);
+
+	if (!(reg_size & GUC_WOPCM_SIZE_LOCKED) ||
+		!(reg_base & GUC_WOPCM_OFFSET_VALID))
+		return false;
+
+	*guc_wopcm_base = reg_base & GUC_WOPCM_OFFSET_MASK;
+	*guc_wopcm_size = reg_size & GUC_WOPCM_SIZE_MASK;
+	return true;
+}
+
+static bool __wopcm_regs_writable(struct drm_i915_private *i915)
+{
+	if (!HAS_GUC_DEPRIVILEGE(i915))
+		return true;
+
+	return NBlue::callback->readReg32( GUC_SHIM_CONTROL2) & GUC_IS_PRIVILEGED;
+}
+
+static int uc_init_wopcm(struct intel_gt *gt)
+{
+	struct drm_i915_private *i915=gt->i915;
+	struct intel_display *display = i915->display;
+	
+	u32 base = gt->wopcm.guc.base;
+	u32 size = gt->wopcm.guc.size;
+	u32 huc_agent = 0;
+	u32 mask;
+	int err;
+
+	if (unlikely(!base || !size)) {
+		return -E2BIG;
+	}
+
+	mask = GUC_WOPCM_SIZE_MASK | GUC_WOPCM_SIZE_LOCKED;
+	err = intel_uncore_write_and_verify(display, GUC_WOPCM_SIZE, size, mask,
+						size | GUC_WOPCM_SIZE_LOCKED);
+	if (err)
+		goto err_out;
+
+	mask = GUC_WOPCM_OFFSET_MASK | GUC_WOPCM_OFFSET_VALID | huc_agent;
+	err = intel_uncore_write_and_verify(display, DMA_GUC_WOPCM_OFFSET,
+						base | huc_agent, mask,
+						base | huc_agent |
+						GUC_WOPCM_OFFSET_VALID);
+	if (err)
+		goto err_out;
+
+	return 0;
+
+err_out:
+
+
+	return err;
+}
+
+void intel_wopcm_init(struct intel_gt *gt, u32 guc_fw_size)
+{
+	struct intel_wopcm *wopcm= &gt->wopcm;
+	u32 huc_fw_size = 0;
+	u32 ctx_rsvd = ICL_WOPCM_HW_CTX_RESERVED;
+	u32 wopcm_size = wopcm->size;
+	u32 guc_wopcm_base;
+	u32 guc_wopcm_size;
+
+	if (!guc_fw_size)
+		return;
+
+	if (__wopcm_regs_locked( &guc_wopcm_base, &guc_wopcm_size)) {
+
+		if (!__wopcm_regs_writable(gt->i915))
+			wopcm_size = MAX_WOPCM_SIZE;
+
+		return;
+	}
+
+	guc_wopcm_base = huc_fw_size + WOPCM_RESERVED_SIZE;
+	guc_wopcm_base = ALIGN2(guc_wopcm_base, GUC_WOPCM_OFFSET_ALIGNMENT);
+
+	guc_wopcm_base = min(guc_wopcm_base, wopcm_size - ctx_rsvd);
+
+	guc_wopcm_size = wopcm_size - ctx_rsvd - guc_wopcm_base;
+	guc_wopcm_size &= GUC_WOPCM_SIZE_MASK;
+	
+	wopcm->guc.base=guc_wopcm_base;
+	wopcm->guc.size=guc_wopcm_size;
+	
+	uc_init_wopcm(gt);
+
+//check:
+}
+
+static int gen6_hw_domain_reset(struct intel_gt *gt, u32 hw_domain_mask)
+{
+	struct drm_i915_private *i915=gt->i915;
+	struct intel_display *display = i915->display;
+	int loops;
+	int err;
+
+	loops = GRAPHICS_VER_FULL(gt->i915) < IP_VER(12, 70) ? 2 : 1;
+
+	do {
+		intel_de_write(display, GEN6_GDRST, hw_domain_mask);
+
+		
+		err = intel_de_wait_for_register(display, GEN6_GDRST,
+						   hw_domain_mask, 0,
+						   2000, 0,
+						   NULL, false);
+	} while (err == 0 && --loops);
+
+	//udelay(50);
+	IODelay(50);
+	return err;
+}
+static int __reset_guc(struct intel_gt *gt)
+{
+	u32 guc_domain =
+		GRAPHICS_VER(gt->i915) >= 11 ? GEN11_GRDOM_GUC : GEN9_GRDOM_GUC;
+
+	return gen6_hw_domain_reset(gt, guc_domain);
+}
+
+static void guc_prepare_xfer0(struct intel_gt *gt)
+{
+	struct drm_i915_private *i915=gt->i915;
+	struct intel_display *display = i915->display;
+	
+	u32 shim_flags = GUC_DISABLE_SRAM_INIT_TO_ZEROES |
+			 GUC_ENABLE_READ_CACHE_LOGIC |
+			 GUC_ENABLE_MIA_CACHING |
+			 GUC_ENABLE_READ_CACHE_FOR_SRAM_DATA |
+			 GUC_ENABLE_READ_CACHE_FOR_WOPCM_DATA |
+			 GUC_ENABLE_MIA_CLOCK_GATING;
+
+	intel_de_write(display, GUC_SHIM_CONTROL, shim_flags);
+
+	intel_de_write(display, GEN9_GT_PM_CONFIG, GT_DOORBELL_ENABLE);
+
+	//xe
+	//intel_de_rmw(display, GEN6_PMINTRMSK, ARAT_EXPIRED_INTRMSK, 0);
+}
+
+static void guc_prepare_xfer(struct intel_gt *gt)
+{
+	struct drm_i915_private *i915=gt->i915;
+	struct intel_display *display = i915->display;
+
+	
+	u32 shim_flags = GUC_ENABLE_READ_CACHE_LOGIC |
+			 GUC_ENABLE_READ_CACHE_FOR_SRAM_DATA |
+			 GUC_ENABLE_READ_CACHE_FOR_WOPCM_DATA |
+			 GUC_ENABLE_MIA_CLOCK_GATING;
+
+	if (GRAPHICS_VER_FULL(i915) < IP_VER(12, 55))
+		shim_flags |= GUC_DISABLE_SRAM_INIT_TO_ZEROES |
+				  GUC_ENABLE_MIA_CACHING;
+
+	intel_de_write(display, GUC_SHIM_CONTROL, shim_flags);
+
+	/*if (IS_GEN9_LP(uncore->i915))
+		intel_uncore_write(uncore, GEN9LP_GT_PM_CONFIG, GT_DOORBELL_ENABLE);
+	else*/
+	intel_de_write(display, GEN9_GT_PM_CONFIG, GT_DOORBELL_ENABLE);
+
+	if (GRAPHICS_VER(i915) == 9) {
+		intel_de_rmw(display, GEN7_MISCCPCTL, 0,
+				 GEN8_DOP_CLOCK_GATE_GUC_ENABLE);
+
+		intel_de_write(display, GUC_ARAT_C6DIS, 0x1FF);
+	}
+
+
+	if (GRAPHICS_VER_FULL(i915) >= IP_VER(12, 50))
+		intel_de_rmw(display, GUC_SHIM_CONTROL2, 0, GUC_ENABLE_DEBUG_REG);
+	
+	//xe
+	//intel_de_rmw(display, GEN6_PMINTRMSK, ARAT_EXPIRED_INTRMSK, 0);
+}
+
+
+		
+
+
+void Gen11::hostToGuCAction(void *that,unsigned int *param_1,unsigned int param_2,int param_3,unsigned int *param_4)
+{
+	FunctionCast(hostToGuCAction, callback->ohostToGuCAction)( that,param_1,param_2,param_3,param_4);
+}
+
+
+
+uint32_t  Gen11::initSchedControl0(void *that)
+{
+	return FunctionCast(initSchedControl0, callback->oinitSchedControl0)( that);
+}
+
+bool  Gen11::initSchedControl(void *that)
+{
+	return FunctionCast(initSchedControl, callback->oinitSchedControl)( that);
+}
+void* Gen11::IGSharedMappedBufferwithOptions(void *param_1,unsigned long param_2,uint param_3,uint param_4)
+{
+	return FunctionCast(IGSharedMappedBufferwithOptions, callback->oIGSharedMappedBufferwithOptions)( param_1,param_2,param_3,param_4);
+}
+long  Gen11::fgetVirtualAddress(void *that)
+{
+	//return *((uint64_t *)that + 7);
+	return FunctionCast(fgetVirtualAddress, callback->ofgetVirtualAddress)( that);
+}
+void *Gen11::IGHardwareGuCWorkQueuewithOptions(void *param_1,uint param_2, void *param_3)
+{
+	return FunctionCast(IGHardwareGuCWorkQueuewithOptions, callback->oIGHardwareGuCWorkQueuewithOptions)( param_1,param_2,param_3);
+}
+
+uint64_t  Gen11::IGHashTablecontains(void *that,uint *param_1)
+{
+	return FunctionCast(IGHashTablecontains, callback->oIGHashTablecontains)( that,param_1);
+}
+long  Gen11::IGHashTableoperator(void *that,uint *param_1)
+{
+	return FunctionCast(IGHashTableoperator, callback->oIGHashTableoperator)( that,param_1);
+}
+
+uint64_t Gen11::fgetGPUVirtualAddress(void *that)
+{
+	return FunctionCast(fgetGPUVirtualAddress, callback->ofgetGPUVirtualAddress)( that);
+}
+void  Gen11::checkWOPCMSettings(void *that,unsigned long param_1,void *param_2)
+{
+	FunctionCast(checkWOPCMSettings, callback->ocheckWOPCMSettings)( that,param_1,param_2);
+}
+void Gen11::SafeForceWake(void *that,bool param_1,uint param_2)
+{
+	FunctionCast(SafeForceWake, callback->oSafeForceWake)( that,param_1,param_2);
+}
+
+void Gen11::IGSharedMappedBufferfree(void *param_1)
+{
+	FunctionCast(IGSharedMappedBufferfree, callback->oIGSharedMappedBufferfree)( param_1);
+}
+
+short Gen11::reacquireDoorbell(void *that,uint param_1)
+{
+	return FunctionCast(reacquireDoorbell, callback->oreacquireDoorbell)( that,param_1);
+}
+/*
+unsigned int Gen11::allocDoorbellId(void * param_1)
+{
+	return FunctionCast(allocDoorbellId, callback->oallocDoorbellId)( param_1);
+}*/
+unsigned int Gen11::stealDoorbellId(void *that)
+{
+	return FunctionCast(stealDoorbellId, callback->ostealDoorbellId)( that);
+}
+void Gen11::setDoorbellPinning(void *that,unsigned short param_1,bool param_2)
+{
+	FunctionCast(setDoorbellPinning, callback->osetDoorbellPinning)( that,param_1,param_2);
+}
+
+void  Gen11::releaseDoorbellId(void *that,unsigned short param_1)
+{
+	
+	FunctionCast(releaseDoorbellId, callback->oreleaseDoorbellId)( that,param_1);
+}
+
+void Gen11::releaseDoorbell(void* self, void* ctxDesc)
+{
+	//FunctionCast(releaseDoorbell, callback->oreleaseDoorbell)( self,ctxDesc);
+	releaseDoorbell2(self,(guc_ct_buffer_desc0*)ctxDesc);
+}
+
+unsigned int Gen11::allocDoorbellId(void* param_1)
+{
+
+	uint8_t numBanks = getMember<uint8_t>(param_1, 0x9e2);
+	if (numBanks == 0)
+		return 0x100;
+
+	uint16_t per   = getMember<uint16_t>(param_1, 0x9e0);
+	uint16_t words = per >> 5;
+
+	uint32_t bank = getMember<uint8_t>(param_1, 0x9e3);
+	uint32_t prev = 0;
+
+	for (uint32_t i = 0; i < numBanks; i++) {
+
+		uint32_t next = 0;
+		if (bank != 8) {
+			bank = bank + 1;
+			if (bank < numBanks)
+				next = bank;
+			else if (bank > numBanks)
+				next = prev;
+		}
+		bank = next;
+
+		uint32_t base = per * bank;
+		for (uint32_t w = 0; w < words; w++, base += 0x20) {
+			uint32_t& bits = getMember<uint32_t>(param_1, 0xdc + bank * 0x20 + w * 4);
+			if (bits == 0xffffffff)
+				continue;
+
+			for (uint32_t b = 0; b < 0x20; b++) {
+				if ((bits & (1u << b)) == 0) {
+					bits |= 1u << b;
+					getMember<uint8_t>(param_1, 0x9e3) = (uint8_t)bank;
+					return (unsigned short)(base + b);
+				}
+			}
+		}
+
+		getMember<uint8_t>(param_1, 0x9e3) = (uint8_t)bank;
+		prev = bank;
+	}
+
+	return 0x100;
+}
+
+
+void Gen11::releaseDoorbell2(void* self, guc_ct_buffer_desc0* ctxDesc)
+{
+	intel_guc_ct0* ct = getMember<intel_guc_ct0*>(self, 0x50);
+
+	uint32_t db_id    = ctxDesc->status;
+	uint16_t per      = getMember<uint16_t>(self, 0x9e0);
+	uint64_t slot     = (uint16_t)(db_id & 0xffff) % per;
+	uint32_t bank_sel = (((db_id & 0xff) / per) & 7) << 0x18;
+
+	ct->ctbs[(uint64_t)(uint32_t)ctxDesc->host_private * 2].desc->addr = 0;
+
+	#define MTL_MCR_SELECTOR			_MMIO(0xfd4)
+	
+	void* acel = getMember<void*>(self, 0x38);
+	volatile uint8_t* m = getMember<volatile uint8_t*>(acel, 0x1240);
+
+	uint32_t saved = *(volatile uint32_t*)(m + MTL_MCR_SELECTOR);
+	*(volatile uint32_t*)(m + MTL_MCR_SELECTOR) = bank_sel;
+	uint32_t d0 = *(volatile uint32_t*)(m + 0x1000 + slot * 8);
+	*(volatile uint32_t*)(m + MTL_MCR_SELECTOR) = saved;
+	*(volatile uint32_t*)(m + 0x1000 + slot * 8) = d0 & 0xFFFFFFFE;
+
+	saved = *(volatile uint32_t*)(m + MTL_MCR_SELECTOR);
+	*(volatile uint32_t*)(m + MTL_MCR_SELECTOR) = bank_sel;
+	*(volatile uint32_t*)(m + 0x1004 + slot * 8) = 0;
+	*(volatile uint32_t*)(m + MTL_MCR_SELECTOR) = saved;
+
+	saved = *(volatile uint32_t*)(m + MTL_MCR_SELECTOR);
+	*(volatile uint32_t*)(m + MTL_MCR_SELECTOR) = bank_sel;
+	*(volatile uint32_t*)(m + 0x1000 + slot * 8) = 0;
+	*(volatile uint32_t*)(m + MTL_MCR_SELECTOR) = saved;
+
+
+	uint32_t msg[2] = { 0x20, (uint32_t)ctxDesc->host_private };
+	hostToGuCAction(self, msg, 2, 0xf, nullptr);
+
+	releaseDoorbellId(self, (uint16_t)db_id);
+	*(void**)((uint8_t*)self + 0x1e0 + (uint64_t)(db_id & 0xffff) * 8) = nullptr;
+
+	ctxDesc->status = 0x100;
+}
+
+unsigned short Gen11::acquireDoorbell(void* self, void* param_1, bool param_2)
+{
+	//return FunctionCast(acquireDoorbell, callback->oacquireDoorbell)( self,param_1,param_2);
+	
+	return acquireDoorbell2(self,(guc_ct_buffer_desc0*)param_1,param_2); // old guc firmware only !!
+}
+
+unsigned short Gen11::acquireDoorbell2(void* that, guc_ct_buffer_desc0* param_1, bool param_2)
+{
+	intel_guc_ct0* ct = getMember<intel_guc_ct0*>(that, 0x50);
+	uint64_t hp = (uint32_t)param_1->host_private;
+
+	guc_ct_buffer_desc0* ctb_desc = ct->ctbs[hp * 2].desc;
+	if (ctb_desc->addr != 0)
+		return (unsigned short)param_1->status;
+
+	uint16_t db_id = allocDoorbellId(that);
+
+	if (db_id == 0x100) {
+		db_id = stealDoorbellId(that);
+
+		guc_ct_buffer_desc0* victim =
+			getMember<guc_ct_buffer_desc0*>(that, 0x1e0 + (uint64_t)db_id * 8);
+		if (victim)
+			releaseDoorbell(that, victim);
+
+		uint16_t per      = getMember<uint16_t>(that, 0x9e0);
+		uint16_t local_db = db_id % per;
+		uint32_t client   = (uint8_t)(db_id / per);
+		uint32_t& bitmap  = getMember<uint32_t>(that, 0xdc + (local_db >> 5) * 4 + client * 0x20);
+		bitmap |= 1u << (local_db & 0x1f);
+
+		if (db_id == 0x100)
+			return 0x100;
+	}
+
+	uint64_t db = db_id;
+
+	setDoorbellPinning(that, db_id, param_2);
+	param_1->status = db_id;
+	*(uint64_t*)ctb_desc = 1;
+
+	void* acel = getMember<void*>(that, 0x38);
+	volatile uint8_t* m = getMember<volatile uint8_t*>(acel, 0x1240);
+
+	*(volatile uint32_t*)(m + GEN12_GUC_TLB_INV_CR) = 1;
+	while ((*(volatile uint32_t*)(m + GEN12_GUC_TLB_INV_CR) & 1) != 0) { }
+
+	//if (acel->capabilities & 0x20)
+	//	*(volatile uint32_t*)(m + 0x2030) =
+	//		(uint32_t)*(volatile uint64_t*)(m + 0x2030);
+
+
+	uint32_t msg[2] = { 0x10, (uint32_t)param_1->host_private };
+	uint32_t resp = 0;
+
+	hostToGuCAction(that, msg, 2, 0xf, &resp);
+
+	if (((resp >> 0x16) & 1) == 0) {
+		ctb_desc->addr = 0;
+	}
+	else {
+		*(guc_ct_buffer_desc0**)((uint8_t*)that + 0x1e0 + db * 8) = param_1;
+
+		uint32_t off = (resp >> 10) & 0xFC0;
+		guc_ct_buffer_desc0* new_desc =
+			(guc_ct_buffer_desc0*)((long)ct->ctbs[hp * 2].desc->reserved + ((unsigned long)off - 0x30));
+		ct->ctbs[hp * 2].desc = new_desc;
+
+		param_1->tail        = param_1->tail + off;
+		param_1->is_in_error = param_1->is_in_error + off;
+
+		uint32_t* cmds = ct->ctbs[hp * 2].cmds;
+		*(guc_ct_buffer_desc0**)(cmds + 1) = new_desc;
+		*cmds    = (uint32_t)param_1->host_private;
+		cmds[10] = param_1[0x141].owner;
+	}
+
+	return db_id;
+	
+}
+
+IOReturn Gen11::wrapFBClientDoAttribute(void *fbclient, uint32_t attribute, unsigned long *unk1, unsigned long unk2, unsigned long *unk3, unsigned long *unk4,  void *externalMethodArguments) {
+	
+	/* 
+	 if (param_1 == 1) {
+	 _DAT_0016dc38 = _DAT_0016dc38 + 1;
+  uVar8 = 0xe00002c2;
+  if ((param_5 != (ulong *)0x0) && (_DAT_0016dc48 = _DAT_0016dc48 + 1, 0x2b < *param_5)) {
+	_DAT_0016dc40 = _DAT_0016dc40 + 1;
+	param_4->VendorClass = DAT_001beae8;
+	*(undefined8 *)(param_4->VendorString + 0x1c) = DAT_001beae0;
+	*(undefined8 *)(param_4->VendorString + 0x14) = ram0x001bead8;
+	*(undefined8 *)(param_4->VendorString + 0xc) =
+		 s_AppleIntelBaseController_001beac4._12_8_;
+	*(undefined8 *)(param_4->VendorString + 4) = s_AppleIntelBaseController_001beac4._4_8_;
+	cVar6 = s_AppleIntelBaseController_001beac4[0];
+	cVar3 = s_AppleIntelBaseController_001beac4[1];
+	cVar4 = s_AppleIntelBaseController_001beac4[2];
+	cVar5 = s_AppleIntelBaseController_001beac4[3];
+	param_4->Version = __id;
+	param_4->VendorString[0] = cVar6;
+	param_4->VendorString[1] = cVar3;
+	param_4->VendorString[2] = cVar4;
+	param_4->VendorString[3] = cVar5;
+	*param_5 = 0x2c;
+	uVar8 = 0;
+  }
+  break;
+}
+	*/
+	
+	if (attribute == 1)//0x2001)
+	if (unk4 != (unsigned long *)0x0)
+		if (0x2b < *unk4) {
+			
+			FunctionCast(wrapFBClientDoAttribute, callback->orgFBClientDoAttribute)(fbclient, attribute, unk1, unk2, unk3, unk4,  externalMethodArguments);
+			
+			//memset(param_4,0,0x2c);
+			AGDCVendorInfo *v=(AGDCVendorInfo*)unk3;
+			v->Version.Raw=0;
+			v->Version.Major=0;
+			v->Version.Minor=0;
+			//v->VendorID= 0x106b;
+			//*v->VendorString=*(char*)"AppleIntelBaseController";
+			//v->VendorClass=kAGDCVendorClassIntegratedGPU;
+			v->VendorClass=kAGDCVendorClassOtherHW;// acel loader hack !! remove MetalPluginName from info.plist
+			return 0;
+	}
+	
+	
+	/*if (attribute == 0x923 && kexticl) {
+		return kIOReturnUnsupported;
+	}*/
+	
+	return FunctionCast(wrapFBClientDoAttribute, callback->orgFBClientDoAttribute)(fbclient, attribute, unk1, unk2, unk3, unk4,  externalMethodArguments);
+}
+
+
+
+
+
+static void whitelist_reg_ext(struct i915_wa_list *wal, u32 reg, u32 flags)
+{
+	struct i915_wa wa = {
+		.reg = reg
+	};
+	wa.reg |= flags;
+	_wa_add(wal, &wa);
+}
+
+static void whitelist_reg(struct i915_wa_list *wal, u32 reg)
+{
+	whitelist_reg_ext(wal, reg, RING_FORCE_TO_NONPRIV_ACCESS_RW);
+}
+
+
+static void gen12_ctx_workarounds_init(struct intel_engine_cs *engine,
+									   struct i915_wa_list *wal)
+{
+	struct drm_i915_private *i915 = engine->i915;
+	wa_masked_en(wal, GEN11_COMMON_SLICE_CHICKEN3,
+				 GEN12_DISABLE_CPS_AWARE_COLOR_PIPE);
+
+	wa_masked_field_set(wal, GEN8_CS_CHICKEN1,
+						GEN9_PREEMPT_GPGPU_LEVEL_MASK,
+						GEN9_PREEMPT_GPGPU_THREAD_GROUP_LEVEL);
+
+
+	wa_add(wal,
+		   GEN12_FF_MODE2,
+		   ~0,
+		   FF_MODE2_TDS_TIMER_128 | FF_MODE2_GS_TIMER_224,
+		   0, false);
+
+	if (!IS_DG1(i915)) {
+		wa_masked_en(wal, HIZ_CHICKEN, HZ_DEPTH_TEST_LE_GE_OPT_DISABLE);
+
+		wa_masked_en(wal, COMMON_SLICE_CHICKEN4, DISABLE_TDC_LOAD_BALANCING_CALC);
+	}
+
+	wa_mcr_write_or(wal, GEN8_WM_CHICKEN2, WAIT_ON_DEPTH_STALL_DONE_DISABLE);
+}
+
+static void allow_read_ctx_timestamp(struct intel_engine_cs *engine)
+{
+	struct i915_wa_list *w = &engine->whitelist;
+
+	if (engine->classb != RENDER_CLASS)
+		whitelist_reg_ext(w,
+						  RING_CTX_TIMESTAMP(engine->mmio_base),
+						  RING_FORCE_TO_NONPRIV_ACCESS_RD);
+}
+
+static void tgl_whitelist_build(struct intel_engine_cs *engine)
+{
+	struct i915_wa_list *w = &engine->whitelist;
+
+	allow_read_ctx_timestamp(engine);
+
+	switch (engine->classb) {
+	case RENDER_CLASS:
+
+		whitelist_reg_ext(w, PS_INVOCATION_COUNT,
+						  RING_FORCE_TO_NONPRIV_ACCESS_RD |
+						  RING_FORCE_TO_NONPRIV_RANGE_4);
+
+
+		whitelist_reg(w, GEN7_COMMON_SLICE_CHICKEN1);
+
+		whitelist_reg(w, HIZ_CHICKEN);
+
+		whitelist_reg(w, GEN11_COMMON_SLICE_CHICKEN3);
+
+		break;
+	default:
+		break;
+	}
+}
+
+
+
+static void
+add_render_compute_tuning_settings(struct intel_gt *gt, struct i915_wa_list *wal)
+{
+	struct drm_i915_private *i915 = gt->i915;
+
+	/*if (IS_GFX_GT_IP_RANGE(gt, IP_VER(12, 70), IP_VER(12, 74)) || IS_DG2(i915))
+		wa_mcr_write_clr_set(wal, RT_CTRL, STACKID_CTRL, STACKID_CTRL_512);
+
+
+	if (INTEL_INFO(i915)->tuning_thread_rr_after_dep)
+		wa_mcr_masked_field_set(wal, GEN9_ROW_CHICKEN4, THREAD_EX_ARB_MODE,
+					THREAD_EX_ARB_MODE_RR_AFTER_DEP);
+*/
+	if (GRAPHICS_VER(i915) == 12 && GRAPHICS_VER_FULL(i915) < IP_VER(12, 55))
+		wa_write_clr(wal, GEN8_GARBCNTL, GEN12_BUS_HASH_CTL_BIT_EXC);
+}
+static void
+general_render_compute_wa_init(struct intel_engine_cs *engine, struct i915_wa_list *wal)
+{
+	struct drm_i915_private *i915 = engine->i915;
+	struct intel_gt *gt = engine->gt;
+
+	add_render_compute_tuning_settings( gt, wal);
+
+
+
+	if (GRAPHICS_VER(i915) >= 11) {
+		wa_mcr_masked_en(wal,
+				 GEN10_SAMPLER_MODE,
+				 GEN11_INDIRECT_STATE_BASE_ADDR_OVERRIDE);
+	}
+
+	/*if (IS_GFX_GT_IP_STEP(gt, IP_VER(12, 70), STEP_B0, STEP_FOREVER) ||
+		IS_GFX_GT_IP_STEP(gt, IP_VER(12, 71), STEP_B0, STEP_FOREVER) ||
+		IS_GFX_GT_IP_RANGE(gt, IP_VER(12, 74), IP_VER(12, 74))) {
+
+		wa_mcr_masked_en(wal, GEN9_ROW_CHICKEN3, MTL_DISABLE_FIX_FOR_EOT_FLUSH);
+
+
+		wa_mcr_masked_en(wal, GEN8_ROW_CHICKEN2, XELPG_DISABLE_TDL_SVHS_GATING);
+	}
+
+	if (IS_GFX_GT_IP_STEP(gt, IP_VER(12, 70), STEP_A0, STEP_B0) ||
+		IS_GFX_GT_IP_STEP(gt, IP_VER(12, 71), STEP_A0, STEP_B0))
+
+		wa_mcr_masked_en(wal, GEN10_SAMPLER_MODE,
+				 MTL_DISABLE_SAMPLER_SC_OOO);
+
+	if (IS_GFX_GT_IP_STEP(gt, IP_VER(12, 71), STEP_A0, STEP_B0))
+
+		wa_mcr_masked_en(wal, GEN10_CACHE_MODE_SS,
+				 DISABLE_PREFETCH_INTO_IC);
+
+	if (IS_GFX_GT_IP_STEP(gt, IP_VER(12, 70), STEP_A0, STEP_B0) ||
+		IS_GFX_GT_IP_STEP(gt, IP_VER(12, 71), STEP_A0, STEP_B0) ||
+		IS_DG2(i915)) {
+
+		wa_mcr_write_or(wal, LSC_CHICKEN_BIT_0_UDW,
+				DISABLE_128B_EVICTION_COMMAND_UDW);
+
+
+		wa_masked_en(wal, VFG_PREEMPTION_CHICKEN, POLYGON_TRIFAN_LINELOOP_DISABLE);
+	}
+
+	if (IS_GFX_GT_IP_STEP(gt, IP_VER(12, 70), STEP_A0, STEP_B0) ||
+		IS_GFX_GT_IP_STEP(gt, IP_VER(12, 71), STEP_A0, STEP_B0) ||
+		IS_DG2(i915)) {
+
+		wa_mcr_write_or(wal, LSC_CHICKEN_BIT_0, DISABLE_D8_D16_COASLESCE);
+	}
+
+	if (IS_DG2(i915)) {
+		wa_mcr_masked_en(wal, GEN9_ROW_CHICKEN4, XEHP_DIS_BBL_SYSPIPE);
+
+		wa_mcr_write_or(wal, LSC_CHICKEN_BIT_0_UDW, DIS_CHAIN_2XSIMD8);
+
+		wa_mcr_write_or(wal, LSC_CHICKEN_BIT_0_UDW, UGM_FRAGMENT_THRESHOLD_TO_3);
+	}
+
+	if (IS_DG2_G11(i915)) {
+
+		wa_mcr_write_clr_set(wal, LSC_CHICKEN_BIT_0_UDW,
+					 MAXREQS_PER_BANK,
+					 REG_FIELD_PREP(MAXREQS_PER_BANK, 2));
+
+		wa_mcr_write_or(wal, LSC_CHICKEN_BIT_0,
+				FORCE_1_SUB_MESSAGE_PER_FRAGMENT);
+
+		wa_mcr_add(wal, GEN10_CACHE_MODE_SS, 0,
+			   REG_MASKED_FIELD_ENABLE(ENABLE_PREFETCH_INTO_IC),
+			   0 ,
+			   true);
+	}*/
+}
+
+
+static void
+rcs_engine_wa_init(struct intel_engine_cs *engine, struct i915_wa_list *wal)
+{
+	struct drm_i915_private *i915 = engine->i915;
+	struct intel_gt *gt = engine->gt;
+
+	/*if (IS_GFX_GT_IP_STEP(gt, IP_VER(12, 70), STEP_A0, STEP_B0) ||
+		IS_GFX_GT_IP_STEP(gt, IP_VER(12, 71), STEP_A0, STEP_B0)) {
+
+		wa_mcr_masked_en(wal, GEN10_CACHE_MODE_SS,
+				 ENABLE_EU_COUNT_FOR_TDL_FLUSH);
+	}
+
+	if (IS_GFX_GT_IP_STEP(gt, IP_VER(12, 70), STEP_A0, STEP_B0) ||
+		IS_GFX_GT_IP_STEP(gt, IP_VER(12, 71), STEP_A0, STEP_B0) ||
+		IS_DG2(i915)) {
+
+		wa_mcr_masked_en(wal, GEN10_SAMPLER_MODE,
+				 SC_DISABLE_POWER_OPTIMIZATION_EBB);
+	}
+
+	if (IS_GFX_GT_IP_STEP(gt, IP_VER(12, 70), STEP_A0, STEP_B0) ||
+		IS_DG2(i915)) {
+
+		wa_mcr_masked_en(wal, GEN8_ROW_CHICKEN2,
+				 GEN12_DISABLE_READ_SUPPRESSION);
+	}
+
+	if (IS_DG2(i915)) {
+
+		wa_mcr_masked_dis(wal, XEHP_HDC_CHICKEN0,
+				  LSC_L1_FLUSH_CTL_3D_DATAPORT_FLUSH_EVENTS_MASK);
+	}
+
+	if (IS_GFX_GT_IP_RANGE(gt, IP_VER(12, 70), IP_VER(12, 71)) ||
+		IS_DG2(i915)) {
+
+		wa_mcr_add(wal, XEHP_HDC_CHICKEN0, 0,
+			   REG_MASKED_FIELD_ENABLE(DIS_ATOMIC_CHAINING_TYPED_WRITES),
+			   0, true);
+	}*/
+
+	
+
+	
+	if (IS_DG2(i915) || IS_ALDERLAKE_P(i915) || IS_ALDERLAKE_S(i915) ||
+		IS_DG1(i915) || IS_ROCKETLAKE(i915) || IS_TIGERLAKE(i915)) {
+
+		wa_masked_en(wal,
+				 GEN9_CS_DEBUG_MODE1,
+				 FF_DOP_CLOCK_GATE_DISABLE);
+	}
+
+	if (IS_ALDERLAKE_P(i915) || IS_ALDERLAKE_S(i915) || IS_DG1(i915) ||
+		IS_ROCKETLAKE(i915) || IS_TIGERLAKE(i915)) {
+
+		wa_mcr_masked_en(wal, GEN8_ROW_CHICKEN2, GEN12_DISABLE_EARLY_READ);
+
+
+		wa_write_or(wal, GEN7_FF_THREAD_MODE,
+				GEN12_FF_TESSELATION_DOP_GATE_DISABLE);
+
+
+		wa_mcr_masked_en(wal,
+				 GEN10_SAMPLER_MODE,
+				 ENABLE_SMALLPL);
+	}
+
+	if (IS_ALDERLAKE_P(i915) || IS_ALDERLAKE_S(i915) ||
+		IS_ROCKETLAKE(i915) || IS_TIGERLAKE(i915)) {
+
+		wa_mcr_masked_en(wal, GEN8_ROW_CHICKEN2,
+				 GEN12_PUSH_CONST_DEREF_HOLD_DIS);
+
+
+		wa_mcr_masked_en(wal, GEN9_ROW_CHICKEN4, GEN12_DISABLE_TDL_PUSH);
+	}
+
+	if (IS_ROCKETLAKE(i915) || IS_TIGERLAKE(i915) || IS_ALDERLAKE_P(i915)) {
+
+		wa_masked_en(wal,
+				 RING_PSMI_CTL(RENDER_RING_BASE),
+				 GEN12_WAIT_FOR_EVENT_POWER_DOWN_DISABLE |
+				 GEN8_RC_SEMA_IDLE_MSG_DISABLE);
+	}
+
+
+	
+	if (GRAPHICS_VER(i915) >= 9)
+		wa_masked_en(wal,
+				 GEN7_FF_SLICE_CS_CHICKEN1,
+				 GEN9_FFSC_PERCTX_PREEMPT_CTRL);
+
+
+
+}
+
+static void ccs_engine_wa_mode(struct intel_engine_cs *engine, struct i915_wa_list *wal)
+{
+	struct intel_gt *gt = engine->gt;
+	u32 mode;
+
+	if (!IS_DG2(gt->i915))
+		return;
+
+
+//	wa_masked_en(wal, GEN12_RCU_MODE, XEHP_RCU_MODE_FIXED_SLICE_CCS_MODE);
+
+
+	//mode = intel_gt_apply_ccs_mode(gt);
+	//wa_masked_en(wal, XEHP_CCS_MODE, mode);
+}
+
+
+static void
+engine_fake_wa_init(struct intel_engine_cs *engine, struct i915_wa_list *wal)
+{
+	u8 mocs_w, mocs_r;
+
+
+	if (GRAPHICS_VER(engine->i915) >= 12) {
+		mocs_r = engine->gt->mocs.uc_index;
+		mocs_w = engine->gt->mocs.uc_index;
+
+		if (HAS_L3_CCS_READ(engine->i915) &&
+			engine->classb == COMPUTE_CLASS) {
+			mocs_r = engine->gt->mocs.wb_index;
+
+		}
+
+		
+		wa_masked_field_set(wal,
+					RING_CMD_CCTL(engine->mmio_base),
+					CMD_CCTL_MOCS_MASK,
+					CMD_CCTL_MOCS_OVERRIDE(mocs_w, mocs_r));
+	}
+}
+
+static void
+engine_init_workarounds(struct intel_engine_cs *engine, struct i915_wa_list *wal)
+{
+
+	if (GRAPHICS_VER(engine->i915) < 4)
+		return;
+
+	engine_fake_wa_init(engine, wal);
+
+
+	if (engine->flags & I915_ENGINE_FIRST_RENDER_COMPUTE) {
+		general_render_compute_wa_init(engine, wal);
+		ccs_engine_wa_mode(engine, wal);
+	}
+
+	/*if (engine->classb == COMPUTE_CLASS)
+		ccs_engine_wa_init(engine, wal);
+	else*/ if (engine->classb == RENDER_CLASS)
+		rcs_engine_wa_init(engine, wal);
+	//else
+		//xcs_engine_wa_init(engine, wal);
+	
+}
+
+static void gen12_ctx_gt_mocs_init(struct intel_engine_cs *engine,
+				   struct i915_wa_list *wal)
+{
+	u8 mocs;
+
+	if (engine->classb == COPY_ENGINE_CLASS) {
+		mocs = engine->gt->mocs.uc_index;
+		wa_write_clr_set(wal,
+				 BLIT_CCTL(engine->mmio_base),
+				 BLIT_CCTL_MASK,
+				 BLIT_CCTL_MOCS(mocs, mocs));
+	}
+}
+
+static void
+gen12_ctx_gt_fake_wa_init(struct intel_engine_cs *engine,
+			  struct i915_wa_list *wal)
+{
+	//if (GRAPHICS_VER_FULL(engine->i915) >= IP_VER(12, 55))
+	//	fakewa_disable_nestedbb_mode(engine, wal);
+
+	gen12_ctx_gt_mocs_init(engine, wal);
+}
+
+static void
+__intel_engine_init_ctx_wa(struct intel_engine_cs *engine,
+			   struct i915_wa_list *wal,
+			   const char *name)
+{
+	struct drm_i915_private *i915 = engine->i915;
+
+	wa_init_start(wal, engine->gt, name, engine->name);
+
+	if (GRAPHICS_VER(i915) >= 12)
+		gen12_ctx_gt_fake_wa_init(engine, wal);
+
+	if (engine->classb != RENDER_CLASS)
+		goto done;
+
+	if (GRAPHICS_VER(i915) == 12)
+		gen12_ctx_workarounds_init(engine, wal);
+
+
+done:
+	wa_init_finish(wal);
+}
+
+void intel_engine_init_ctx_wa(struct intel_engine_cs *engine)
+{
+	__intel_engine_init_ctx_wa(engine, &engine->ctx_wa_list, "context");
+}
+
+void intel_engine_init_workarounds(struct intel_engine_cs *engine)
+{
+	struct i915_wa_list *wal = &engine->wa_list;
+
+	wa_init_start(wal, engine->gt, "engine", engine->name);
+	engine_init_workarounds(engine, wal);
+	wa_init_finish(wal);
+}
+
+
+
+void intel_engine_init_whitelist(struct intel_engine_cs *engine)
+{
+	struct drm_i915_private *i915 = engine->i915;
+	struct i915_wa_list *w = &engine->whitelist;
+
+	wa_init_start(w, engine->gt, "whitelist", engine->name);
+
+	if (GRAPHICS_VER(i915) == 12)
+		tgl_whitelist_build(engine);
+	
+	wa_init_finish(w);
+}
+
+void intel_engine_apply_workarounds(struct intel_engine_cs *engine)
+{
+	wa_list_apply(&engine->wa_list);
+}
+
+void intel_engine_apply_whitelist(struct intel_engine_cs *engine)
+{
+	struct drm_i915_private *i915 = engine->gt->i915;
+	struct intel_display *display=i915->display;
+	
+	struct i915_wa_list *wal = &engine->whitelist;
+	const u32 base = engine->mmio_base;
+	struct i915_wa *wa;
+	unsigned int i;
+
+
+	if (!wal->count)
+		return;
+
+	for (i = 0, wa = wal->list; i < wal->count; i++, wa++)
+		intel_de_write(display,
+				   RING_FORCE_TO_NONPRIV(base, i),
+				   i915_mmio_reg_offset(wa->reg));
+
+	for (; i < RING_MAX_NONPRIV_SLOTS; i++)
+		intel_de_write(display,
+				   RING_FORCE_TO_NONPRIV(base, i),
+				   i915_mmio_reg_offset(RING_NOPID(base)));
+}
+
+
+
+static
+bool gen11_vdbox_has_sfc(struct intel_gt *gt,
+			 unsigned int physical_vdbox,
+			 unsigned int logical_vdbox, u16 vdbox_mask)
+{
+	struct drm_i915_private *i915 = gt->i915;
+
+	if ((gt->info.sfc_mask & BIT(physical_vdbox / 2)) == 0)
+		return false;
+	else if (MEDIA_VER(i915) >= 12)
+		return (physical_vdbox % 2 == 0) ||
+			!(BIT(physical_vdbox - 1) & vdbox_mask);
+	else if (MEDIA_VER(i915) == 11)
+		return logical_vdbox % 2 == 0;
+
+	return false;
+}
+
+static void engine_mask_apply_media_fuses(struct intel_gt *gt)
+{
+	struct drm_i915_private *i915 = gt->i915;
+	struct intel_display *display=i915->display;
+	unsigned int logical_vdbox = 0;
+	unsigned int i;
+	u32 media_fuse, fuse1;
+	u16 vdbox_mask;
+	u16 vebox_mask;
+
+	if (MEDIA_VER(gt->i915) < 11)
+		return;
+
+
+	media_fuse = intel_de_read(display, GEN11_GT_VEBOX_VDBOX_DISABLE);
+	if (MEDIA_VER_FULL(i915) < IP_VER(12, 55))
+		media_fuse = ~media_fuse;
+
+	vdbox_mask = REG_FIELD_GET(GEN11_GT_VDBOX_DISABLE_MASK, media_fuse);
+	vebox_mask = REG_FIELD_GET(GEN11_GT_VEBOX_DISABLE_MASK, media_fuse);
+
+	if (MEDIA_VER_FULL(i915) >= IP_VER(12, 55)) {
+		fuse1 =intel_de_read(display, HSW_PAVP_FUSE1);
+		gt->info.sfc_mask = REG_FIELD_GET(XEHP_SFC_ENABLE_MASK, fuse1);
+	} else {
+		gt->info.sfc_mask = ~0;
+	}
+
+	for (i = 0; i < I915_MAX_VCS; i++) {
+		if (!HAS_ENGINE(gt, _VCS(i))) {
+			vdbox_mask &= ~BIT(i);
+			continue;
+		}
+
+		if (!(BIT(i) & vdbox_mask)) {
+			gt->info.engine_mask &= ~BIT(_VCS(i));
+			continue;
+		}
+
+		if (gen11_vdbox_has_sfc(gt, i, logical_vdbox, vdbox_mask))
+			gt->info.vdbox_sfc_access |= BIT(i);
+		logical_vdbox++;
+	}
+
+	//GEM_BUG_ON(vdbox_mask != VDBOX_MASK(gt));
+
+	for (i = 0; i < I915_MAX_VECS; i++) {
+		if (!HAS_ENGINE(gt, _VECS(i))) {
+			vebox_mask &= ~BIT(i);
+			continue;
+		}
+
+		if (!(BIT(i) & vebox_mask)) {
+			gt->info.engine_mask &= ~BIT(_VECS(i));
+		}
+	}
+
+	//GEM_BUG_ON(vebox_mask != VEBOX_MASK(gt));
+}
+
+
+
+uint16_t intel_slicemask_from_xehp_dssmask(intel_sseu_ss_mask_t dss_mask, int dss_per_slice)
+{
+	uint16_t slice_mask = 0;
+	int i = 0;
+	uint64_t bits = (uint64_t)dss_mask.xehp;
+	uint64_t per_slice_mask = (dss_per_slice >= 64) ? ~0ULL : ((1ULL << dss_per_slice) - 1);
+
+	while (bits != 0) {
+		if ((bits & per_slice_mask) != 0) {
+			slice_mask |= static_cast<uint16_t>(1 << i);
+		}
+		bits >>= dss_per_slice;
+		i++;
+	}
+
+	//assert(i <= 16 * 8);
+
+	return slice_mask;
+}
+static void engine_mask_apply_compute_fuses(struct intel_gt *gt)
+{
+	struct drm_i915_private *i915 = gt->i915;
+	struct intel_gt_info *info = &gt->info;
+	int ss_per_ccs = info->sseu.max_subslices / I915_MAX_CCS;
+	unsigned long ccs_mask0;
+	unsigned int i;
+
+	if (GRAPHICS_VER(i915) < 11)
+		return;
+
+	if (hweight32(CCS_MASK(gt)) <= 1)
+		return;
+
+	ccs_mask0 = intel_slicemask_from_xehp_dssmask(info->sseu.compute_subslice_mask,
+							 ss_per_ccs);
+
+	for_each_clear_bit(i, &ccs_mask0, I915_MAX_CCS) {
+		info->engine_mask &= ~BIT(_CCS(i));
+	}
+}
+
+static intel_engine_mask_t init_engine_mask(struct intel_gt *gt)
+{
+	struct intel_gt_info *info = &gt->info;
+
+	//GEM_BUG_ON(!info->engine_mask);
+
+	engine_mask_apply_media_fuses(gt);
+	engine_mask_apply_compute_fuses(gt);
+
+
+	if (__HAS_ENGINE(info->engine_mask, GSC0) /*&& !intel_uc_wants_gsc_uc(&gt->uc)*/) {
+		info->engine_mask &= ~BIT(GSC0);
+	}
+
+	/*if (IS_DG2(gt->i915)) {
+		u8 first_ccs = __ffs(CCS_MASK(gt));
+
+		gt->ccs.cslices = CCS_MASK(gt);
+
+		info->engine_mask &= ~GENMASK(CCS3, CCS0);
+		info->engine_mask |= BIT(_CCS(first_ccs));
+	}*/
+
+	return info->engine_mask;
+}
+
+
+static void populate_logical_ids(struct intel_gt *gt, u8 *logical_ids,
+				 u8 classb, const u8 *map, u8 num_instances)
+{
+	int i, j;
+	u8 current_logical_id = 0;
+
+	for (j = 0; j < num_instances; ++j) {
+		for (i = 0; i < ARRAY_SIZE(intel_engines); ++i) {
+			if (!HAS_ENGINE(gt, i) ||
+				intel_engines[i].classb != classb)
+				continue;
+
+			if (intel_engines[i].instance == map[j]) {
+				logical_ids[intel_engines[i].instance] =
+					current_logical_id++;
+				break;
+			}
+		}
+	}
+}
+
+static void setup_logical_ids(struct intel_gt *gt, u8 *logical_ids, u8 classb)
+{
+
+	if (MEDIA_VER(gt->i915) >= 11 && classb == VIDEO_DECODE_CLASS) {
+		const u8 map[] = { 0, 2, 4, 6, 1, 3, 5, 7 };
+
+		populate_logical_ids(gt, logical_ids, classb,
+					 map, ARRAY_SIZE(map));
+	} else {
+		int i;
+		u8 map[MAX_ENGINE_INSTANCE + 1];
+
+		for (i = 0; i < MAX_ENGINE_INSTANCE + 1; ++i)
+			map[i] = i;
+		populate_logical_ids(gt, logical_ids, classb,
+					 map, ARRAY_SIZE(map));
+	}
+}
+
+static u8 guc_class_engine_class_map[] = {
+	[GUC_RENDER_CLASS]       = RENDER_CLASS,
+	[GUC_BLITTER_CLASS]      = COPY_ENGINE_CLASS,
+	[GUC_VIDEO_CLASS]        = VIDEO_DECODE_CLASS,
+	[GUC_VIDEOENHANCE_CLASS] = VIDEO_ENHANCEMENT_CLASS,
+	[GUC_COMPUTE_CLASS]      = COMPUTE_CLASS,
+	[GUC_GSC_OTHER_CLASS]    = OTHER_CLASS,
+};
+static u8 engine_class_guc_class_map[] = {
+	[RENDER_CLASS]            = GUC_RENDER_CLASS,
+	[COPY_ENGINE_CLASS]       = GUC_BLITTER_CLASS,
+	[VIDEO_DECODE_CLASS]      = GUC_VIDEO_CLASS,
+	[VIDEO_ENHANCEMENT_CLASS] = GUC_VIDEOENHANCE_CLASS,
+	[OTHER_CLASS]             = GUC_GSC_OTHER_CLASS,
+	[COMPUTE_CLASS]           = GUC_COMPUTE_CLASS,
+};
+
+static inline u8 engine_class_to_guc_class(u8 classb)
+{
+	//BUILD_BUG_ON(ARRAY_SIZE(engine_class_guc_class_map) != MAX_ENGINE_CLASS + 1);
+	//GEM_BUG_ON(class > MAX_ENGINE_CLASS);
+
+	return engine_class_guc_class_map[classb];
+}
+
+static u32 __engine_mmio_base(struct drm_i915_private *i915,
+				  const struct engine_mmio_base *bases)
+{
+	int i;
+
+	for (i = 0; i < MAX_MMIO_BASES; i++)
+		if (GRAPHICS_VER(i915) >= bases[i].graphics_ver)
+			break;
+
+	//GEM_BUG_ON(i == MAX_MMIO_BASES);
+	//GEM_BUG_ON(!bases[i].base);
+
+	return bases[i].base;
+}
+
+const char *intel_engine_class_repr(u8 classb)
+{
+	static const char * uabi_names[] = {
+		[RENDER_CLASS] = "rcs",
+		[COPY_ENGINE_CLASS] = "bcs",
+		[VIDEO_DECODE_CLASS] = "vcs",
+		[VIDEO_ENHANCEMENT_CLASS] = "vecs",
+		[OTHER_CLASS] = "other",
+		[COMPUTE_CLASS] = "ccs",
+	};
+
+	if (classb >= ARRAY_SIZE(uabi_names) || !uabi_names[classb])
+		return "xxx";
+
+	return uabi_names[classb];
+}
+
+static void __sprint_engine_name(struct intel_engine_cs *engine)
+{
+
+	(snprintf(engine->name, sizeof(engine->name), "%s'%u",
+				 intel_engine_class_repr(engine->classb),
+				 engine->instance) >= sizeof(engine->name));
+}
+
+
+
+
+static u32 get_reset_domain(u8 ver, enum intel_engine_id id2)
+{
+	u32 reset_domain;
+
+	if (ver >= 11) {
+		static const u32 engine_reset_domains[] = {
+			[RCS0]  = GEN11_GRDOM_RENDER,
+			[BCS0]  = GEN11_GRDOM_BLT,
+			[BCS1]  = XEHPC_GRDOM_BLT1,
+			[BCS2]  = XEHPC_GRDOM_BLT2,
+			[BCS3]  = XEHPC_GRDOM_BLT3,
+			[BCS4]  = XEHPC_GRDOM_BLT4,
+			[BCS5]  = XEHPC_GRDOM_BLT5,
+			[BCS6]  = XEHPC_GRDOM_BLT6,
+			[BCS7]  = XEHPC_GRDOM_BLT7,
+			[BCS8]  = XEHPC_GRDOM_BLT8,
+			[VCS0]  = GEN11_GRDOM_MEDIA,
+			[VCS1]  = GEN11_GRDOM_MEDIA2,
+			[VCS2]  = GEN11_GRDOM_MEDIA3,
+			[VCS3]  = GEN11_GRDOM_MEDIA4,
+			[VCS4]  = GEN11_GRDOM_MEDIA5,
+			[VCS5]  = GEN11_GRDOM_MEDIA6,
+			[VCS6]  = GEN11_GRDOM_MEDIA7,
+			[VCS7]  = GEN11_GRDOM_MEDIA8,
+			[VECS0] = GEN11_GRDOM_VECS,
+			[VECS1] = GEN11_GRDOM_VECS2,
+			[VECS2] = GEN11_GRDOM_VECS3,
+			[VECS3] = GEN11_GRDOM_VECS4,
+			[CCS0]  = GEN11_GRDOM_RENDER,
+			[CCS1]  = GEN11_GRDOM_RENDER,
+			[CCS2]  = GEN11_GRDOM_RENDER,
+			[CCS3]  = GEN11_GRDOM_RENDER,
+			[GSC0]  = GEN12_GRDOM_GSC,
+		};
+		//GEM_BUG_ON(id >= ARRAY_SIZE(engine_reset_domains) ||
+			 //  !engine_reset_domains[id]);
+		reset_domain = engine_reset_domains[id2];
+	} else {
+		static const u32 engine_reset_domains[] = {
+			[RCS0]  = GEN6_GRDOM_RENDER,
+			[BCS0]  = GEN6_GRDOM_BLT,
+			[VCS0]  = GEN6_GRDOM_MEDIA,
+			[VCS1]  = GEN8_GRDOM_MEDIA2,
+			[VECS0] = GEN6_GRDOM_VECS,
+		};
+		//GEM_BUG_ON(id >= ARRAY_SIZE(engine_reset_domains) ||
+			//   !engine_reset_domains[id]);
+		reset_domain = engine_reset_domains[id2];
+	}
+
+	return reset_domain;
+}
+
+static u32 intel_engine_context_size(struct intel_gt *gt, u8 classb)
+{
+	u32 cxt_size;
+	struct drm_i915_private *i915 = gt->i915;
+	struct intel_display *display =i915->display;
+	
+	//BUILD_BUG_ON(I915_GTT_PAGE_SIZE != PAGE_SIZE);
+	
+	switch (classb) {
+		case COMPUTE_CLASS:
+		case RENDER_CLASS:
+			switch (GRAPHICS_VER(gt->i915)) {
+				default:
+					return DEFAULT_LR_CONTEXT_RENDER_SIZE;
+				case 12:
+				case 11:
+					return GEN11_LR_CONTEXT_RENDER_SIZE;
+				case 9:
+					return GEN9_LR_CONTEXT_RENDER_SIZE;
+				case 8:
+					return GEN8_LR_CONTEXT_RENDER_SIZE;
+				case 7:
+					if (IS_HASWELL(gt->i915))
+						return HSW_CXT_TOTAL_SIZE;
+					
+					cxt_size = intel_de_read(display, GEN7_CXT_SIZE);
+					return round_up(GEN7_CXT_TOTAL_SIZE(cxt_size) * 64,
+									PAGE_SIZE);
+				case 6:
+					cxt_size = intel_de_read(display, CXT_SIZE);
+					return round_up(GEN6_CXT_TOTAL_SIZE(cxt_size) * 64,
+									PAGE_SIZE);
+				case 5:
+				case 4:
+					cxt_size = intel_de_read(display, CXT_SIZE) + 1;
+					return round_up(cxt_size * 64, PAGE_SIZE);
+				case 3:
+				case 2:
+
+				case 1:
+					return 0;
+			}
+			break;
+			
+		default:
+		case VIDEO_DECODE_CLASS:
+		case VIDEO_ENHANCEMENT_CLASS:
+		case COPY_ENGINE_CLASS:
+		case OTHER_CLASS:
+			if (GRAPHICS_VER(gt->i915) < 8)
+				return 0;
+			return GEN8_LR_CONTEXT_OTHER_SIZE;
+	}
+	
+}
+
+void intel_engine_set_hwsp_writemask(struct intel_engine_cs *engine, u32 mask)
+{
+
+	if (GRAPHICS_VER(engine->i915) < 6 && engine->classb != RENDER_CLASS)
+		return;
+
+	struct drm_i915_private *i915 = engine->gt->i915;
+	struct intel_display *display =i915->display;
+	
+	intel_de_write(display,RING_HWSTAM(engine->mmio_base), mask);
+	
+	//if (GRAPHICS_VER(engine->i915) >= 3)
+		//ENGINE_WRITE(engine, RING_HWSTAM, mask);
+	//else
+		//ENGINE_WRITE16(engine, RING_HWSTAM, mask);
+}
+static void intel_engine_sanitize_mmio(struct intel_engine_cs *engine)
+{
+	intel_engine_set_hwsp_writemask(engine, ~0u);
+}
+
+#define LONG_MAX	((long)(~0UL >> 1))
+#define	MAX_SCHEDULE_TIMEOUT		LONG_MAX
+
+static inline unsigned int jiffies_to_usecs(const unsigned long j)
+{
+
+
+	return (USEC_PER_SEC / 1000) * j;
+}
+
+static inline u64 jiffies_to_nsecs(const unsigned long j)
+{
+	return (u64)jiffies_to_usecs(j) * NSEC_PER_USEC;
+}
+
+static inline unsigned int jiffies_to_msecs(const unsigned long j)
+{
+	return (1000L / 1000) * j;
+}
+
+u64 intel_clamp_heartbeat_interval_ms(struct intel_engine_cs *engine, u64 value)
+{
+	value = min( value, jiffies_to_msecs(MAX_SCHEDULE_TIMEOUT));
+
+	return value;
+}
+
+u64 intel_clamp_max_busywait_duration_ns(struct intel_engine_cs *engine, u64 value)
+{
+	value = min(value, jiffies_to_nsecs(2));
+
+	return value;
+}
+
+#define GUC_POLICY_MAX_EXEC_QUANTUM_US		(100 * 1000 * 1000UL)
+#define GUC_POLICY_MAX_PREEMPT_TIMEOUT_US	(100 * 1000 * 1000UL)
+static inline u32 guc_policy_max_preempt_timeout_ms(void)
+{
+	return GUC_POLICY_MAX_PREEMPT_TIMEOUT_US / 1000;
+}
+
+u64 intel_clamp_preempt_timeout_ms(struct intel_engine_cs *engine, u64 value)
+{
+	/*
+	 * NB: The GuC API only supports 32bit values. However, the limit is further
+	 * reduced due to internal calculations which would otherwise overflow.
+	 */
+	if (intel_guc_submission_is_wanted(gt_to_guc(engine->gt)))
+		value = min( value, guc_policy_max_preempt_timeout_ms());
+
+	value = min( value, jiffies_to_msecs(MAX_SCHEDULE_TIMEOUT));
+
+	return value;
+}
+
+u64 intel_clamp_stop_timeout_ms(struct intel_engine_cs *engine, u64 value)
+{
+	value = min( value, jiffies_to_msecs(MAX_SCHEDULE_TIMEOUT));
+
+	return value;
+}
+
+#define GUC_POLICY_MAX_EXEC_QUANTUM_US		(100 * 1000 * 1000UL)
+#define GUC_POLICY_MAX_PREEMPT_TIMEOUT_US	(100 * 1000 * 1000UL)
+static inline u32 guc_policy_max_exec_quantum_ms(void)
+{
+	return GUC_POLICY_MAX_EXEC_QUANTUM_US / 1000;
+}
+
+u64 intel_clamp_timeslice_duration_ms(struct intel_engine_cs *engine, u64 value)
+{
+	/*
+	 * NB: The GuC API only supports 32bit values. However, the limit is further
+	 * reduced due to internal calculations which would otherwise overflow.
+	 */
+	if (intel_guc_submission_is_wanted(gt_to_guc(engine->gt)))
+		value = min( value, guc_policy_max_exec_quantum_ms());
+
+	value = min( value, jiffies_to_msecs(MAX_SCHEDULE_TIMEOUT));
+
+	return value;
+}
+
+static int intel_engine_setup(struct intel_gt *gt, enum intel_engine_id id2,
+				  u8 logical_instance)
+{
+	const struct engine_info *info = &intel_engines[id2];
+	struct drm_i915_private *i915 = gt->i915;
+	struct intel_engine_cs *engine;
+	u8 guc_class;
+
+/*	BUILD_BUG_ON(MAX_ENGINE_CLASS >= BIT(GEN11_ENGINE_CLASS_WIDTH));
+	BUILD_BUG_ON(MAX_ENGINE_INSTANCE >= BIT(GEN11_ENGINE_INSTANCE_WIDTH));
+	BUILD_BUG_ON(I915_MAX_VCS > (MAX_ENGINE_INSTANCE + 1));
+	BUILD_BUG_ON(I915_MAX_VECS > (MAX_ENGINE_INSTANCE + 1));
+*/
+	if ((id2 >= ARRAY_SIZE(gt->engine)))
+		return -EINVAL;
+
+	if ((info->classb > MAX_ENGINE_CLASS))
+		return -EINVAL;
+
+	if ((info->instance > MAX_ENGINE_INSTANCE))
+		return -EINVAL;
+
+	if ((gt->engine_class[info->classb][info->instance]))
+		return -EINVAL;
+
+	engine =  (struct intel_engine_cs *)IOMalloc(sizeof(struct intel_engine_cs));
+	if (!engine)
+		return -ENOMEM;
+
+	//BUILD_BUG_ON(BITS_PER_TYPE(engine->mask) < I915_NUM_ENGINES);
+
+	//INIT_LIST_HEAD(&engine->pinned_contexts_list);
+	engine->id2 = id2;
+	engine->legacy_idx = INVALID_ENGINE;
+	engine->mask = BIT(id2);
+	engine->reset_domain = get_reset_domain(GRAPHICS_VER(gt->i915), id2);
+	engine->i915 = i915;
+	engine->gt = gt;
+
+	guc_class = engine_class_to_guc_class(info->classb);
+	engine->guc_id = MAKE_GUC_ID(guc_class, info->instance);
+	engine->mmio_base = __engine_mmio_base(i915, info->mmio_bases);
+
+	//engine->irq_handler = nop_irq_handler;
+
+	engine->classb = info->classb;
+	engine->instance = info->instance;
+	engine->logical_mask = BIT(logical_instance);
+	__sprint_engine_name(engine);
+
+
+	if ((engine->classb == COMPUTE_CLASS || engine->classb == RENDER_CLASS) &&
+		__ffs(CCS_MASK(engine->gt) | RCS_MASK(engine->gt)) == engine->instance)
+		engine->flags |= I915_ENGINE_FIRST_RENDER_COMPUTE;
+
+	/* features common between engines sharing EUs */
+	if (engine->classb == RENDER_CLASS || engine->classb == COMPUTE_CLASS) {
+		engine->flags |= I915_ENGINE_HAS_RCS_REG_STATE;
+		engine->flags |= I915_ENGINE_HAS_EU_PRIORITY;
+	}
+
+	engine->props.heartbeat_interval_ms =
+		CONFIG_DRM_I915_HEARTBEAT_INTERVAL;
+	engine->props.max_busywait_duration_ns =
+		CONFIG_DRM_I915_MAX_REQUEST_BUSYWAIT;
+	engine->props.preempt_timeout_ms =
+		CONFIG_DRM_I915_PREEMPT_TIMEOUT;
+	engine->props.stop_timeout_ms =
+		CONFIG_DRM_I915_STOP_TIMEOUT;
+	engine->props.timeslice_duration_ms =
+		CONFIG_DRM_I915_TIMESLICE_DURATION;
+
+
+	if (GRAPHICS_VER(i915) == 12 && (engine->flags & I915_ENGINE_HAS_RCS_REG_STATE))
+		engine->props.preempt_timeout_ms = CONFIG_DRM_I915_PREEMPT_TIMEOUT_COMPUTE;
+
+
+#define CLAMP_PROP(field) \
+	do { \
+		u64 clamp = intel_clamp_##field(engine, engine->props.field); \
+		if (clamp != engine->props.field) { \
+			engine->props.field = clamp; \
+		} \
+	} while (0)
+
+	CLAMP_PROP(heartbeat_interval_ms);
+	CLAMP_PROP(max_busywait_duration_ns);
+	CLAMP_PROP(preempt_timeout_ms);
+	CLAMP_PROP(stop_timeout_ms);
+	CLAMP_PROP(timeslice_duration_ms);
+
+#undef CLAMP_PROP
+
+	engine->defaults = engine->props;
+
+	engine->context_size = intel_engine_context_size(gt, engine->classb);
+	if ((engine->context_size > BIT(20)))
+		engine->context_size = 0;
+	if (engine->context_size)
+		DRIVER_CAPS(i915)->has_logical_contexts = true;
+
+	//ewma__engine_latency_init(&engine->latency);
+
+	//ATOMIC_INIT_NOTIFIER_HEAD(&engine->context_status_notifier);
+
+	intel_engine_sanitize_mmio(engine);
+
+	gt->engine_class[info->classb][info->instance] = engine;
+	gt->engine[id2] = engine;
+
+	return 0;
+}
+
+static void __setup_engine_capabilities(struct intel_engine_cs *engine)
+{
+	struct drm_i915_private *i915 = engine->i915;
+
+	
+	if (engine->classb == VIDEO_DECODE_CLASS) {
+
+		if (GRAPHICS_VER(i915) >= 11 ||
+			(GRAPHICS_VER(i915) >= 9 && engine->instance == 0))
+			engine->uabi_capabilities |=
+				I915_VIDEO_CLASS_CAPABILITY_HEVC;
+
+
+		if ((GRAPHICS_VER(i915) >= 11 &&
+			 (engine->gt->info.vdbox_sfc_access &
+			  BIT(engine->instance))) ||
+			(GRAPHICS_VER(i915) >= 9 && engine->instance == 0))
+			engine->uabi_capabilities |=
+				I915_VIDEO_AND_ENHANCE_CLASS_CAPABILITY_SFC;
+	} else if (engine->classb == VIDEO_ENHANCEMENT_CLASS) {
+		if (GRAPHICS_VER(i915) >= 9 &&
+			engine->gt->info.sfc_mask & BIT(engine->instance))
+			engine->uabi_capabilities |=
+				I915_VIDEO_AND_ENHANCE_CLASS_CAPABILITY_SFC;
+	}
+}
+
+static void intel_setup_engine_capabilities(struct intel_gt *gt)
+{
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id2;
+
+	for_each_engine(engine, gt, id2)
+		__setup_engine_capabilities(engine);
+}
+
+int intel_engines_init_mmio(struct intel_gt *gt)
+{
+	struct drm_i915_private *i915 = gt->i915;
+	const unsigned int engine_mask = init_engine_mask(gt);
+	unsigned int mask = 0;
+	unsigned int i, classb;
+	u8 logical_ids[MAX_ENGINE_INSTANCE + 1];
+	int err;
+
+	/*drm_WARN_ON(&i915->drm, engine_mask == 0);
+	drm_WARN_ON(&i915->drm, engine_mask &
+			GENMASK(BITS_PER_TYPE(mask) - 1, I915_NUM_ENGINES));
+*/
+	for (classb = 0; classb < MAX_ENGINE_CLASS + 1; ++classb) {
+		setup_logical_ids(gt, logical_ids, classb);
+
+		for (i = 0; i < ARRAY_SIZE(intel_engines); ++i) {
+			u8 instance = intel_engines[i].instance;
+
+			if (intel_engines[i].classb != classb ||
+				!HAS_ENGINE(gt, i))
+				continue;
+
+			err = intel_engine_setup(gt, static_cast<enum intel_engine_id >(i)  ,
+						 logical_ids[instance]);
+			if (err)
+				goto cleanup;
+
+			mask |= BIT(i);
+		}
+	}
+
+
+	if (( mask != engine_mask))
+		gt->info.engine_mask = mask;
+
+	gt->info.num_engines = hweight32(mask);
+
+	//intel_gt_check_and_clear_faults(gt);
+
+	intel_setup_engine_capabilities(gt);
+
+	//intel_uncore_prune_engine_fw_domains(gt->uncore, gt);
+
+	return 0;
+
+cleanup:
+	//intel_engines_free(gt);
+	return err;
+}
+
+static inline struct intel_sseu
+intel_sseu_from_device_info(const struct sseu_dev_info *sseu)
+{
+	struct intel_sseu value = {
+		.slice_mask = sseu->slice_mask,
+		.subslice_mask = sseu->subslice_mask.hsw[0],
+		.min_eus_per_subslice = sseu->max_eus_per_subslice,
+		.max_eus_per_subslice = sseu->max_eus_per_subslice,
+	};
+
+	return value;
+}
+
+void intel_sseu_set_info(struct sseu_dev_info *sseu, u8 max_slices,
+			 u8 max_subslices, u8 max_eus_per_subslice)
+{
+	sseu->max_slices = max_slices;
+	sseu->max_subslices = max_subslices;
+	sseu->max_eus_per_subslice = max_eus_per_subslice;
+}
+
+
+
+static inline bool
+intel_sseu_has_subslice(const struct sseu_dev_info *sseu, int slice,
+			int subslice)
+{
+	if (slice >= sseu->max_slices ||
+		subslice >= sseu->max_subslices)
+		return false;
+
+	if (sseu->has_xehp_dss)
+		return test_bit(subslice, sseu->subslice_mask.xehp);
+	else
+		return sseu->subslice_mask.hsw[slice] & BIT(subslice);
+}
+
+static void sseu_set_eus(struct sseu_dev_info *sseu, int slice, int subslice,
+			 u16 eu_mask)
+{
+	//GEM_WARN_ON(eu_mask && __fls(eu_mask) >= sseu->max_eus_per_subslice);
+	if (sseu->has_xehp_dss) {
+		//GEM_WARN_ON(slice > 0);
+		sseu->eu_mask.xehp[subslice] = eu_mask;
+	} else {
+		sseu->eu_mask.hsw[slice][subslice] = eu_mask;
+	}
+}
+
+static u16 compute_eu_total(const struct sseu_dev_info *sseu)
+{
+	int s, ss, total = 0;
+
+	for (s = 0; s < sseu->max_slices; s++)
+		for (ss = 0; ss < sseu->max_subslices; ss++)
+			if (sseu->has_xehp_dss)
+				total += hweight16(sseu->eu_mask.xehp[ss]);
+			else
+				total +=hweight16(sseu->eu_mask.hsw[s][ss]);
+
+	return total;
+}
+
+static void gen11_compute_sseu_info(struct sseu_dev_info *sseu,
+					u32 ss_en, u16 eu_en)
+{
+	u32 valid_ss_mask = GENMASK(sseu->max_subslices - 1, 0);
+	int ss;
+
+	sseu->slice_mask |= BIT(0);
+	sseu->subslice_mask.hsw[0] = ss_en & valid_ss_mask;
+
+	for (ss = 0; ss < sseu->max_subslices; ss++)
+		if (intel_sseu_has_subslice(sseu, 0, ss))
+			sseu_set_eus(sseu, 0, ss, eu_en);
+
+	sseu->eu_per_subslice = hweight16(eu_en);
+	sseu->eu_total = compute_eu_total(sseu);
+}
+
+static void gen12_sseu_info_init(struct intel_gt *gt)
+{
+	struct drm_i915_private *i915 = gt->i915;
+	struct intel_display *display=i915->display;
+	
+	struct sseu_dev_info *sseu = &gt->info.sseu;
+	u32 g_dss_en;
+	u16 eu_en = 0;
+	u8 eu_en_fuse;
+	u8 s_en;
+	int eu;
+
+	intel_sseu_set_info(sseu, 1, 6, 16);
+
+	s_en = REG_FIELD_GET(GEN11_GT_S_ENA_MASK,
+						 intel_de_read (display, GEN11_GT_SLICE_ENABLE));
+	//drm_WARN_ON(&gt->i915->drm, s_en != 0x1);
+
+	g_dss_en = intel_de_read (display,GEN12_GT_GEOMETRY_DSS_ENABLE);
+
+	eu_en_fuse = ~REG_FIELD_GET(GEN11_EU_DIS_MASK,
+								intel_de_read (display,GEN11_EU_DISABLE));
+
+	for (eu = 0; eu < sseu->max_eus_per_subslice / 2; eu++)
+		if (eu_en_fuse & BIT(eu))
+			eu_en |= BIT(eu * 2) | BIT(eu * 2 + 1);
+
+	gen11_compute_sseu_info(sseu, g_dss_en, eu_en);
+
+	sseu->has_slice_pg = 1;
+}
+
+static const struct intel_mmio_range icl_l3bank_steering_table[] = {
+	{ 0x00B100, 0x00B3FF },
+	{},
+};
+
+static void gen11_sseu_device_status(struct intel_gt *gt,
+					 struct sseu_dev_info *sseu)
+{
+#define SS_MAX 8
+	struct drm_i915_private *i915 = gt->i915;
+	struct intel_display *display=i915->display;
+	const struct intel_gt_info *info = &gt->info;
+	u32 s_reg[SS_MAX], eu_reg[2 * SS_MAX], eu_mask[2];
+	int s, ss;
+	
+	for (s = 0; s < info->sseu.max_slices; s++) {
+
+		s_reg[s] = intel_de_read (display, GEN10_SLICE_PGCTL_ACK(s)) &
+			GEN10_PGCTL_VALID_SS_MASK(s);
+		eu_reg[2 * s] = intel_de_read (display,
+						  GEN10_SS01_EU_PGCTL_ACK(s));
+		eu_reg[2 * s + 1] = intel_de_read (display,
+							  GEN10_SS23_EU_PGCTL_ACK(s));
+	}
+
+	eu_mask[0] = GEN9_PGCTL_SSA_EU08_ACK |
+			 GEN9_PGCTL_SSA_EU19_ACK |
+			 GEN9_PGCTL_SSA_EU210_ACK |
+			 GEN9_PGCTL_SSA_EU311_ACK;
+	eu_mask[1] = GEN9_PGCTL_SSB_EU08_ACK |
+			 GEN9_PGCTL_SSB_EU19_ACK |
+			 GEN9_PGCTL_SSB_EU210_ACK |
+			 GEN9_PGCTL_SSB_EU311_ACK;
+
+	for (s = 0; s < info->sseu.max_slices; s++) {
+		if ((s_reg[s] & GEN9_PGCTL_SLICE_ACK) == 0)
+			continue;
+
+		sseu->slice_mask |= BIT(s);
+		sseu->subslice_mask.hsw[s] = info->sseu.subslice_mask.hsw[s];
+
+		for (ss = 0; ss < info->sseu.max_subslices; ss++) {
+			unsigned int eu_cnt;
+
+			if (info->sseu.has_subslice_pg &&
+				!(s_reg[s] & (GEN9_PGCTL_SS_ACK(ss))))
+				continue;
+
+			eu_cnt = 2 * hweight32(eu_reg[2 * s + ss / 2] &
+						   eu_mask[ss % 2]);
+			sseu->eu_total += eu_cnt;
+			sseu->eu_per_subslice = max_t(unsigned int,
+							  sseu->eu_per_subslice,
+							  eu_cnt);
+		}
+	}
+#undef SS_MAX
+}
+
+
+
+
+static int intel_engine_init_tlb_invalidation(struct intel_engine_cs *engine)
+{
+
+	struct drm_i915_private *i915 = engine->i915;
+	const unsigned int instance = engine->instance;
+	const unsigned int classb = engine->classb;
+	const union intel_engine_tlb_inv_reg *regs;
+	union intel_engine_tlb_inv_reg reg;
+	unsigned int num = 0;
+	u32 val;
+
+
+	if (engine->gt->type == GT_MEDIA) {
+
+	} else {
+		if (GRAPHICS_VER_FULL(i915) == IP_VER(12, 0) ||
+			   GRAPHICS_VER_FULL(i915) == IP_VER(12, 10)) {
+			regs = gen12_regs;
+			num = ARRAY_SIZE(gen12_regs);
+		}
+	}
+
+	if (!num)
+		return -ENODEV;
+
+	if (
+				classb >= num ||
+				(!regs[classb].reg &&
+				 !regs[classb].mcr_reg))
+		return -ERANGE;
+
+	reg = regs[classb];
+
+
+		val = instance;
+
+
+	val = BIT(val);
+
+	engine->tlb_inv.mcr = regs == xehp_regs;
+	engine->tlb_inv.reg = reg;
+	engine->tlb_inv.done = val;
+
+	if (GRAPHICS_VER(i915) >= 12 &&
+		(engine->classb == VIDEO_DECODE_CLASS ||
+		 engine->classb == VIDEO_ENHANCEMENT_CLASS ||
+		 engine->classb == COMPUTE_CLASS ||
+		 engine->classb == OTHER_CLASS))
+		engine->tlb_inv.request = REG_MASKED_FIELD_ENABLE(val);
+	else
+		engine->tlb_inv.request = val;
+
+	return 0;
+}
+
+struct i915_sched_engine *
+i915_sched_engine_create(unsigned int subclass)
+{
+	struct i915_sched_engine *sched_engine;
+
+	sched_engine = (struct i915_sched_engine *)IOMalloc(sizeof(*sched_engine));
+	if (!sched_engine)
+		return NULL;
+
+	//kref_init(&sched_engine->ref);
+	atomic_set(&sched_engine->ref.refcount.refs, 1);
+
+	sched_engine->queue = RB_ROOT_CACHED;
+	sched_engine->queue_priority_hint = INT_MIN;
+	//sched_engine->destroy = default_destroy;
+	//sched_engine->disabled = default_disabled;
+
+	INIT_LIST_HEAD(&sched_engine->requests);
+	INIT_LIST_HEAD(&sched_engine->hold);
+
+	//spin_lock_init(&sched_engine->lock);
+	//lockdep_set_subclass(&sched_engine->lock, subclass);
+
+
+	return sched_engine;
+}
+
+void intel_gt_apply_workarounds(struct intel_gt *gt)
+{
+	wa_list_apply(&gt->wa_list);
+}
+
+
+void Gen11::engines(void *that)
+{
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_display *display=i915->display;
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id2;
+	struct intel_guc *guc = gt_to_guc(gt);
+	struct intel_guc_ct *ct=&guc->ct;
+	
+	if (isguc)
+		gt->submission_method = INTEL_SUBMISSION_GUC;
+	else
+		gt->submission_method = INTEL_SUBMISSION_ELSP;
+	
+	gen12_sseu_info_init(gt);
+	gen11_sseu_device_status(gt, &gt->info.sseu);
+	
+	if (GRAPHICS_VER(i915) >= 11 &&
+		GRAPHICS_VER_FULL(i915) < IP_VER(12, 55)) {
+		gt->steering_table[L3BANK] = icl_l3bank_steering_table;
+		gt->info.l3bank_mask =
+		~intel_de_read (display, GEN10_MIRROR_FUSE3) &
+		GEN10_L3BANK_MASK;
+	}
+	intel_engines_init_mmio(gt);
+	
+	intel_gt_init_workarounds(gt);
+	
+	SafeForceWake(that, true, 7);
+	intel_gt_apply_workarounds(gt);
+	SafeForceWake(that, false, 7);
+	
+	//engine_setup_common
+	for_each_engine(engine, gt, id2) {
+		
+		intel_engine_init_tlb_invalidation(engine);
+		engine->sseu =	intel_sseu_from_device_info(&engine->gt->info.sseu);
+		
+		engine->sched_engine = i915_sched_engine_create(2);//ENGINE_VIRTUAL
+		engine->sched_engine->private_data = engine;
+		
+		intel_engine_init_workarounds(engine);
+		intel_engine_init_whitelist(engine);
+		intel_engine_init_ctx_wa(engine);
+		
+		engine->flags |= I915_ENGINE_HAS_RELATIVE_MMIO;
+		engine->flags |= I915_ENGINE_SUPPORTS_STATS;
+		engine->flags |= I915_ENGINE_HAS_PREEMPTION;
+		engine->flags |= I915_ENGINE_HAS_TIMESLICES;
+		
+	}
+	
+	if (isguc)
+	{
+		//intel_guc_init_early
+		INIT_LIST_HEAD(&ct->requests.pending);
+		INIT_LIST_HEAD(&ct->requests.incoming);
+		INIT_LIST_HEAD(&guc->submission_state.guc_id_list);
+		INIT_LIST_HEAD(&guc->submission_state.destroyed_contexts);
+		guc->submission_state.sched_disable_delay_ms = SCHED_DISABLE_DELAY_MS;
+		guc->submission_state.num_guc_ids = GUC_MAX_CONTEXT_ID;
+		guc->submission_state.sched_disable_gucid_threshold =
+		NUM_SCHED_DISABLE_GUCIDS_DEFAULT_THRESHOLD(guc);
+		if (gt->type == GT_MEDIA) {
+			guc->notify_reg = MEDIA_GUC_HOST_INTERRUPT;
+			guc->send_regs.base = i915_mmio_reg_offset(MEDIA_SOFT_SCRATCH(0));
+		} else {
+			guc->notify_reg = GEN11_GUC_HOST_INTERRUPT;
+			guc->send_regs.base = i915_mmio_reg_offset(GEN11_SOFT_SCRATCH(0));
+		}
+		guc->send_regs.count = GEN11_SOFT_SCRATCH_COUNT;
+		guc->submission_supported = true;
+		guc->submission_selected = true;
+	}
+	
+}
+
+
+
+
+
+
+
+
+
+void  Gen11::initHardwareStatusPageRegisters(void *that)
+{
+	FunctionCast(initHardwareStatusPageRegisters, callback->oinitHardwareStatusPageRegisters)( that);
+	
+}
+
+void Gen11::sanitizeCDClockFrequency(void *that) {
+
+	//auto referenceFrequency = callback->wrapReadRegister32(that, SKL_DSSM) & ICL_DSSM_CDCLK_PLL_REFCLK_MASK;
+	auto referenceFrequency =NBlue::callback->readReg32(ICL_REG_DSSM)>> 29;
+	//auto referenceFrequency = callback->wrapReadRegister32(that, ICL_REG_DSSM) >> 29;
+	uint32_t newCdclkFrequency = 0;
+	uint32_t newPLLFrequency = 0;
+	switch (referenceFrequency) {
+		case ICL_REF_CLOCK_FREQ_19_2:
+			newCdclkFrequency = ICL_CDCLK_FREQ_652_8;
+			newPLLFrequency = ICL_CDCLK_PLL_FREQ_REF_19_2;
+			break;
+			
+		case ICL_REF_CLOCK_FREQ_24_0:
+			newCdclkFrequency = ICL_CDCLK_FREQ_648_0;
+			newPLLFrequency = ICL_CDCLK_PLL_FREQ_REF_24_0;
+			break;
+			
+		case ICL_REF_CLOCK_FREQ_38_4:
+			newCdclkFrequency = ICL_CDCLK_FREQ_652_8;
+			newPLLFrequency = ICL_CDCLK_PLL_FREQ_REF_38_4;
+			break;
+			
+		default:
+			return;
+	}
+	
+	callback->orgDisableCDClock(that);
+	
+	callback->orgSetCDClockFrequency(that, newPLLFrequency);
+	NBlue::callback->readReg32( ICL_REG_CDCLK_CTL) ;
+}
+
+uint32_t Gen11::wrapProbeCDClockFrequency(void *that) {
+
+	//auto cdclk = NBlue::callback->readReg32(ICL_REG_CDCLK_CTL) & BXT_CDCLK_CD2X_DIV_SEL_MASK;
+	auto cdclk =NBlue::callback->readReg32(ICL_REG_CDCLK_CTL) & CDCLK_FREQ_DECIMAL_MASK;
+	
+	if (cdclk < ICL_CDCLK_DEC_FREQ_THRESHOLD) {
+		sanitizeCDClockFrequency(that);
+	}
+	
+	auto retVal = callback->orgProbeCDClockFrequency(that);
+	return retVal;
+}
+
+
+
+
+void Gen11::hwConfigureCustomAUX(void *that,bool param_1)
+{
+	//FunctionCast(hwConfigureCustomAUX, callback->ohwConfigureCustomAUX)(that,param_1 );
+}
+
+unsigned long Gen11::hwRegsNeedUpdate
+		  (void *that,void *param_1,
+		   void *param_2,void *param_3,void *param_4,
+		   void *param_5)
+{
+	
+	auto ret=FunctionCast(hwRegsNeedUpdate, callback->ohwRegsNeedUpdate)(that,param_1,param_2,param_3,param_4,param_5 );
+
+	return 0;
+	
+	if (hwu==1){
+		hwu=0;
+		return 1;
+	}
+	return ret;
+}
+
+int Gen11::getTranscoderOffset(void *that,void *param_1,uint param_2)
+{
+	auto ret=FunctionCast(getTranscoderOffset, callback->ogetTranscoderOffset)(that,param_1,param_2 );
+	
+	return 0;
+	return ret;
+}
+
+unsigned long  Gen11::AppleIntelPortHALinit(void *that,void *param_1)
+{
+	auto ret=FunctionCast(AppleIntelPortHALinit, callback->oAppleIntelPortHALinit)(that,param_1 );
+	if (kexticl) {
+		getMember<uint32_t>(that, 0x584)=0x60540;
+		getMember<uint32_t>(that, 0x588)=0x60544;
+	} //else fresetSoftwareState(that);
+	
+	PortConfig *pc=(PortConfig *)getMember<void*>(that, kexticl ? 0x440 : 0x548);
+	if (pc->index == 0)
+		if (linkp==nullptr) linkp=that;
+	
+	return ret;
+}
+
+unsigned long Gen11::hwSetMode(void *that,void *param_1,void *param_2,int param_3,void *param_4)
+{
+	auto ret=FunctionCast(hwSetMode, callback->ohwSetMode)(that,param_1,param_2,param_3,param_4 );
+	
+	if (hwu==2){
+		hwu=1;
+	}
+	
+	return ret;
+}
+
+
+
+
+uint64_t Gen11::aframeBufferNotificationcallback(void *param_1,void *param_2,void *param_3,int param_4,void *param_5)
+{
+	auto ret=FunctionCast(aframeBufferNotificationcallback, callback->oaframeBufferNotificationcallback)(param_1,param_2,param_3,param_4,param_5 );
+
+	if (param_4 == 2)
+	{
+		if (hwu==3) hwu=2;
+	}
+	return ret;
+}
+
+
+static bool is_valid_dmc_id(enum intel_dmc_id dmc_id)
+{
+	return dmc_id >= DMC_FW_MAIN && dmc_id < DMC_FW_MAX;
+}
+static bool fw_info_matches_stepping(const struct intel_fw_info *fw_info,
+					 const struct stepping_info *si)
+{
+	if ((fw_info->substepping == '*' && si->stepping == fw_info->stepping) ||
+		(si->stepping == fw_info->stepping && si->substepping == fw_info->substepping) ||
+
+		(si->stepping == '*' && si->substepping == fw_info->substepping) ||
+		(fw_info->stepping == '*' && fw_info->substepping == '*'))
+		return true;
+
+	return false;
+}
+static void dmc_set_fw_offset(struct intel_dmc *dmc,
+				  const struct intel_fw_info *fw_info,
+				  unsigned int num_entries,
+				  const struct stepping_info *si,
+				  u8 package_ver)
+{
+	enum intel_dmc_id dmc_id;
+	unsigned int i;
+
+	for (i = 0; i < num_entries; i++) {
+		dmc_id = static_cast<intel_dmc_id>(package_ver <= 1 ? DMC_FW_MAIN : fw_info[i].dmc_id);
+
+		if (!is_valid_dmc_id(dmc_id)) {
+			continue;
+		}
+
+
+		if (dmc->dmc_info[dmc_id].present)
+			continue;
+
+		
+		if (fw_info_matches_stepping(&fw_info[i], si)) {
+			dmc->dmc_info[dmc_id].present = true;
+			dmc->dmc_info[dmc_id].dmc_offset = fw_info[i].offset;
+		}
+	}
+}
+
+static u32
+parse_dmc_fw_package(struct intel_dmc *dmc,
+			 const struct intel_package_header *package_header,
+			 const struct stepping_info *si,
+			 size_t rem_size)
+{
+	u32 package_size = sizeof(struct intel_package_header);
+	u32 num_entries, max_entries;
+	const struct intel_fw_info *fw_info;
+
+	if (rem_size < package_size)
+		goto error_truncated;
+
+	if (package_header->header_ver == 1) {
+		max_entries = PACKAGE_MAX_FW_INFO_ENTRIES;
+	} else if (package_header->header_ver == 2) {
+		max_entries = PACKAGE_V2_MAX_FW_INFO_ENTRIES;
+	} else {
+		return 0;
+	}
+
+
+	package_size += max_entries * sizeof(struct intel_fw_info);
+	if (rem_size < package_size)
+		goto error_truncated;
+
+	if (package_header->header_len * 4 != package_size) {
+		return 0;
+	}
+
+	num_entries = package_header->num_entries;
+	if ((num_entries > max_entries))
+		num_entries = max_entries;
+	
+
+	fw_info = (const struct intel_fw_info *)
+		((u8 *)package_header + sizeof(*package_header));
+	dmc_set_fw_offset(dmc, fw_info, num_entries, si,
+			  package_header->header_ver);
+
+	return package_size;
+
+error_truncated:
+	return 0;
+}
+
+static bool dmc_mmio_addr_sanity_check(struct intel_dmc *dmc,
+					   const u32 *mmioaddr, u32 mmio_count,
+					   int header_ver, enum intel_dmc_id dmc_id)
+{
+	struct intel_display *display = dmc->display;
+	u32 start_range, end_range;
+	u32 i;
+
+	if (header_ver == 1) {
+		start_range = DMC_MMIO_START_RANGE;
+		end_range = DMC_MMIO_END_RANGE;
+	} else if (dmc_id == DMC_FW_MAIN) {
+		start_range = TGL_MAIN_MMIO_START;
+		end_range = TGL_MAIN_MMIO_END;
+	} else if (DISPLAY_VER(display) >= 13) {
+		start_range = ADLP_PIPE_MMIO_START;
+		end_range = ADLP_PIPE_MMIO_END;
+	} else if (DISPLAY_VER(display) >= 12) {
+		start_range = TGL_PIPE_MMIO_START(dmc_id);
+		end_range = TGL_PIPE_MMIO_END(dmc_id);
+	} else {
+		return false;
+	}
+
+	for (i = 0; i < mmio_count; i++) {
+		if (mmioaddr[i] < start_range || mmioaddr[i] > end_range)
+			return false;
+	}
+
+	return true;
+}
+
+
+static bool is_dmc_evt_ctl_reg(struct intel_display *display,
+				   enum intel_dmc_id dmc_id, u32 reg)
+{
+	u32 offset = (reg);
+	u32 start = (DMC_EVT_CTL(display, dmc_id, 0));
+	u32 end = (DMC_EVT_CTL(display, dmc_id, DMC_EVENT_HANDLER_COUNT_GEN12));
+
+	return offset >= start && offset < end;
+}
+
+static bool is_dmc_evt_htp_reg(struct intel_display *display,
+				   enum intel_dmc_id dmc_id, u32 reg)
+{
+	u32 offset = (reg);
+	u32 start = (DMC_EVT_HTP(display, dmc_id, 0));
+	u32 end = (DMC_EVT_HTP(display, dmc_id, DMC_EVENT_HANDLER_COUNT_GEN12));
+
+	return offset >= start && offset < end;
+}
+
+static bool is_event_handler(struct intel_display *display,
+				 enum intel_dmc_id dmc_id,
+				 unsigned int event_id,
+							 u32 reg, u32 data)
+{
+	return is_dmc_evt_ctl_reg(display, dmc_id, reg) &&
+		REG_FIELD_GET(DMC_EVT_CTL_EVENT_ID_MASK, data) == event_id;
+}
+
+static bool fixup_dmc_evt(struct intel_display *display,
+			  enum intel_dmc_id dmc_id,
+						  u32 reg_ctl, u32 *data_ctl,
+						  u32 reg_htp, u32 *data_htp)
+{
+	if (!is_dmc_evt_ctl_reg(display, dmc_id, reg_ctl))
+		return false;
+
+	if (!is_dmc_evt_htp_reg(display, dmc_id, reg_htp))
+		return false;
+
+	if (i915_mmio_reg_offset(reg_ctl) - i915_mmio_reg_offset(DMC_EVT_CTL(display, dmc_id, 0)) !=
+		i915_mmio_reg_offset(reg_htp) - i915_mmio_reg_offset(DMC_EVT_HTP(display, dmc_id, 0)))
+		return false;
+
+	/*
+	 * On ADL-S the HRR event handler is not restored after DC6.
+	 * Clear it to zero from the beginning to avoid mismatches later.
+	 */
+	if (display->platform.alderlake_s && dmc_id == DMC_FW_MAIN &&
+		is_event_handler(display, dmc_id, MAINDMC_EVENT_VBLANK_A, reg_ctl, *data_ctl)) {
+		*data_ctl = 0;
+		*data_htp = 0;
+		return true;
+	}
+
+	/*
+	 * TGL/ADL-S DMC firmware incorrectly uses the undelayed vblank
+	 * event for the HRR handler, when it should be using the delayed
+	 * vblank event instead. Fixed firmware was never released
+	 * so the Windows driver just hacks around it by overriding
+	 * the event ID. Do the same.
+	 */
+	if ((display->platform.tigerlake || display->platform.alderlake_s) &&
+		is_event_handler(display, dmc_id, MAINDMC_EVENT_VBLANK_A, reg_ctl, *data_ctl)) {
+		*data_ctl &= ~DMC_EVT_CTL_EVENT_ID_MASK;
+		*data_ctl |=  REG_FIELD_PREP(DMC_EVT_CTL_EVENT_ID_MASK,
+						 MAINDMC_EVENT_VBLANK_DELAYED_A);
+		return true;
+	}
+
+	return false;
+}
+
+
+static u32 parse_dmc_fw_header(struct intel_dmc *dmc,
+				   const struct intel_dmc_header_base *dmc_header,
+				   size_t rem_size, enum intel_dmc_id dmc_id)
+{
+	struct intel_display *display = dmc->display;
+	struct dmc_fw_info *dmc_info = &dmc->dmc_info[dmc_id];
+	unsigned int header_len_bytes, dmc_header_size, payload_size, i;
+	const u32 *mmioaddr, *mmiodata;
+	u32 mmio_count, mmio_count_max, start_mmioaddr;
+	u8 *payload;
+
+
+	if (rem_size < sizeof(struct intel_dmc_header_base))
+		goto error_truncated;
+
+	if (dmc_header->header_ver == 3) {
+		const struct intel_dmc_header_v3 *v3 =
+			(const struct intel_dmc_header_v3 *)dmc_header;
+
+		if (rem_size < sizeof(struct intel_dmc_header_v3))
+			goto error_truncated;
+
+		mmioaddr = v3->mmioaddr;
+		mmiodata = v3->mmiodata;
+		mmio_count = v3->mmio_count;
+		mmio_count_max = DMC_V3_MAX_MMIO_COUNT;
+
+		header_len_bytes = dmc_header->header_len * 4;
+		start_mmioaddr = v3->start_mmioaddr;
+		dmc_header_size = sizeof(*v3);
+	} else if (dmc_header->header_ver == 1) {
+		const struct intel_dmc_header_v1 *v1 =
+			(const struct intel_dmc_header_v1 *)dmc_header;
+
+		if (rem_size < sizeof(struct intel_dmc_header_v1))
+			goto error_truncated;
+
+		mmioaddr = v1->mmioaddr;
+		mmiodata = v1->mmiodata;
+		mmio_count = v1->mmio_count;
+		mmio_count_max = DMC_V1_MAX_MMIO_COUNT;
+		header_len_bytes = dmc_header->header_len;
+		start_mmioaddr = DMC_V1_MMIO_START_RANGE;
+		dmc_header_size = sizeof(*v1);
+	} else {
+		return 0;
+	}
+
+	if (header_len_bytes != dmc_header_size) {
+		return 0;
+	}
+
+	if (mmio_count > mmio_count_max) {
+		return 0;
+	}
+
+	if (!dmc_mmio_addr_sanity_check(dmc, mmioaddr, mmio_count,
+					dmc_header->header_ver, dmc_id)) {
+		return 0;
+	}
+
+	for (i = 0; i < mmio_count; i++) {
+		dmc_info->mmioaddr[i] = _MMIO(mmioaddr[i]);
+		dmc_info->mmiodata[i] = mmiodata[i];
+	}
+
+	for (i = 0; i < mmio_count - 1; i++) {
+
+		if (!fixup_dmc_evt(display, dmc_id,
+				   dmc_info->mmioaddr[i], &dmc_info->mmiodata[i],
+				   dmc_info->mmioaddr[i+1], &dmc_info->mmiodata[i+1]))
+			continue;
+
+	}
+
+	dmc_info->mmio_count = mmio_count;
+	dmc_info->start_mmioaddr = start_mmioaddr;
+
+	rem_size -= header_len_bytes;
+
+	payload_size = dmc_header->fw_size * 4;
+	if (rem_size < payload_size)
+		goto error_truncated;
+
+	if (payload_size > dmc->max_fw_size) {
+		return 0;
+	}
+	dmc_info->dmc_fw_size = dmc_header->fw_size;
+
+	dmc_info->payload = static_cast<UInt32 *>(IOMallocZero(payload_size));
+	if (!dmc_info->payload)
+		return 0;
+	
+
+	payload = (u8 *)(dmc_header) + header_len_bytes;
+	memcpy(dmc_info->payload, payload, payload_size);
+
+	return header_len_bytes + payload_size;
+
+error_truncated:
+	return 0;
+}
+
+
+
+static void initialize_stepping_info(struct intel_display *display, struct stepping_info *si)
+{
+	const char *step_name = DISPLAY_RUNTIME_INFO(display)->step_name;
+
+	si->stepping = step_name[0] ?: '*';
+	si->substepping = step_name[1] ?: '*';
+}
+
+static u32 parse_dmc_fw_css(struct intel_dmc *dmc,
+				struct intel_css_header *css_header,
+				size_t rem_size)
+{
+
+	if (rem_size < sizeof(struct intel_css_header)) {
+		return 0;
+	}
+
+	if (sizeof(struct intel_css_header) !=
+		(css_header->header_len * 4)) {
+		return 0;
+	}
+
+	dmc->version = css_header->version;
+
+	return sizeof(struct intel_css_header);
+}
+static struct intel_dmc *display_to_dmc(struct intel_display *display)
+{
+	return display->dmc.dmc;
+}
+static void disable_event_handler(struct intel_display *display,
+				  u32 ctl_reg, u32 htp_reg)
+{
+	intel_de_write(display,  ctl_reg,
+			   REG_FIELD_PREP(DMC_EVT_CTL_TYPE_MASK,
+					  DMC_EVT_CTL_TYPE_EDGE_0_1) |
+			   REG_FIELD_PREP(DMC_EVT_CTL_EVENT_ID_MASK,
+					  DMC_EVENT_FALSE));
+	intel_de_write(display, htp_reg, 0);
+}
+static bool has_dmc_id_fw(struct intel_display *display, enum intel_dmc_id dmc_id)
+{
+	struct intel_dmc *dmc = display_to_dmc(display);
+
+	return dmc && dmc->dmc_info[dmc_id].payload;
+}
+
+bool intel_dmc_has_payload(struct intel_display *display)
+{
+	return has_dmc_id_fw(display, DMC_FW_MAIN);
+}
+static void disable_all_event_handlers(struct intel_display *display,
+					   enum intel_dmc_id dmc_id)
+{
+	int handler;
+
+	if (DISPLAY_VER(display) < 12)
+		return;
+
+	if (!has_dmc_id_fw(display, dmc_id))
+		return;
+
+	for (handler = 0; handler < DMC_EVENT_HANDLER_COUNT_GEN12; handler++)
+		disable_event_handler(display,
+					  DMC_EVT_CTL(display, dmc_id, handler),
+					  DMC_EVT_HTP(display, dmc_id, handler));
+}
+static u32 dmc_evt_ctl_disable(u32 dmc_evt_ctl)
+{
+
+	return (dmc_evt_ctl & DMC_EVT_CTL_ENABLE) |
+		REG_FIELD_PREP(DMC_EVT_CTL_TYPE_MASK,
+				   DMC_EVT_CTL_TYPE_EDGE_0_1) |
+		REG_FIELD_PREP(DMC_EVT_CTL_EVENT_ID_MASK,
+				   DMC_EVENT_FALSE);
+}
+
+static bool disable_dmc_evt(struct intel_display *display,
+				enum intel_dmc_id dmc_id,
+							u32 reg, u32 data)
+{
+	if (!is_dmc_evt_ctl_reg(display, dmc_id, reg))
+		return false;
+
+	/* keep all pipe DMC events disabled by default */
+	if (dmc_id != DMC_FW_MAIN)
+		return true;
+
+	/* also disable the flip queue event on the main DMC on TGL */
+	if (display->platform.tigerlake &&
+		is_event_handler(display, dmc_id, MAINDMC_EVENT_CLK_MSEC, reg, data))
+		return true;
+
+	/* also disable the HRR event on the main DMC on TGL/ADLS */
+	if ((display->platform.tigerlake || display->platform.alderlake_s) &&
+		is_event_handler(display, dmc_id, MAINDMC_EVENT_VBLANK_DELAYED_A, reg, data))
+		return true;
+
+	return false;
+}
+
+static u32 dmc_mmiodata(struct intel_display *display,
+			struct intel_dmc *dmc,
+			enum intel_dmc_id dmc_id, int i)
+{
+	if (disable_dmc_evt(display, dmc_id,
+				dmc->dmc_info[dmc_id].mmioaddr[i],
+				dmc->dmc_info[dmc_id].mmiodata[i]))
+		return dmc_evt_ctl_disable(dmc->dmc_info[dmc_id].mmiodata[i]);
+	else
+		return dmc->dmc_info[dmc_id].mmiodata[i];
+}
+
+static void dmc_load_mmio(struct intel_display *display, enum intel_dmc_id dmc_id)
+{
+	struct intel_dmc *dmc = display_to_dmc(display);
+	u32 i;
+	
+	for (i = 0; i < dmc->dmc_info[dmc_id].mmio_count; i++) {
+		intel_de_write(display, dmc->dmc_info[dmc_id].mmioaddr[i],
+					   dmc_mmiodata(display, dmc, dmc_id, i));
+	}
+	
+}
+static void dmc_load_program(struct intel_display *display, enum intel_dmc_id dmc_id)
+{
+	struct intel_dmc *dmc = display_to_dmc(display);
+	u32 i;
+
+	disable_all_event_handlers(display, dmc_id);
+
+	IOSimpleLock *myLock;
+	myLock = IOSimpleLockAlloc();
+	IOSimpleLockLock(myLock);
+
+	//preempt_disable();
+
+	for (i = 0; i < dmc->dmc_info[dmc_id].dmc_fw_size; i++) {
+		intel_de_write(display,
+				  DMC_PROGRAM(dmc->dmc_info[dmc_id].start_mmioaddr, i),
+				  dmc->dmc_info[dmc_id].payload[i]);
+	}
+
+	//preempt_enable();
+	
+	IOSimpleLockUnlock(myLock);
+	IOSimpleLockFree(myLock);
+	
+	dmc_load_mmio(display, dmc_id);
+	
+}
+
+
+static u32 gen9_dc_mask(struct intel_display *display)
+{
+	u32 mask;
+
+	mask = DC_STATE_EN_UPTO_DC5;
+
+	if (DISPLAY_VER(display) >= 12)
+		mask |= DC_STATE_EN_DC3CO | DC_STATE_EN_UPTO_DC6
+					  | DC_STATE_EN_DC9;
+	else if (DISPLAY_VER(display) == 11)
+		mask |= DC_STATE_EN_UPTO_DC6 | DC_STATE_EN_DC9;
+	else if (display->platform.geminilake || display->platform.broxton)
+		mask |= DC_STATE_EN_DC9;
+	else
+		mask |= DC_STATE_EN_UPTO_DC6;
+
+	return mask;
+}
+void intel_dmc_update_dc6_allowed_count(struct intel_display *display,
+					bool start_tracking)
+{
+	struct intel_dmc *dmc = display_to_dmc(display);
+	u32 dc5_cur_count;
+
+	if (DISPLAY_VER(dmc->display) < 14)
+		return;
+
+	dc5_cur_count = intel_de_read(display,  DG1_DMC_DEBUG_DC5_COUNT);
+
+	if (!start_tracking)
+		dmc->dc6_allowed.count += dc5_cur_count - dmc->dc6_allowed.dc5_start;
+
+	dmc->dc6_allowed.dc5_start = dc5_cur_count;
+}
+
+static void gen9_write_dc_state(struct intel_display *display,
+				u32 state)
+{
+	int rewrites = 0;
+	int rereads = 0;
+	u32 v;
+
+	intel_de_write(display, DC_STATE_EN, state);
+
+	do  {
+		v = intel_de_read(display,  DC_STATE_EN);
+
+		if (v != state) {
+			intel_de_write(display, DC_STATE_EN, state);
+			rewrites++;
+			rereads = 0;
+		} else if (rereads++ > 5) {
+			break;
+		}
+
+	} while (rewrites < 100);
+
+	/*if (v != state)
+		drm_err(display->drm,
+			"Writing dc state to 0x%x failed, now 0x%x\n",
+			state, v);*/
+
+	/* Most of the times we need one retry, avoid spam */
+	/*if (rewrites > 1)
+		drm_dbg_kms(display->drm,
+				"Rewrote dc state to 0x%x %d times\n",
+				state, rewrites);*/
+}
+
+void gen9_set_dc_state(struct intel_display *display, u32 state)
+{
+	struct i915_power_domains *power_domains = &display->power.domains;
+	bool dc6_was_enabled, enable_dc6;
+	u32 mask;
+	u32 val;
+
+
+	if ((state & ~power_domains->allowed_dc_mask))
+		state &= power_domains->allowed_dc_mask;
+
+	//if (!power_domains->initializing)
+	//	intel_psr_notify_dc5_dc6(display);
+
+	val = intel_de_read(display,  DC_STATE_EN);
+	mask = gen9_dc_mask(display);
+	//drm_dbg_kms(display->drm, "Setting DC state from %02x to %02x\n",
+		//	val & mask, state);
+
+	/* Check if DMC is ignoring our DC state requests */
+	//if ((val & mask) != power_domains->dc_state)
+	//	drm_err(display->drm, "DC state mismatch (0x%x -> 0x%x)\n",
+		//	power_domains->dc_state, val & mask);
+
+	enable_dc6 = state & DC_STATE_EN_UPTO_DC6;
+	dc6_was_enabled = power_domains->dc_state & DC_STATE_EN_UPTO_DC6;
+	if (!dc6_was_enabled && enable_dc6)
+		intel_dmc_update_dc6_allowed_count(display, true);
+
+	val &= ~mask;
+	val |= state;
+
+	gen9_write_dc_state(display, val);
+
+	if (!enable_dc6 && dc6_was_enabled)
+		intel_dmc_update_dc6_allowed_count(display, false);
+
+	power_domains->dc_state = val & mask;
+}
+
+static int gen7_check_mailbox_status(u32 mbox)
+{
+	switch (mbox & GEN6_PCODE_ERROR_MASK) {
+	case GEN6_PCODE_SUCCESS:
+		return 0;
+	case GEN6_PCODE_ILLEGAL_CMD:
+		return -ENXIO;
+	case GEN7_PCODE_TIMEOUT:
+		return -ETIMEDOUT;
+	case GEN7_PCODE_ILLEGAL_DATA:
+		return -EINVAL;
+	case GEN11_PCODE_ILLEGAL_SUBCOMMAND:
+		return -ENXIO;
+	case GEN11_PCODE_LOCKED:
+		return -EBUSY;
+	case GEN11_PCODE_REJECTED:
+		return -EACCES;
+	case GEN7_PCODE_MIN_FREQ_TABLE_GT_RATIO_OUT_OF_RANGE:
+		return -EOVERFLOW;
+	default:
+		return 0;
+	}
+}
+
+
+static int snb_pcode_rw( u32 mbox,
+			  u32 *val, u32 *val1,
+			  int fast_timeout_us, int slow_timeout_ms,
+			  bool is_read)
+{
+	struct intel_display *display=NBlue::callback->i915b->display;
+
+	
+	if (intel_de_read(display, GEN6_PCODE_MAILBOX) & GEN6_PCODE_READY)
+		return -EAGAIN;
+
+	intel_de_write(display, GEN6_PCODE_DATA, *val);
+	intel_de_write(display, GEN6_PCODE_DATA1, val1 ? *val1 : 0);
+	intel_de_write(display, GEN6_PCODE_MAILBOX, GEN6_PCODE_READY | mbox);
+
+	u32 iVar2 = -20;
+	u32 iVar4=0;
+	do {
+		if (iVar2 == 0) return -ETIMEDOUT;
+	  IODelay(1);
+		iVar4 = intel_de_read(display, GEN6_PCODE_MAILBOX);
+	  iVar2 = iVar2 + 1;
+	} while (iVar4 < 0);
+
+	if (is_read)
+		*val = intel_de_read(display, GEN6_PCODE_DATA);
+	if (is_read && val1)
+		*val1 = intel_de_read(display, GEN6_PCODE_DATA1);
+
+		return gen7_check_mailbox_status(mbox);
+
+}
+
+int snb_pcode_read( u32 mbox, u32 *val, u32 *val1)
+{
+	int err;
+
+	IOSimpleLock *myLock;
+	myLock = IOSimpleLockAlloc();
+		IOSimpleLockLock(myLock);
+		err = snb_pcode_rw( mbox, val, val1, 500, 20, true);
+		IOSimpleLockUnlock(myLock);
+
+	IOSimpleLockFree(myLock);
+
+	return err;
+}
+
+static void
+tgl_tc_cold_request(struct intel_display *display, bool block)
+{
+	u8 tries = 0;
+	int ret;
+	
+	while (1) {
+		u32 low_val;
+		u32 high_val = 0;
+		
+		if (block)
+			low_val = TGL_PCODE_EXIT_TCCOLD_DATA_L_BLOCK_REQ;
+		else
+			low_val = TGL_PCODE_EXIT_TCCOLD_DATA_L_UNBLOCK_REQ;
+		
+		ret=snb_pcode_read( TGL_PCODE_TCCOLD, &low_val, &high_val);
+		
+		if (ret == 0) {
+			if (block &&
+				(low_val & TGL_PCODE_EXIT_TCCOLD_DATA_L_EXIT_FAILED))
+				ret = -EIO;
+			else
+				break;
+		}
+		
+		if (++tries == 3)
+			break;
+		
+		IOSleep(1);
+	}
+	
+}
+
+
+
+static void intel_pch_reset_handshake(struct intel_display *display,
+					  bool enable)
+{
+	u32 reg;
+	u32 reset_bits;
+
+	if (DISPLAY_VER(display) >= 35)
+		return;
+
+
+		reg = HSW_NDE_RSTWRN_OPT;
+		reset_bits = RESET_PCH_HANDSHAKE_ENABLE;
+	
+
+	//if (DISPLAY_VER(display) >= 14)
+	//	reset_bits |= MTL_RESET_PICA_HANDSHAKE_EN;
+
+	intel_de_rmw(display, reg, reset_bits, enable ? reset_bits : 0);
+}
+
+
+
+static bool check_phy_reg(struct intel_display *display,
+			  enum phy phy, u32 reg, u32 mask,
+			  u32 expected_val)
+{
+	u32 val = intel_de_read(display, reg);
+
+	if ((val & mask) != expected_val) {
+		return false;
+	}
+
+	return true;
+}
+static const struct icl_procmon *
+icl_get_procmon_ref_values(struct intel_display *display, enum phy phy)
+{
+	u32 val;
+
+	val = intel_de_read(display, ICL_PORT_COMP_DW3(phy));
+	switch (val & (PROCESS_INFO_MASK | VOLTAGE_INFO_MASK)) {
+	default:
+	case VOLTAGE_INFO_0_85V | PROCESS_INFO_DOT_0:
+		return &icl_procmon_values[PROCMON_0_85V_DOT_0];
+	case VOLTAGE_INFO_0_95V | PROCESS_INFO_DOT_0:
+		return &icl_procmon_values[PROCMON_0_95V_DOT_0];
+	case VOLTAGE_INFO_0_95V | PROCESS_INFO_DOT_1:
+		return &icl_procmon_values[PROCMON_0_95V_DOT_1];
+	case VOLTAGE_INFO_1_05V | PROCESS_INFO_DOT_0:
+		return &icl_procmon_values[PROCMON_1_05V_DOT_0];
+	case VOLTAGE_INFO_1_05V | PROCESS_INFO_DOT_1:
+		return &icl_procmon_values[PROCMON_1_05V_DOT_1];
+	}
+}
+
+static bool icl_verify_procmon_ref_values(struct intel_display *display,
+					  enum phy phy)
+{
+	const struct icl_procmon *procmon;
+	bool ret;
+
+	procmon = icl_get_procmon_ref_values(display, phy);
+
+	ret = check_phy_reg(display, phy, ICL_PORT_COMP_DW1(phy),
+				(0xff << 16) | 0xff, procmon->dw1);
+	ret &= check_phy_reg(display, phy, ICL_PORT_COMP_DW9(phy),
+				 -1U, procmon->dw9);
+	ret &= check_phy_reg(display, phy, ICL_PORT_COMP_DW10(phy),
+				 -1U, procmon->dw10);
+
+	return ret;
+}
+static bool has_phy_misc(struct intel_display *display, enum phy phy)
+{
+
+	if (display->platform.alderlake_s)
+		return phy == PHY_A;
+	else if ((display->platform.jasperlake || display->platform.elkhartlake) ||
+		 display->platform.rocketlake ||
+		 display->platform.dg1)
+		return phy < PHY_C;
+
+	return true;
+}
+static bool icl_combo_phy_enabled(struct intel_display *display,
+				  enum phy phy)
+{
+	if (!has_phy_misc(display, phy))
+		return intel_de_read(display, ICL_PORT_COMP_DW0(phy)) & COMP_INIT;
+	else
+		return !(intel_de_read(display, ICL_PHY_MISC(phy)) &
+			 ICL_PHY_MISC_DE_IO_COMP_PWR_DOWN) &&
+			(intel_de_read(display, ICL_PORT_COMP_DW0(phy)) & COMP_INIT);
+}
+static bool phy_is_master(struct intel_display *display, enum phy phy)
+{
+
+	if (phy == PHY_A)
+		return true;
+	else if (display->platform.alderlake_s)
+		return phy == PHY_D;
+	else if (display->platform.dg1 || display->platform.rocketlake)
+		return phy == PHY_C;
+
+	return false;
+}
+static bool icl_combo_phy_verify_state(struct intel_display *display,
+					   enum phy phy)
+{
+	bool ret = true;
+	u32 expected_val = 0;
+
+	if (!icl_combo_phy_enabled(display, phy))
+		return false;
+
+	if (DISPLAY_VER(display) >= 12) {
+		ret &= check_phy_reg(display, phy, ICL_PORT_TX_DW8_LN(0, phy),
+					 ICL_PORT_TX_DW8_ODCC_CLK_SEL |
+					 ICL_PORT_TX_DW8_ODCC_CLK_DIV_SEL_MASK,
+					 ICL_PORT_TX_DW8_ODCC_CLK_SEL |
+					 ICL_PORT_TX_DW8_ODCC_CLK_DIV_SEL_DIV2);
+
+		ret &= check_phy_reg(display, phy, ICL_PORT_PCS_DW1_LN(0, phy),
+					 DCC_MODE_SELECT_MASK, RUN_DCC_ONCE);
+	}
+
+	ret &= icl_verify_procmon_ref_values(display, phy);
+
+	if (phy_is_master(display, phy)) {
+		ret &= check_phy_reg(display, phy, ICL_PORT_COMP_DW8(phy),
+					 IREFGEN, IREFGEN);
+
+	}
+
+	ret &= check_phy_reg(display, phy, ICL_PORT_CL_DW5(phy),
+				 CL_POWER_DOWN_ENABLE, CL_POWER_DOWN_ENABLE);
+
+	return ret;
+}
+static void icl_set_procmon_ref_values(struct intel_display *display,
+					   enum phy phy)
+{
+	const struct icl_procmon *procmon;
+
+	procmon = icl_get_procmon_ref_values(display, phy);
+
+	intel_de_rmw(display, ICL_PORT_COMP_DW1(phy),
+			 (0xff << 16) | 0xff, procmon->dw1);
+
+	intel_de_write(display, ICL_PORT_COMP_DW9(phy), procmon->dw9);
+	intel_de_write(display, ICL_PORT_COMP_DW10(phy), procmon->dw10);
+}
+static void icl_combo_phys_init(struct intel_display *display)
+{
+	enum phy phy;
+
+	for_each_combo_phy(display, phy) {
+		const struct icl_procmon *procmon;
+		u32 val;
+
+		if (icl_combo_phy_verify_state(display, phy))
+			continue;
+
+		procmon = icl_get_procmon_ref_values(display, phy);
+
+		if (!has_phy_misc(display, phy))
+			goto skip_phy_misc;
+
+		val = intel_de_read(display, ICL_PHY_MISC(phy));
+
+		val &= ~ICL_PHY_MISC_DE_IO_COMP_PWR_DOWN;
+		intel_de_write(display, ICL_PHY_MISC(phy), val);
+
+skip_phy_misc:
+		if (DISPLAY_VER(display) >= 12) {
+			val = intel_de_read(display, ICL_PORT_TX_DW8_LN(0, phy));
+			val &= ~ICL_PORT_TX_DW8_ODCC_CLK_DIV_SEL_MASK;
+			val |= ICL_PORT_TX_DW8_ODCC_CLK_SEL;
+			val |= ICL_PORT_TX_DW8_ODCC_CLK_DIV_SEL_DIV2;
+			intel_de_write(display, ICL_PORT_TX_DW8_GRP(phy), val);
+
+			val = NBlue::callback->intel_de_read(display, ICL_PORT_PCS_DW1_LN(0, phy));
+			val &= ~DCC_MODE_SELECT_MASK;
+			val |= RUN_DCC_ONCE;
+			intel_de_write(display, ICL_PORT_PCS_DW1_GRP(phy), val);
+		}
+
+		icl_set_procmon_ref_values(display, phy);
+
+		if (phy_is_master(display, phy))
+			intel_de_rmw(display, ICL_PORT_COMP_DW8(phy),
+					 0, IREFGEN);
+
+		intel_de_rmw(display, ICL_PORT_COMP_DW0(phy), 0, COMP_INIT);
+		intel_de_rmw(display, ICL_PORT_CL_DW5(phy),
+				 0, CL_POWER_DOWN_ENABLE);
+	}
+}
+
+
+
+static void gen12_dbuf_slices_config(struct intel_display *display)
+{
+	enum dbuf_slice slice;
+
+	for_each_dbuf_slice(display, slice)
+	intel_de_rmw(display, DBUF_CTL_S(slice),
+				 DBUF_TRACKER_STATE_SERVICE_MASK,
+				 DBUF_TRACKER_STATE_SERVICE(8));
+}
+
+static void gen9_dbuf_slice_set(struct intel_display *display, enum dbuf_slice slice, bool enable)
+{
+	u32 reg = DBUF_CTL_S(slice);
+	bool state;
+
+	intel_de_rmw(display, reg, DBUF_POWER_REQUEST,
+			 enable ? DBUF_POWER_REQUEST : 0);
+	intel_de_posting_read(display, reg);
+	//udelay(10);
+	IODelay(10);
+	state = intel_de_read(display, reg) & DBUF_POWER_STATE;
+}
+
+void gen9_dbuf_slices_update(struct intel_display *display,
+				 u8 req_slices)
+{
+	struct i915_power_domains *power_domains = &display->power.domains;
+	u8 slice_mask = DISPLAY_INFO(display)->dbuf.slice_mask;
+	enum dbuf_slice slice;
+
+	//IOSimpleLockLock(power_domains->lock);
+	for_each_dbuf_slice(display, slice)
+		gen9_dbuf_slice_set(display, slice, req_slices & BIT(slice));
+
+	display->dbuf.enabled_slices = req_slices;
+	//IOSimpleLockUnlock(power_domains->lock);
+}
+
+
+u8 intel_enabled_dbuf_slices_mask(struct intel_display *display)
+{
+	u8 enabled_slices = 0;
+	enum dbuf_slice slice;
+
+	for_each_dbuf_slice(display, slice) {
+		if (intel_de_read(display, DBUF_CTL_S(slice)) & DBUF_POWER_STATE)
+			enabled_slices |= BIT(slice);
+	}
+
+	return enabled_slices;
+}
+static void gen9_dbuf_enable(struct intel_display *display)
+{
+	u8 slices_mask;
+
+	display->dbuf.enabled_slices = intel_enabled_dbuf_slices_mask(display);
+
+	slices_mask = BIT(DBUF_S1) | display->dbuf.enabled_slices;
+
+	gen9_dbuf_slices_update(display, slices_mask);
+}
+
+static void icl_mbus_init(struct intel_display *display)
+{
+	unsigned long abox_regs = DISPLAY_INFO(display)->abox_mask;
+	u32 mask, val, i;
+
+	if (display->platform.alderlake_p || DISPLAY_VER(display) >= 14)
+		return;
+
+	mask = MBUS_ABOX_BT_CREDIT_POOL1_MASK |
+		MBUS_ABOX_BT_CREDIT_POOL2_MASK |
+		MBUS_ABOX_B_CREDIT_MASK |
+		MBUS_ABOX_BW_CREDIT_MASK;
+	val = MBUS_ABOX_BT_CREDIT_POOL1(16) |
+		MBUS_ABOX_BT_CREDIT_POOL2(16) |
+		MBUS_ABOX_B_CREDIT(1) |
+		MBUS_ABOX_BW_CREDIT(1);
+
+
+	if (DISPLAY_VER(display) == 12)
+		abox_regs |= BIT(0);
+
+	for_each_set_bit(i, &abox_regs, BITS_PER_TYPE(abox_regs))
+	intel_de_rmw(display, MBUS_ABOX_CTL(i), mask, val);
+}
+bool intel_dp_is_edp()
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+
+	return (display->child0->device_type & DEVICE_TYPE_INTERNAL_CONNECTOR);
+}
+
+static int icl_pcode_read_mem_global_info(struct intel_display *display,
+					  struct dram_info *dram_info)
+{
+	u32 val = 0;
+	
+	//ret = intel_parent_pcode_read(display, ICL_PCODE_MEM_SUBSYSYSTEM_INFO |
+	//				  ICL_PCODE_MEM_SS_READ_GLOBAL_INFO, &val, NULL);
+	
+	snb_pcode_read(ICL_PCODE_MEM_SUBSYSYSTEM_INFO | ICL_PCODE_MEM_SS_READ_GLOBAL_INFO, &val, NULL);
+	//if (ret)
+		//return ret;
+
+	if (DISPLAY_VER(display) >= 12) {
+		switch (val & 0xf) {
+		case 0:
+			dram_info->type = INTEL_DRAM_DDR4;
+			break;
+		case 1:
+			dram_info->type = INTEL_DRAM_DDR5;
+			break;
+		case 2:
+			dram_info->type = INTEL_DRAM_LPDDR5;
+			break;
+		case 3:
+			dram_info->type = INTEL_DRAM_LPDDR4;
+			break;
+		case 4:
+			dram_info->type = INTEL_DRAM_DDR3;
+			break;
+		case 5:
+			dram_info->type = INTEL_DRAM_LPDDR3;
+			break;
+		default:
+			return -EINVAL;
+		}
+	} else {
+		switch (val & 0xf) {
+		case 0:
+			dram_info->type = INTEL_DRAM_DDR4;
+			break;
+		case 1:
+			dram_info->type = INTEL_DRAM_DDR3;
+			break;
+		case 2:
+			dram_info->type = INTEL_DRAM_LPDDR3;
+			break;
+		case 3:
+			dram_info->type = INTEL_DRAM_LPDDR4;
+			break;
+		default:
+			return -EINVAL;
+		}
+	}
+
+	dram_info->num_channels = (val & 0xf0) >> 4;
+	dram_info->num_qgv_points = (val & 0xf00) >> 8;
+	dram_info->num_psf_gv_points = (val & 0x3000) >> 12;
+
+	return 0;
+}
+static int gen12_get_dram_info(struct intel_display *display, struct dram_info *dram_info)
+{
+	return icl_pcode_read_mem_global_info(display, dram_info);
+}
+
+static void tgl_bw_buddy_init(struct intel_display *display)
+{
+	struct dram_info dram_info0;// = intel_dram_info(display);
+	struct dram_info *dram_info=&dram_info0;
+	gen12_get_dram_info(display, dram_info);
+	const struct buddy_page_mask *table;
+	unsigned long abox_mask = DISPLAY_INFO(display)->abox_mask;
+	int config, i;
+
+	/* BW_BUDDY registers are not used on dgpu's beyond DG1 */
+	if (display->platform.dgfx && !display->platform.dg1)
+		return;
+
+	if (intel_display_wa(display, INTEL_DISPLAY_WA_1409767108))
+		/* Wa_1409767108 */
+		table = wa_1409767108_buddy_page_masks;
+	else
+		table = tgl_buddy_page_masks;
+
+	for (config = 0; table[config].page_mask != 0; config++)
+		if (table[config].num_channels == dram_info->num_channels &&
+			table[config].type == dram_info->type)
+			break;
+
+	if (table[config].page_mask == 0) {
+		for_each_set_bit(i, &abox_mask, BITS_PER_TYPE(abox_mask))
+		intel_de_write(display, BW_BUDDY_CTL(i),
+					   BW_BUDDY_DISABLE);
+	} else {
+		for_each_set_bit(i, &abox_mask, BITS_PER_TYPE(abox_mask)) {
+			intel_de_write(display, BW_BUDDY_PAGE_MASK(i),
+					   table[config].page_mask);
+
+			/* Wa_22010178259:tgl,dg1,rkl,adl-s */
+			if (intel_display_wa(display, INTEL_DISPLAY_WA_22010178259))
+				intel_de_rmw(display, BW_BUDDY_CTL(i),
+						 BW_BUDDY_TLB_REQ_TIMER_MASK,
+						 BW_BUDDY_TLB_REQ_TIMER(0x8));
+		}
+	}
+}
+
+static void icl_set_pipe_chicken(enum pipe pipe)
+{
+	struct intel_display *display =NBlue::callback->i915b->display;
+	u32 tmp;
+
+	tmp = intel_de_read(display, PIPE_CHICKEN(pipe));
+
+	tmp |= PER_PIXEL_ALPHA_BYPASS_EN;
+
+	tmp |= PIXEL_ROUNDING_TRUNC_FB_PASSTHRU;
+
+	if (display->platform.dg2)
+		tmp &= ~UNDERRUN_RECOVERY_ENABLE_DG2;
+	else if ((DISPLAY_VER(display) >= 13) && (DISPLAY_VER(display) < 30))
+		tmp |= UNDERRUN_RECOVERY_DISABLE_ADLP;
+
+	if (intel_display_wa(display, INTEL_DISPLAY_WA_14010547955))
+		tmp |= DG2_RENDER_CCSTAG_4_3_EN;
+
+	intel_de_write(display, PIPE_CHICKEN(pipe), tmp);
+}
+
+static int parse_dmc_fw(struct intel_display * display)
+{
+	struct intel_dmc *dmc=display->dmc.dmc;
+	
+	struct intel_css_header *css_header;
+	struct intel_package_header *package_header;
+	struct intel_dmc_header_base *dmc_header;
+	struct stepping_info si = {};
+	u32 readcount = 0;
+	u32 r, offset;
+	
+	struct Firmware fw;
+	
+	
+if (display->platform.alderlake_p) {
+	fw = getFWByName("adlp_dmc_ver2_16.bin");
+	display->dmc.dmc->max_fw_size= DISPLAY_VER13_DMC_MAX_FW_SIZE;
+} else if (display->platform.alderlake_s) {
+	fw = getFWByName("adls_dmc_ver2_01.bin");
+	display->dmc.dmc->max_fw_size=DISPLAY_VER12_DMC_MAX_FW_SIZE;
+} else if (display->platform.rocketlake) {
+	fw = getFWByName("rkl_dmc_ver2_03.bin");
+	display->dmc.dmc->max_fw_size= DISPLAY_VER12_DMC_MAX_FW_SIZE;
+} else if (display->platform.tigerlake) {
+	fw = getFWByName("tgl_dmc_ver2_12.bin");
+	display->dmc.dmc->max_fw_size= DISPLAY_VER12_DMC_MAX_FW_SIZE;
+}
+	
+	if (!fw.data || fw.size == 0) {
+		return -1;
+	}
+	
+	initialize_stepping_info(display, &si);
+	
+	css_header = (struct intel_css_header *)fw.data;
+	r = parse_dmc_fw_css(dmc, css_header, fw.size);
+	if (!r)
+		return -1;
+
+	readcount += r;
+
+	package_header = (struct intel_package_header *)&fw.data[readcount];
+	r = parse_dmc_fw_package(dmc, package_header, &si, fw.size - readcount);
+	if (!r)
+		return -1;
+
+	readcount += r;
+
+	for (uint8_t i = 0; i < DMC_FW_MAX; i++) {
+		if (!dmc->dmc_info[i].present)
+			continue;
+		offset = readcount + dmc->dmc_info[i].dmc_offset * 4;
+		if (offset > fw.size) {
+			continue;
+		}
+
+		dmc_header = (struct intel_dmc_header_base *)&fw.data[offset];
+		parse_dmc_fw_header(dmc, dmc_header, fw.size - offset, static_cast<intel_dmc_id>(i));
+	}
+
+	if (!intel_dmc_has_payload(display)) {
+		return -1;
+	}
+	
+	return 0;
+}
+
+static void adlp_pipedmc_clock_gating_wa(struct intel_display *display, bool enable)
+{
+	enum pipe p;
+
+	if (enable) {
+		for (p = static_cast<pipe>(PIPE_A); p <= PIPE_D;
+			 p = static_cast<pipe>(static_cast<int>(p) + 1)) {
+			intel_de_rmw(display, CLKGATE_DIS_PSL_EXT(static_cast<int>(p)),
+					 0, PIPEDMC_GATING_DIS);
+		}
+	} else {
+		for (p = static_cast<pipe>(PIPE_C); p <= PIPE_D;
+			 p = static_cast<pipe>(static_cast<int>(p) + 1)) {
+			intel_de_rmw(display, CLKGATE_DIS_PSL_EXT(static_cast<int>(p)),
+					 PIPEDMC_GATING_DIS, 0);
+		}
+	}
+}
+static void pipedmc_clock_gating_wa(struct intel_display *display, bool enable)
+{
+	/*if (display->platform.meteorlake && enable)
+		mtl_pipedmc_clock_gating_wa(display);
+	else*/ if (DISPLAY_VER(display) == 13)
+		adlp_pipedmc_clock_gating_wa(display, enable);
+}
+
+static void assert_dmc_loaded(struct intel_display *display,
+				  enum intel_dmc_id dmc_id)
+{
+	struct intel_dmc *dmc = display_to_dmc(display);
+	u32 expected, found;
+	int i;
+
+	if (!is_valid_dmc_id(dmc_id) || !has_dmc_id_fw(display, dmc_id))
+		return;
+
+	found = intel_de_read(display, DMC_PROGRAM(dmc->dmc_info[dmc_id].start_mmioaddr, 0));
+	expected = dmc->dmc_info[dmc_id].payload[0];
+
+	if( found != expected)
+		 panic("DMC %d program storage start incorrect (expected 0x%x, current 0x%x)\n",
+			   dmc_id,expected, found);
+	
+	for (i = 0; i < dmc->dmc_info[dmc_id].mmio_count; i++) {
+		u32 reg = dmc->dmc_info[dmc_id].mmioaddr[i];
+
+		found = intel_de_read(display, reg);
+		expected = dmc_mmiodata(display, dmc, dmc_id, i);
+		
+		if( found != expected)
+			 panic("DMC %d mmio[%d]/0x%x incorrect (expected 0x%x, current 0x%x)\n",
+				   dmc_id, i, i915_mmio_reg_offset(reg), expected, found);
+
+	}
+}
+
+static void gen9_set_dc_state_debugmask(struct intel_display *display)
+{
+	intel_de_rmw(display, DC_STATE_DEBUG, 0,
+			 DC_STATE_DEBUG_MASK_CORES | DC_STATE_DEBUG_MASK_MEMORY_UP);
+	intel_de_posting_read(display, DC_STATE_DEBUG);
+}
+
+
+void intel_dmc_load_program(struct intel_display *display)
+{
+	struct i915_power_domains *power_domains = &display->power.domains;
+	enum intel_dmc_id dmc_id;
+
+	if (!intel_dmc_has_payload(display))
+		return;
+
+	//assert_display_rpm_held(display);
+
+	pipedmc_clock_gating_wa(display, true);
+
+	for_each_dmc_id(dmc_id) {
+		dmc_load_program(display, dmc_id);
+		assert_dmc_loaded(display, dmc_id);
+	}
+
+	power_domains->dc_state = 0;
+
+	gen9_set_dc_state_debugmask(display);
+
+	pipedmc_clock_gating_wa(display, false);
+	
+	
+}
+
+
+static bool can_enable_pipedmc(const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+
+
+	if (DISPLAY_VER(display) == 12 && crtc_state->has_psr)
+		return false;
+
+	return true;
+}
+
+void intel_dmc_disable_pipe(const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	
+	enum pipe pipe = display->pipe0;
+	enum intel_dmc_id dmc_id = (enum intel_dmc_id)PIPE_TO_DMC_ID(pipe);
+
+	if (!is_valid_dmc_id(dmc_id) || !has_dmc_id_fw(display, dmc_id))
+		return;
+
+	/*if (DISPLAY_VER(display) >= 14)
+		intel_de_rmw(display, MTL_PIPEDMC_CONTROL, PIPEDMC_ENABLE_MTL(pipe), 0);
+	else*/
+		intel_de_rmw(display, PIPEDMC_CONTROL(pipe), PIPEDMC_ENABLE, 0);
+
+	/*if (DISPLAY_VER(display) >= 20) {
+		intel_de_write(display, PIPEDMC_INTERRUPT_MASK(pipe), ~0);
+		intel_de_write(display, PIPEDMC_INTERRUPT(pipe), pipedmc_interrupt_mask(display));
+
+		intel_flipq_reset(display, pipe);
+	}*/
+}
+static bool need_pipedmc_load_program(struct intel_display *display)
+{
+	/* On TGL/derivatives pipe DMC state is lost when PG1 is disabled */
+	return DISPLAY_VER(display) == 12;
+}
+static bool need_pipedmc_load_mmio(struct intel_display *display, enum pipe pipe)
+{
+	/*
+	 * Xe3_LPD/Xe3p_LPD:
+	 * - pipe A/B DMC doesn't need save/restore
+	 * - pipe C/D DMC is in PG0, needs manual save/restore
+	 */
+	if (IS_DISPLAY_VER(display, 30, 35))
+		return pipe >= PIPE_C;
+
+	/*
+	 * FIXME LNL unclear, main DMC firmware has the pipe DMC A/B PG0
+	 * save/restore, but so far unable to see the loss of pipe DMC state
+	 * in action. Are we just failing to turn off PG0 due to some other
+	 * SoC level stuff?
+	 */
+	if (DISPLAY_VER(display) == 20)
+		return false;
+
+	/*
+	 * FIXME BMG untested, main DMC firmware has the
+	 * pipe DMC A/B PG0 save/restore...
+	 */
+	//if (display->platform.battlemage)
+		//return false;
+
+	/*
+	 * DG2:
+	 * - Pipe DMCs presumably in PG0?
+	 * - No DC6, and even DC9 doesn't seem to result
+	 *   in loss of DMC state for whatever reason
+	 */
+	//if (display->platform.dg2)
+		//return false;
+
+	/*
+	 * ADL/MTL:
+	 * - pipe A/B DMC is in PG0, saved/restored by the main DMC
+	 * - pipe C/D DMC is in PG0, needs manual save/restore
+	 */
+	if (IS_DISPLAY_VER(display, 13, 14))
+		return pipe >= PIPE_C;
+
+	return false;
+}
+void intel_dmc_enable_pipe(const struct intel_crtc_state *crtc_state, enum pipe pipe)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	
+	enum intel_dmc_id dmc_id = (enum intel_dmc_id)PIPE_TO_DMC_ID(pipe);
+
+	if (!is_valid_dmc_id(dmc_id) || !has_dmc_id_fw(display, dmc_id))
+		return;
+
+	if (!can_enable_pipedmc(crtc_state)) {
+		intel_dmc_disable_pipe(crtc_state);
+		return;
+	}
+
+	if (need_pipedmc_load_program(display))
+		dmc_load_program(display, dmc_id);
+	else if (need_pipedmc_load_mmio(display, pipe))
+		dmc_load_mmio(display, dmc_id);
+
+	//assert_dmc_loaded(display, dmc_id); // icl kp
+
+	intel_de_rmw(display, PIPEDMC_CONTROL(pipe), 0, PIPEDMC_ENABLE);
+	
+}
+
+static void irq_init(struct intel_display *display, struct i915_irq_regs regs,
+			 u32 imr_val, u32 ier_val)
+{
+
+	intel_de_write(display, regs.ier, ier_val);
+	intel_de_write(display, regs.imr, imr_val);
+	intel_de_posting_read(display, regs.imr);
+}
+
+
+void gen11_gt_irq_postinstall(struct intel_gt *gt)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display = i915->display;
+	u32 irqs = GT_RENDER_USER_INTERRUPT;
+	u32 guc_mask = GUC_INTR_GUC2HOST;
+	u32 gsc_mask = 0;
+	u32 heci_mask = 0;
+	u32 dmask;
+	u32 smask;
+
+
+	dmask = irqs << 16 | irqs;
+	smask = irqs << 16;
+
+/*	if (HAS_ENGINE(gt, GSC0)) {
+		gsc_mask = irqs;
+		heci_mask = GSC_IRQ_INTF(1);
+	} else if (HAS_HECI_GSC(gt->i915)) {
+		gsc_mask = GSC_IRQ_INTF(0) | GSC_IRQ_INTF(1);
+	}
+*/
+
+	intel_de_write(display, GEN11_RENDER_COPY_INTR_ENABLE, dmask);
+	intel_de_write(display, GEN11_VCS_VECS_INTR_ENABLE, dmask);
+	if (CCS_MASK(gt))
+		intel_de_write(display, GEN12_CCS_RSVD_INTR_ENABLE, smask);
+	if (gsc_mask)
+		intel_de_write(display, GEN11_GUNIT_CSME_INTR_ENABLE, gsc_mask | heci_mask);
+
+	intel_de_write(display, GEN11_RCS0_RSVD_INTR_MASK, ~smask);
+	intel_de_write(display, GEN11_BCS_RSVD_INTR_MASK, ~smask);
+	if (HAS_ENGINE(gt, BCS1) || HAS_ENGINE(gt, BCS2))
+		intel_de_write(display, XEHPC_BCS1_BCS2_INTR_MASK, ~dmask);
+	if (HAS_ENGINE(gt, BCS3) || HAS_ENGINE(gt, BCS4))
+		intel_de_write(display, XEHPC_BCS3_BCS4_INTR_MASK, ~dmask);
+	if (HAS_ENGINE(gt, BCS5) || HAS_ENGINE(gt, BCS6))
+		intel_de_write(display, XEHPC_BCS5_BCS6_INTR_MASK, ~dmask);
+	if (HAS_ENGINE(gt, BCS7) || HAS_ENGINE(gt, BCS8))
+		intel_de_write(display, XEHPC_BCS7_BCS8_INTR_MASK, ~dmask);
+	intel_de_write(display, GEN11_VCS0_VCS1_INTR_MASK, ~dmask);
+	intel_de_write(display, GEN11_VCS2_VCS3_INTR_MASK, ~dmask);
+	if (HAS_ENGINE(gt, VCS4) || HAS_ENGINE(gt, VCS5))
+		intel_de_write(display, GEN12_VCS4_VCS5_INTR_MASK, ~dmask);
+	if (HAS_ENGINE(gt, VCS6) || HAS_ENGINE(gt, VCS7))
+		intel_de_write(display, GEN12_VCS6_VCS7_INTR_MASK, ~dmask);
+	intel_de_write(display, GEN11_VECS0_VECS1_INTR_MASK, ~dmask);
+	if (HAS_ENGINE(gt, VECS2) || HAS_ENGINE(gt, VECS3))
+		intel_de_write(display, GEN12_VECS2_VECS3_INTR_MASK, ~dmask);
+	if (HAS_ENGINE(gt, CCS0) || HAS_ENGINE(gt, CCS1))
+		intel_de_write(display, GEN12_CCS0_CCS1_INTR_MASK, ~dmask);
+	if (HAS_ENGINE(gt, CCS2) || HAS_ENGINE(gt, CCS3))
+		intel_de_write(display, GEN12_CCS2_CCS3_INTR_MASK, ~dmask);
+	if (gsc_mask)
+		intel_de_write(display, GEN11_GUNIT_CSME_INTR_MASK, ~gsc_mask);
+	if (heci_mask)
+		intel_de_write(display, GEN12_HECI2_RSVD_INTR_MASK,
+				   ~REG_FIELD_PREP(ENGINE1_MASK, heci_mask));
+
+	if (guc_mask) {
+		u32 mask = gt->type == GT_MEDIA ?
+			REG_FIELD_PREP(ENGINE0_MASK, guc_mask) :
+			REG_FIELD_PREP(ENGINE1_MASK, guc_mask);
+
+		intel_de_write(display, GEN11_GUC_SG_INTR_ENABLE,
+				   REG_FIELD_PREP(ENGINE1_MASK, guc_mask));
+
+		intel_de_rmw(display, MTL_GUC_MGUC_INTR_MASK, mask, 0);
+	}
+
+	gt->pm_ier = 0x0;
+	gt->pm_imr = ~gt->pm_ier;
+	intel_de_write(display, GEN11_GPM_WGBOXPERF_INTR_ENABLE, 0);
+	intel_de_write(display, GEN11_GPM_WGBOXPERF_INTR_MASK,  ~0);
+}
+
+static u32 gen8_de_pipe_fault_mask(struct intel_display *display)
+{
+	if (DISPLAY_VER(display) >= 20)
+		return MTL_PLANE_ATS_FAULT |
+			GEN9_PIPE_CURSOR_FAULT |
+			GEN11_PIPE_PLANE5_FAULT |
+			GEN9_PIPE_PLANE4_FAULT |
+			GEN9_PIPE_PLANE3_FAULT |
+			GEN9_PIPE_PLANE2_FAULT |
+			GEN9_PIPE_PLANE1_FAULT;
+	else if (DISPLAY_VER(display) >= 14)
+		return MTL_PIPEDMC_ATS_FAULT |
+			MTL_PLANE_ATS_FAULT |
+			GEN12_PIPEDMC_FAULT |
+			GEN9_PIPE_CURSOR_FAULT |
+			GEN11_PIPE_PLANE5_FAULT |
+			GEN9_PIPE_PLANE4_FAULT |
+			GEN9_PIPE_PLANE3_FAULT |
+			GEN9_PIPE_PLANE2_FAULT |
+			GEN9_PIPE_PLANE1_FAULT;
+	else if (DISPLAY_VER(display) >= 13 || HAS_D12_PLANE_MINIMIZATION(display))
+		return GEN12_PIPEDMC_FAULT |
+			GEN9_PIPE_CURSOR_FAULT |
+			GEN11_PIPE_PLANE5_FAULT |
+			GEN9_PIPE_PLANE4_FAULT |
+			GEN9_PIPE_PLANE3_FAULT |
+			GEN9_PIPE_PLANE2_FAULT |
+			GEN9_PIPE_PLANE1_FAULT;
+	else if (DISPLAY_VER(display) == 12)
+		return GEN12_PIPEDMC_FAULT |
+			GEN9_PIPE_CURSOR_FAULT |
+			GEN11_PIPE_PLANE7_FAULT |
+			GEN11_PIPE_PLANE6_FAULT |
+			GEN11_PIPE_PLANE5_FAULT |
+			GEN9_PIPE_PLANE4_FAULT |
+			GEN9_PIPE_PLANE3_FAULT |
+			GEN9_PIPE_PLANE2_FAULT |
+			GEN9_PIPE_PLANE1_FAULT;
+	else if (DISPLAY_VER(display) == 11)
+		return GEN9_PIPE_CURSOR_FAULT |
+			GEN11_PIPE_PLANE7_FAULT |
+			GEN11_PIPE_PLANE6_FAULT |
+			GEN11_PIPE_PLANE5_FAULT |
+			GEN9_PIPE_PLANE4_FAULT |
+			GEN9_PIPE_PLANE3_FAULT |
+			GEN9_PIPE_PLANE2_FAULT |
+			GEN9_PIPE_PLANE1_FAULT;
+	else if (DISPLAY_VER(display) >= 9)
+		return GEN9_PIPE_CURSOR_FAULT |
+			GEN9_PIPE_PLANE4_FAULT |
+			GEN9_PIPE_PLANE3_FAULT |
+			GEN9_PIPE_PLANE2_FAULT |
+			GEN9_PIPE_PLANE1_FAULT;
+	else
+		return GEN8_PIPE_CURSOR_FAULT |
+			GEN8_PIPE_SPRITE_FAULT |
+			GEN8_PIPE_PRIMARY_FAULT;
+}
+static u32 gen8_de_port_aux_mask(struct intel_display *display)
+{
+	u32 mask;
+
+	if (DISPLAY_VER(display) >= 20)
+		return 0;
+	else if (DISPLAY_VER(display) >= 14)
+		return TGL_DE_PORT_AUX_DDIA |
+			TGL_DE_PORT_AUX_DDIB;
+	else if (DISPLAY_VER(display) >= 13)
+		return TGL_DE_PORT_AUX_DDIA |
+			TGL_DE_PORT_AUX_DDIB |
+			TGL_DE_PORT_AUX_DDIC |
+			XELPD_DE_PORT_AUX_DDID |
+			XELPD_DE_PORT_AUX_DDIE |
+			TGL_DE_PORT_AUX_USBC1 |
+			TGL_DE_PORT_AUX_USBC2 |
+			TGL_DE_PORT_AUX_USBC3 |
+			TGL_DE_PORT_AUX_USBC4;
+	else if (DISPLAY_VER(display) >= 12)
+		return TGL_DE_PORT_AUX_DDIA |
+			TGL_DE_PORT_AUX_DDIB |
+			TGL_DE_PORT_AUX_DDIC |
+			TGL_DE_PORT_AUX_USBC1 |
+			TGL_DE_PORT_AUX_USBC2 |
+			TGL_DE_PORT_AUX_USBC3 |
+			TGL_DE_PORT_AUX_USBC4 |
+			TGL_DE_PORT_AUX_USBC5 |
+			TGL_DE_PORT_AUX_USBC6;
+
+	mask = GEN8_AUX_CHANNEL_A;
+	if (DISPLAY_VER(display) >= 9)
+		mask |= GEN9_AUX_CHANNEL_B |
+			GEN9_AUX_CHANNEL_C |
+			GEN9_AUX_CHANNEL_D;
+
+	if (DISPLAY_VER(display) == 11) {
+		mask |= ICL_AUX_CHANNEL_F;
+		mask |= ICL_AUX_CHANNEL_E;
+	}
+
+	return mask;
+}
+
+static void icp_irq_postinstall(struct intel_display *display)
+{
+	u32 mask = SDE_GMBUS_ICP;
+
+	irq_init(display, SDE_IRQ_REGS, ~mask, 0xffffffff);
+}
+
+void gen8_de_irq_postinstall(struct intel_display *display)
+{
+	u32 de_pipe_masked = gen8_de_pipe_fault_mask(display) |
+		GEN8_PIPE_CDCLK_CRC_DONE;
+	u32 de_pipe_enables;
+	u32 de_port_masked = gen8_de_port_aux_mask(display);
+	u32 de_port_enables;
+	u32 de_misc_masked = GEN8_DE_EDP_PSR;
+	u32 trans_mask = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
+		BIT(TRANSCODER_C) | BIT(TRANSCODER_D);
+	enum pipe pipe;
+
+
+
+		icp_irq_postinstall(display);
+
+
+	if (DISPLAY_VER(display) < 11)
+		de_misc_masked |= GEN8_DE_MISC_GSE;
+
+	if (display->platform.geminilake || display->platform.broxton)
+		de_port_masked |= BXT_DE_PORT_GMBUS;
+
+	if (DISPLAY_VER(display) >= 14) {
+		de_misc_masked |= XELPDP_PMDEMAND_RSPTOUT_ERR |
+				  XELPDP_PMDEMAND_RSP | XELPDP_RM_TIMEOUT;
+	} else if (DISPLAY_VER(display) >= 11) {
+		enum port port;
+
+		//if (intel_bios_is_dsi_present(display, &port))
+		//	de_port_masked |= DSI0_TE | DSI1_TE;
+	}
+
+	if (HAS_DBUF_OVERLAP_DETECTION(display))
+		de_misc_masked |= XE2LPD_DBUF_OVERLAP_DETECTED;
+
+	if (HAS_DSB(display))
+		de_pipe_masked |= GEN12_DSB_INT(INTEL_DSB_0) |
+			GEN12_DSB_INT(INTEL_DSB_1) |
+			GEN12_DSB_INT(INTEL_DSB_2);
+
+	/* TODO figure PIPEDMC interrupts for pre-LNL */
+	if (DISPLAY_VER(display) >= 20)
+		de_pipe_masked |= GEN12_PIPEDMC_INTERRUPT;
+
+	de_pipe_enables = de_pipe_masked |
+		GEN8_PIPE_VBLANK | GEN8_PIPE_FIFO_UNDERRUN |
+	GEN9_PIPE_PLANE1_FLIP_DONE;
+
+	de_port_enables = de_port_masked;
+
+	pipe=PIPE_A;
+	//for_each_pipe(display, pipe) {
+		display->irq.de_pipe_imr_mask[pipe] = ~de_pipe_masked;
+
+			irq_init(display, GEN8_DE_PIPE_IRQ_REGS(pipe),
+				 display->irq.de_pipe_imr_mask[pipe],
+				 de_pipe_enables);
+	//}
+
+	irq_init(display, GEN8_DE_PORT_IRQ_REGS, ~de_port_masked, de_port_enables);
+	irq_init(display, GEN8_DE_MISC_IRQ_REGS, ~de_misc_masked, de_misc_masked);
+
+	if (IS_DISPLAY_VER(display, 11, 13)) {
+		u32 de_hpd_masked = 0;
+		u32 de_hpd_enables = GEN11_DE_TC_HOTPLUG_MASK |
+					 GEN11_DE_TBT_HOTPLUG_MASK;
+
+		irq_init(display, GEN11_DE_HPD_IRQ_REGS, ~de_hpd_masked, de_hpd_enables);
+	}
+}
+
+void gen11_de_irq_postinstall(struct intel_display *display)
+{
+
+
+	gen8_de_irq_postinstall(display);
+
+	intel_de_write(display, GEN11_DISPLAY_INT_CTL, GEN11_DISPLAY_IRQ_ENABLE);
+}
+
+void gen2_irq_init(struct drm_i915_private *dev_priv, struct i915_irq_regs regs,
+		   u32 imr_val, u32 ier_val)
+{
+	struct intel_display *display = dev_priv->display;
+	intel_de_write(display, regs.ier, ier_val);
+	intel_de_write(display, regs.imr, imr_val);
+	intel_de_posting_read(display, regs.imr);
+}
+
+static inline void gen11_master_intr_enable(struct drm_i915_private *dev_priv)
+{
+	struct intel_display *display = dev_priv->display;
+	intel_de_write(display, GEN11_GFX_MSTR_IRQ, GEN11_MASTER_IRQ);
+}
+
+static void gen11_irq_postinstall(struct drm_i915_private *dev_priv)
+{
+	struct intel_display *display = dev_priv->display;
+	struct intel_gt *gt = to_gt(dev_priv);
+	u32 gu_misc_masked = GEN11_GU_MISC_GSE;
+
+	gen11_gt_irq_postinstall(gt);
+	gen11_de_irq_postinstall(display);
+
+	gen2_irq_init(dev_priv, GEN11_GU_MISC_IRQ_REGS, ~gu_misc_masked, gu_misc_masked);
+
+	gen11_master_intr_enable(dev_priv);
+	intel_de_posting_read(display, GEN11_GFX_MSTR_IRQ);
+}
+
+static void dmc_configure_event(struct intel_display *display,
+				enum intel_dmc_id dmc_id,
+				unsigned int event_id,
+				bool enable)
+{
+	struct intel_dmc *dmc = display_to_dmc(display);
+	int num_handlers = 0;
+	int i;
+
+	for (i = 0; i < dmc->dmc_info[dmc_id].mmio_count; i++) {
+		u32 reg = dmc->dmc_info[dmc_id].mmioaddr[i];
+		u32 data = dmc->dmc_info[dmc_id].mmiodata[i];
+
+		if (!is_event_handler(display, dmc_id, event_id, reg, data))
+			continue;
+
+		intel_de_write(display, reg, enable ? data : dmc_evt_ctl_disable(data));
+		num_handlers++;
+	}
+
+
+}
+
+
+static void intel_crt_set_dpms(enum pipe pipe,
+				   const struct intel_crtc_state *crtc_state,
+				   int mode)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	const struct drm_display_mode *adjusted_mode = &crtc_state->hw.adjusted_mode;
+	u32 adpa;
+	u32 adpa_reg;
+	
+	if (HAS_PCH_SPLIT(display))
+		adpa_reg = PCH_ADPA;
+	else if (display->platform.valleyview)
+		adpa_reg = VLV_ADPA;
+	else
+		adpa_reg = ADPA;
+
+	if (DISPLAY_VER(display) >= 5)
+		adpa = ADPA_HOTPLUG_BITS;
+	else
+		adpa = 0;
+
+	if (adjusted_mode->flags & DRM_MODE_FLAG_PHSYNC)
+		adpa |= ADPA_HSYNC_ACTIVE_HIGH;
+	if (adjusted_mode->flags & DRM_MODE_FLAG_PVSYNC)
+		adpa |= ADPA_VSYNC_ACTIVE_HIGH;
+
+
+	if (HAS_PCH_LPT(display))
+		; /* Those bits don't exist here */
+	else if (HAS_PCH_CPT(display))
+		adpa |= ADPA_PIPE_SEL_CPT(pipe);
+	else
+		adpa |= ADPA_PIPE_SEL(pipe);
+
+	if (!HAS_PCH_SPLIT(display))
+		intel_de_write(display, BCLRPAT(display, pipe), 0);
+
+	switch (mode) {
+	case DRM_MODE_DPMS_ON:
+		adpa |= ADPA_DAC_ENABLE;
+		break;
+	case DRM_MODE_DPMS_STANDBY:
+		adpa |= ADPA_DAC_ENABLE | ADPA_HSYNC_CNTL_DISABLE;
+		break;
+	case DRM_MODE_DPMS_SUSPEND:
+		adpa |= ADPA_DAC_ENABLE | ADPA_VSYNC_CNTL_DISABLE;
+		break;
+	case DRM_MODE_DPMS_OFF:
+		adpa |= ADPA_HSYNC_CNTL_DISABLE | ADPA_VSYNC_CNTL_DISABLE;
+		break;
+	}
+
+	intel_de_write(display, adpa_reg, adpa);
+}
+
+static u8 intel_dp_get_sink_sync_latency(struct intel_dp *intel_dp)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	
+	u8 val = 8; /* assume the worst if we can't read the value */
+
+	if (Gen11::callback->readAUX(linkp,DP_SYNCHRONIZATION_LATENCY_IN_SINK,&val,1)== 1)
+		val &= DP_MAX_RESYNC_FRAME_COUNT_MASK;
+
+	return val;
+}
+
+static u8 psr_compute_idle_frames(struct intel_dp *intel_dp)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	struct intel_panel *panel=&display->panel;
+
+	int idle_frames;
+	u8 v=intel_dp_get_sink_sync_latency(intel_dp);
+
+	idle_frames = max(6, panel->vbt.psr.idle_frames);
+	idle_frames = max(idle_frames, v + 1);
+
+	if (( idle_frames > 0xf))
+		idle_frames = 0xf;
+
+	return idle_frames;
+}
+
+bool intel_dp_source_supports_tps3(struct intel_display *display)
+{
+	return DISPLAY_VER(display) >= 9;
+}
+
+static inline bool
+drm_dp_tps3_supported(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	return dpcd[DP_DPCD_REV] >= 0x12 &&
+		dpcd[DP_MAX_LANE_COUNT] & DP_TPS3_SUPPORTED;
+}
+
+static u32 intel_psr1_get_tp_time(struct intel_dp *intel_dp)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	struct intel_panel *panel=&display->panel;
+	
+	u32 val = 0;
+
+	if (DISPLAY_VER(display) >= 11)
+		val |= EDP_PSR_TP4_TIME_0us;
+
+	/*if (display->params.psr_safest_params) {
+		val |= EDP_PSR_TP1_TIME_2500us;
+		val |= EDP_PSR_TP2_TP3_TIME_2500us;
+		goto check_tp3_sel;
+	}*/
+
+	if (panel->vbt.psr.tp1_wakeup_time_us == 0)
+		val |= EDP_PSR_TP1_TIME_0us;
+	else if (panel->vbt.psr.tp1_wakeup_time_us <= 100)
+		val |= EDP_PSR_TP1_TIME_100us;
+	else if (panel->vbt.psr.tp1_wakeup_time_us <= 500)
+		val |= EDP_PSR_TP1_TIME_500us;
+	else
+		val |= EDP_PSR_TP1_TIME_2500us;
+
+	if (panel->vbt.psr.tp2_tp3_wakeup_time_us == 0)
+		val |= EDP_PSR_TP2_TP3_TIME_0us;
+	else if (panel->vbt.psr.tp2_tp3_wakeup_time_us <= 100)
+		val |= EDP_PSR_TP2_TP3_TIME_100us;
+	else if (panel->vbt.psr.tp2_tp3_wakeup_time_us <= 500)
+		val |= EDP_PSR_TP2_TP3_TIME_500us;
+	else
+		val |= EDP_PSR_TP2_TP3_TIME_2500us;
+
+
+
+check_tp3_sel:
+	if (intel_dp_source_supports_tps3(display) &&
+		drm_dp_tps3_supported(intel_dp->dpcd))
+		val |= EDP_PSR_TP_TP1_TP3;
+	else
+		val |= EDP_PSR_TP_TP1_TP2;
+
+	return val;
+}
+
+static void hsw_activate_psr1(struct intel_dp *intel_dp)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	
+	enum transcoder cpu_transcoder = intel_dp->psr.transcoder;
+	u32 max_sleep_time = 0x1f;
+	u32 val = EDP_PSR_ENABLE;
+
+	val |= EDP_PSR_IDLE_FRAMES(psr_compute_idle_frames(intel_dp));
+
+	if (DISPLAY_VER(display) < 20)
+		val |= EDP_PSR_MAX_SLEEP_TIME(max_sleep_time);
+
+
+	//if (intel_dp->psr.link_standby)
+	//	val |= EDP_PSR_LINK_STANDBY;
+
+	val |= intel_psr1_get_tp_time(intel_dp);
+
+	if (DISPLAY_VER(display) >= 8)
+		val |= EDP_PSR_CRC_ENABLE;
+
+
+	intel_de_rmw(display, EDP_PSR_CTL(display, cpu_transcoder),
+			 ~EDP_PSR_RESTORE_PSR_ACTIVE_CTX_MASK, val);
+
+
+}
+
+
+
+
+static void psr_irq_control(struct intel_dp *intel_dp)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	enum transcoder cpu_transcoder = intel_dp->psr.transcoder;
+	u32 mask;
+
+	if (intel_dp->psr.panel_replay_enabled)
+		return;
+
+	mask = TGL_PSR_ERROR;
+	if (intel_dp->psr.debug & I915_PSR_DEBUG_IRQ)
+		mask |= TGL_PSR_POST_EXIT |
+		TGL_PSR_PRE_ENTRY;
+
+	intel_de_rmw(display, TRANS_PSR_IMR(display, cpu_transcoder),
+				 TGL_PSR_MASK, ~mask);
+}
+
+static void wm_optimization_wa(struct intel_dp *intel_dp,
+				   const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	enum pipe pipe = intel_dp->psr.pipe;
+	bool activate = false;
+
+	/* Wa_14015648006 */
+	if (IS_DISPLAY_VER(display, 11, 14) && crtc_state->wm_level_disabled)
+		activate = true;
+
+	/* Wa_16013835468 */
+	if (DISPLAY_VER(display) == 12 &&
+		crtc_state->hw.adjusted_mode.crtc_vblank_start !=
+		crtc_state->hw.adjusted_mode.crtc_vdisplay)
+		activate = true;
+
+	if (activate)
+		intel_de_rmw(display, GEN8_CHICKEN_DCPR_1,
+				 0, LATENCY_REPORTING_REMOVED(pipe));
+	else
+		intel_de_rmw(display, GEN8_CHICKEN_DCPR_1,
+				 LATENCY_REPORTING_REMOVED(pipe), 0);
+}
+
+
+
+bool intel_psr_needs_alpm(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state)
+{
+	/*
+	 * eDP Panel Replay uses always ALPM
+	 * PSR2 uses ALPM but PSR1 doesn't
+	 */
+	return intel_dp_is_edp() && (crtc_state->has_sel_update ||
+						 crtc_state->has_panel_replay);
+}
+bool intel_alpm_aux_less_wake_supported(struct intel_dp *intel_dp)
+{
+	return intel_dp->alpm_dpcd & DP_ALPM_AUX_LESS_CAP;
+}
+bool intel_psr_needs_alpm_aux_less(struct intel_dp *intel_dp,
+				   const struct intel_crtc_state *crtc_state)
+{
+	return intel_dp_is_edp() && crtc_state->has_panel_replay;
+}
+
+bool intel_alpm_is_alpm_aux_less(struct intel_dp *intel_dp,
+				 const struct intel_crtc_state *crtc_state)
+{
+	return intel_psr_needs_alpm_aux_less(intel_dp, crtc_state) ||
+		(crtc_state->has_lobf && intel_alpm_aux_less_wake_supported(intel_dp));
+}
+
+static void lnl_alpm_configure(struct intel_dp *intel_dp,
+				   const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+	u32 alpm_ctl;
+
+	if (DISPLAY_VER(display) < 20 || (!intel_psr_needs_alpm(intel_dp, crtc_state) &&
+					  !crtc_state->has_lobf))
+		return;
+
+	//mutex_lock(&intel_dp->alpm.lock);
+	/*
+	 * Panel Replay on eDP is always using ALPM aux less. I.e. no need to
+	 * check panel support at this point.
+	 */
+	if (intel_alpm_is_alpm_aux_less(intel_dp, crtc_state)) {
+		alpm_ctl = ALPM_CTL_ALPM_ENABLE |
+			ALPM_CTL_ALPM_AUX_LESS_ENABLE |
+			ALPM_CTL_AUX_LESS_SLEEP_HOLD_TIME_50_SYMBOLS |
+			ALPM_CTL_AUX_LESS_WAKE_TIME(crtc_state->alpm_state.aux_less_wake_lines);
+
+		if (intel_dp->as_sdp_supported) {
+			u32 pr_alpm_ctl = PR_ALPM_CTL_ADAPTIVE_SYNC_SDP_POSITION_T1;
+
+			if (crtc_state->link_off_after_as_sdp_when_pr_active)
+				pr_alpm_ctl |= PR_ALPM_CTL_ALLOW_LINK_OFF_BETWEEN_AS_SDP_AND_SU;
+			if (crtc_state->disable_as_sdp_when_pr_active)
+				pr_alpm_ctl |= PR_ALPM_CTL_AS_SDP_TRANSMISSION_IN_ACTIVE_DISABLE;
+
+			intel_de_write(display, PR_ALPM_CTL(display, cpu_transcoder),
+					   pr_alpm_ctl);
+		}
+
+	} else {
+		alpm_ctl = ALPM_CTL_EXTENDED_FAST_WAKE_ENABLE |
+			ALPM_CTL_EXTENDED_FAST_WAKE_TIME(crtc_state->alpm_state.fast_wake_lines);
+	}
+
+	if (crtc_state->has_lobf) {
+		alpm_ctl |= ALPM_CTL_LOBF_ENABLE;
+	}
+
+	alpm_ctl |= ALPM_CTL_ALPM_ENTRY_CHECK(crtc_state->alpm_state.check_entry_lines);
+
+	intel_de_write(display, ALPM_CTL(display, cpu_transcoder), alpm_ctl);
+	//mutex_unlock(&intel_dp->alpm.lock);
+}
+
+void intel_alpm_configure(struct intel_dp *intel_dp,
+			  const struct intel_crtc_state *crtc_state)
+{
+	lnl_alpm_configure(intel_dp, crtc_state);
+	intel_dp->alpm.transcoder = crtc_state->cpu_transcoder;
+}
+
+static void intel_psr_enable_source(struct intel_dp *intel_dp,
+					const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	
+	enum transcoder cpu_transcoder = intel_dp->psr.transcoder;
+	u32 mask = 0;
+
+
+
+	if (DISPLAY_VER(display) < 20 )
+	{
+		mask = EDP_PSR_DEBUG_MASK_HPD;
+
+		mask |= EDP_PSR_DEBUG_MASK_MEMUP;
+
+
+		if (DISPLAY_VER(display) >= 8 || display->platform.haswell_ult)
+			mask |= EDP_PSR_DEBUG_MASK_LPSP;
+
+		if (DISPLAY_VER(display) < 20)
+			mask |= EDP_PSR_DEBUG_MASK_MAX_SLEEP;
+
+	}
+
+	intel_de_write(display, EDP_PSR_DEBUG(display, cpu_transcoder), mask);
+
+	psr_irq_control(intel_dp);
+
+
+
+	if (intel_dp->psr.dc3co_exitline)
+		intel_de_rmw(display,
+				 TRANS_EXITLINE(display, cpu_transcoder),
+				 EXITLINE_MASK,
+				 intel_dp->psr.dc3co_exitline << EXITLINE_SHIFT | EXITLINE_ENABLE);
+
+	if (HAS_PSR_HW_TRACKING(display) && HAS_PSR2_SEL_FETCH(display))
+		intel_de_rmw(display, CHICKEN_PAR1_1, IGNORE_PSR2_HW_TRACKING,
+				 intel_dp->psr.psr2_sel_fetch_enabled ?
+				 IGNORE_PSR2_HW_TRACKING : 0);
+
+
+	wm_optimization_wa(intel_dp, crtc_state);
+
+	if (intel_dp->psr.sel_update_enabled) {
+		if (DISPLAY_VER(display) == 9)
+			intel_de_rmw(display, CHICKEN_TRANS(display, cpu_transcoder), 0,
+					 PSR2_VSC_ENABLE_PROG_HEADER |
+					 PSR2_ADD_VERTICAL_LINE_COUNT);
+
+		/*
+		 * Wa_16014451276:adlp,mtl[a0,b0]
+		 * All supported adlp panels have 1-based X granularity, this may
+		 * cause issues if non-supported panels are used.
+		 */
+		if (!intel_dp->psr.panel_replay_enabled &&
+			(IS_DISPLAY_VERx100_STEP(display, 1400, STEP_A0, STEP_B0) ||
+			 display->platform.alderlake_p))
+			intel_de_rmw(display, CHICKEN_TRANS(display, cpu_transcoder),
+					 0, ADLP_1_BASED_X_GRANULARITY);
+
+		/* Wa_16012604467:adlp,mtl[a0,b0] */
+		if (!intel_dp->psr.panel_replay_enabled &&
+			IS_DISPLAY_VERx100_STEP(display, 1400, STEP_A0, STEP_B0))
+			intel_de_rmw(display,
+					 MTL_CLKGATE_DIS_TRANS(display, cpu_transcoder),
+					 0,
+					 MTL_CLKGATE_DIS_TRANS_DMASC_GATING_DIS);
+		else if (display->platform.alderlake_p)
+			intel_de_rmw(display, CLKGATE_DIS_MISC, 0,
+					 CLKGATE_DIS_MISC_DMASC_GATING_DIS);
+	}
+	
+	intel_alpm_configure(intel_dp, crtc_state);
+
+	//if (HAS_PSR_TRANS_PUSH_FRAME_CHANGE(display))
+	//	intel_vrr_psr_frame_change_enable(crtc_state);
+
+}
+
+
+
+static void _psr_enable_sink(struct intel_dp *intel_dp,
+				 const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	u8 val = 0;
+
+	/*if (crtc_state->has_sel_update) {
+		val |= DP_PSR_ENABLE_PSR2 | DP_PSR_IRQ_HPD_WITH_CRC_ERRORS;
+	} else {
+		if (intel_dp->psr.link_standby)
+			val |= DP_PSR_MAIN_LINK_ACTIVE;
+*/
+		if (DISPLAY_VER(display) >= 8)
+			val |= DP_PSR_CRC_VERIFICATION;
+	//}
+
+	/*if (crtc_state->req_psr2_sdp_prior_scanline)
+		val |= DP_PSR_SU_REGION_SCANLINE_CAPTURE;
+
+	if (crtc_state->enable_psr2_su_region_et)
+		val |= DP_PANEL_REPLAY_ENABLE_SU_REGION_ET;*/
+
+	if (intel_dp->psr.entry_setup_frames > 0)
+		val |= DP_PSR_FRAME_CAPTURE;
+
+	Gen11::callback->writeAUX(linkp,DP_PSR_EN_CFG,&val, 1);
+
+	val |= DP_PSR_ENABLE;
+	Gen11::callback->writeAUX(linkp,DP_PSR_EN_CFG,&val, 1);
+}
+
+static void intel_psr_enable_sink(struct intel_dp *intel_dp,
+				  const struct intel_crtc_state *crtc_state)
+{
+	//intel_alpm_enable_sink(intel_dp, crtc_state);
+
+	//crtc_state->has_panel_replay ?
+		//_panel_replay_enable_sink(intel_dp, crtc_state) :
+		_psr_enable_sink(intel_dp, crtc_state);
+
+	if (intel_dp_is_edp())
+	{
+		u8 val = DP_SET_POWER_D0;
+		Gen11::callback->writeAUX(linkp,DP_SET_POWER,&val, 1);
+	}
+}
+
+static bool psr_interrupt_error_check(struct intel_dp *intel_dp)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	enum transcoder cpu_transcoder = intel_dp->psr.transcoder;
+	u32 val;
+
+	if (intel_dp->psr.panel_replay_enabled)
+		goto no_err;
+
+
+	val = intel_de_read(display, TRANS_PSR_IIR(display, cpu_transcoder));
+	val &= TGL_PSR_ERROR;
+	if (val) {
+		intel_dp->psr.sink_not_reliable = true;
+
+		return false;
+	}
+
+no_err:
+	return true;
+}
+
+
+
+
+int drm_mode_vrefresh(const struct drm_display_mode *mode)
+{
+	unsigned int num = 1, den = 1;
+
+	if (mode->htotal == 0 || mode->vtotal == 0)
+		return 0;
+
+	if (mode->flags & DRM_MODE_FLAG_INTERLACE)
+		num *= 2;
+	if (mode->flags & DRM_MODE_FLAG_DBLSCAN)
+		den *= 2;
+	if (mode->vscan > 1)
+		den *= mode->vscan;
+
+	if (__builtin_mul_overflow(mode->clock, num, &num))
+		return 0;
+
+	if (__builtin_mul_overflow(mode->htotal * mode->vtotal, den, &den))
+		return 0;
+
+	return DIV_ROUND_CLOSEST_ULL(mul_u32_u32(num, 1000), den);
+}
+static u32 intel_get_frame_time_us(const struct intel_crtc_state *crtc_state)
+{
+	if (!crtc_state->hw.active)
+		return 0;
+
+	return DIV_ROUND_UP(1000 * 1000,
+				drm_mode_vrefresh(&crtc_state->hw.adjusted_mode));
+}
+
+#define MAX_JIFFY_OFFSET ((LONG_MAX >> 1)-1)
+
+
+static inline unsigned long _usecs_to_jiffies(const unsigned int u)
+{
+	return (u + (USEC_PER_SEC / 1000) - 1) / (USEC_PER_SEC / 1000);
+}
+
+
+static unsigned long usecs_to_jiffies(const unsigned int u)
+{
+	if (__builtin_constant_p(u)) {
+		if (u > jiffies_to_usecs(MAX_JIFFY_OFFSET))
+			return MAX_JIFFY_OFFSET;
+		return _usecs_to_jiffies(u);
+	} else {
+		return _usecs_to_jiffies(u);
+	}
+}
+
+
+
+static void dg2_activate_panel_replay(struct intel_dp *intel_dp)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	struct intel_psr *psr = &intel_dp->psr;
+	enum transcoder cpu_transcoder = intel_dp->psr.transcoder;
+
+	if (intel_dp_is_edp() && psr->sel_update_enabled) {
+		u32 val = psr->su_region_et_enabled ?
+			LNL_EDP_PSR2_SU_REGION_ET_ENABLE : 0;
+
+		if (intel_dp->psr.req_psr2_sdp_prior_scanline)
+			val |= EDP_PSR2_SU_SDP_SCANLINE;
+
+		intel_de_write(display, EDP_PSR2_CTL(display, cpu_transcoder),
+				   val);
+	}
+
+	intel_de_rmw(display,
+			 PSR2_MAN_TRK_CTL(display, intel_dp->psr.transcoder),
+			 0, ADLP_PSR2_MAN_TRK_CTL_SF_CONTINUOS_FULL_FRAME);
+
+	intel_de_rmw(display, TRANS_DP2_CTL(intel_dp->psr.transcoder), 0,
+			 TRANS_DP2_PANEL_REPLAY_ENABLE);
+}
+
+
+static void hsw_activate_psr2(struct intel_dp *intel_dp)
+{
+	//todo
+}
+
+static void intel_psr_enable_locked(struct intel_dp *intel_dp,
+					const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	u32 val;
+	
+	u32 mask;
+	int err;
+
+
+	intel_dp->psr.sel_update_enabled = crtc_state->has_sel_update;
+	intel_dp->psr.panel_replay_enabled = crtc_state->has_panel_replay;
+	intel_dp->psr.busy_frontbuffer_bits = 0;
+	intel_dp->psr.pipe = display->pipe0;
+	intel_dp->psr.transcoder = crtc_state->cpu_transcoder;
+
+	val = usecs_to_jiffies(intel_get_frame_time_us(crtc_state) * 6);
+	intel_dp->psr.dc3co_exit_delay = val;
+	intel_dp->psr.dc3co_exitline = crtc_state->dc3co_exitline;
+	intel_dp->psr.psr2_sel_fetch_enabled = crtc_state->enable_psr2_sel_fetch;
+	intel_dp->psr.su_region_et_enabled = crtc_state->enable_psr2_su_region_et;
+	intel_dp->psr.psr2_sel_fetch_cff_enabled = false;
+	intel_dp->psr.req_psr2_sdp_prior_scanline =
+		crtc_state->req_psr2_sdp_prior_scanline;
+	intel_dp->psr.active_non_psr_pipes = crtc_state->active_non_psr_pipes;
+	intel_dp->psr.pkg_c_latency_used = crtc_state->pkg_c_latency_used;
+	intel_dp->psr.io_wake_lines = crtc_state->alpm_state.io_wake_lines;
+	intel_dp->psr.fast_wake_lines = crtc_state->alpm_state.fast_wake_lines;
+	intel_dp->psr.entry_setup_frames = crtc_state->entry_setup_frames;
+
+	if (!psr_interrupt_error_check(intel_dp))
+		return;
+	
+	u32 reg = EDP_PSR_STATUS(display, intel_dp->psr.transcoder);
+	mask = EDP_PSR_STATUS_STATE_MASK;
+	err = intel_de_wait_for_clear_ms(display, reg, mask, 50);
+
+	intel_psr_enable_sink(intel_dp, crtc_state);
+
+	//if (intel_dp_is_edp(intel_dp))
+	//	intel_snps_phy_update_psr_power_state(&dig_port->base, true);
+
+	intel_psr_enable_source(intel_dp, crtc_state);
+	intel_dp->psr.enabled = true;
+	intel_dp->psr.pause_counter = 0;
+
+	intel_dp->psr.link_ok = true;
+
+	/* psr1, psr2 and panel-replay are mutually exclusive.*/
+	if (intel_dp->psr.panel_replay_enabled)
+		dg2_activate_panel_replay(intel_dp);
+	else if (intel_dp->psr.sel_update_enabled)
+		hsw_activate_psr2(intel_dp);
+	else
+		hsw_activate_psr1(intel_dp);
+	
+	
+}
+
+static void wm_optimization_wa(struct intel_dp *intel_dp,
+				   const struct intel_crtc_state *crtc_state,enum pipe pipe)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	bool activate = false;
+
+	/* Wa_14015648006 */
+	if (IS_DISPLAY_VER(display, 11, 14) && crtc_state->wm_level_disabled)
+		activate = true;
+
+	/* Wa_16013835468 */
+	if (DISPLAY_VER(display) == 12 &&
+		crtc_state->hw.adjusted_mode.crtc_vblank_start !=
+		crtc_state->hw.adjusted_mode.crtc_vdisplay)
+		activate = true;
+
+	if (activate)
+		intel_de_rmw(display, GEN8_CHICKEN_DCPR_1,
+				 0, LATENCY_REPORTING_REMOVED(pipe));
+	else
+		intel_de_rmw(display, GEN8_CHICKEN_DCPR_1,
+				 LATENCY_REPORTING_REMOVED(pipe), 0);
+}
+
+void Gen11::updatePlane(void *that,bool param_1)
+{
+	FunctionCast(updatePlane, callback->oupdatePlane)(that, param_1);
+	
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	struct intel_dp *intel_dp=&display->intel_dp0;
+	
+	void * frame = getMember<void *>(that, 0x68);
+	uint32_t fbNum = getMember<uint32_t>(frame, 0x1dc);
+	
+	if (fbNum!=0) return;
+		
+	if (!intel_dp->psr.enabled )
+		intel_psr_enable_locked(intel_dp, &display->crtc_state0);
+	else if (intel_dp->psr.enabled && !display->crtc_state0.wm_level_disabled)
+		wm_optimization_wa(intel_dp, &display->crtc_state0,intel_dp->psr.pipe);
+
+	if (display->crtc_state0.crc_enabled && intel_dp->psr.enabled)
+		intel_de_write(display, CURSURFLIVE(display, intel_dp->psr.pipe), 0);
+	
+	intel_dp->psr.busy_frontbuffer_bits = 0;
+}
+
+static inline u32 gen11_master_intr_disable(struct intel_display *display)
+{
+	intel_de_write(display,  GEN11_GFX_MSTR_IRQ, 0);
+
+	return intel_de_read(display,  GEN11_GFX_MSTR_IRQ);
+}
+
+void gen11_gt_irq_reset(struct intel_gt *gt)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+
+	/* Disable RCS, BCS, VCS and VECS class engines. */
+	intel_de_write(display, GEN11_RENDER_COPY_INTR_ENABLE, 0);
+	intel_de_write(display, GEN11_VCS_VECS_INTR_ENABLE,	  0);
+	if (CCS_MASK(gt))
+		intel_de_write(display, GEN12_CCS_RSVD_INTR_ENABLE, 0);
+	if (HAS_HECI_GSC(gt->i915) || HAS_ENGINE(gt, GSC0))
+		intel_de_write(display, GEN11_GUNIT_CSME_INTR_ENABLE, 0);
+
+	/* Restore masks irqs on RCS, BCS, VCS and VECS engines. */
+	intel_de_write(display, GEN11_RCS0_RSVD_INTR_MASK,	~0);
+	intel_de_write(display, GEN11_BCS_RSVD_INTR_MASK,	~0);
+	if (HAS_ENGINE(gt, BCS1) || HAS_ENGINE(gt, BCS2))
+		intel_de_write(display, XEHPC_BCS1_BCS2_INTR_MASK, ~0);
+	if (HAS_ENGINE(gt, BCS3) || HAS_ENGINE(gt, BCS4))
+		intel_de_write(display, XEHPC_BCS3_BCS4_INTR_MASK, ~0);
+	if (HAS_ENGINE(gt, BCS5) || HAS_ENGINE(gt, BCS6))
+		intel_de_write(display, XEHPC_BCS5_BCS6_INTR_MASK, ~0);
+	if (HAS_ENGINE(gt, BCS7) || HAS_ENGINE(gt, BCS8))
+		intel_de_write(display, XEHPC_BCS7_BCS8_INTR_MASK, ~0);
+	intel_de_write(display, GEN11_VCS0_VCS1_INTR_MASK,	~0);
+	intel_de_write(display, GEN11_VCS2_VCS3_INTR_MASK,	~0);
+	if (HAS_ENGINE(gt, VCS4) || HAS_ENGINE(gt, VCS5))
+		intel_de_write(display, GEN12_VCS4_VCS5_INTR_MASK,   ~0);
+	if (HAS_ENGINE(gt, VCS6) || HAS_ENGINE(gt, VCS7))
+		intel_de_write(display, GEN12_VCS6_VCS7_INTR_MASK,   ~0);
+	intel_de_write(display, GEN11_VECS0_VECS1_INTR_MASK,	~0);
+	if (HAS_ENGINE(gt, VECS2) || HAS_ENGINE(gt, VECS3))
+		intel_de_write(display, GEN12_VECS2_VECS3_INTR_MASK, ~0);
+	if (HAS_ENGINE(gt, CCS0) || HAS_ENGINE(gt, CCS1))
+		intel_de_write(display, GEN12_CCS0_CCS1_INTR_MASK, ~0);
+	if (HAS_ENGINE(gt, CCS2) || HAS_ENGINE(gt, CCS3))
+		intel_de_write(display, GEN12_CCS2_CCS3_INTR_MASK, ~0);
+	if (HAS_HECI_GSC(gt->i915) || HAS_ENGINE(gt, GSC0))
+		intel_de_write(display, GEN11_GUNIT_CSME_INTR_MASK, ~0);
+
+	intel_de_write(display, GEN11_GPM_WGBOXPERF_INTR_ENABLE, 0);
+	intel_de_write(display, GEN11_GPM_WGBOXPERF_INTR_MASK,  ~0);
+	intel_de_write(display, GEN11_GUC_SG_INTR_ENABLE, 0);
+	intel_de_write(display, GEN11_GUC_SG_INTR_MASK,  ~0);
+
+	intel_de_write(display, GEN11_CRYPTO_RSVD_INTR_ENABLE, 0);
+	intel_de_write(display, GEN11_CRYPTO_RSVD_INTR_MASK,  ~0);
+}
+
+static void irq_reset(struct intel_display *display, struct i915_irq_regs regs)
+{
+	intel_de_write(display, regs.imr, 0xffffffff);
+	intel_de_posting_read(display, regs.imr);
+
+	intel_de_write(display, regs.ier, 0);
+
+	/* IIR can theoretically queue up two events. Be paranoid. */
+	intel_de_write(display, regs.iir, 0xffffffff);
+	intel_de_posting_read(display, regs.iir);
+	intel_de_write(display, regs.iir, 0xffffffff);
+	intel_de_posting_read(display, regs.iir);
+}
+
+void gen11_display_irq_reset(struct intel_display *display)
+{
+	enum pipe pipe;
+	u32 trans_mask = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
+		BIT(TRANSCODER_C) | BIT(TRANSCODER_D);
+
+
+	intel_de_write(display, GEN11_DISPLAY_INT_CTL, 0);
+
+	if (DISPLAY_VER(display) >= 12) {
+		enum transcoder trans;
+
+		for_each_cpu_transcoder_masked(display, trans, trans_mask) {
+			enum intel_display_power_domain domain;
+
+			domain = POWER_DOMAIN_TRANSCODER(trans);
+			//if (!intel_display_power_is_enabled(display, domain))
+			//	continue;
+			if (trans!=TRANSCODER_A) continue;
+
+			intel_de_write(display,
+					   TRANS_PSR_IMR(display, trans),
+					   0xffffffff);
+			intel_de_write(display,
+					   TRANS_PSR_IIR(display, trans),
+					   0xffffffff);
+		}
+	} else {
+		intel_de_write(display, EDP_PSR_IMR, 0xffffffff);
+		intel_de_write(display, EDP_PSR_IIR, 0xffffffff);
+	}
+
+	for_each_pipe(display, pipe)
+		//if (intel_display_power_is_enabled(display,
+		//				   POWER_DOMAIN_PIPE(pipe)))
+		if (pipe==PIPE_A)
+			irq_reset(display, GEN8_DE_PIPE_IRQ_REGS(pipe));
+
+	irq_reset(display, GEN8_DE_PORT_IRQ_REGS);
+	irq_reset(display, GEN8_DE_MISC_IRQ_REGS);
+
+	if (DISPLAY_VER(display) >= 14)
+		irq_reset(display, PICAINTERRUPT_IRQ_REGS);
+	else
+		irq_reset(display, GEN11_DE_HPD_IRQ_REGS);
+
+	if (INTEL_PCH_TYPE(display) >= PCH_ICP)
+		irq_reset(display, SDE_IRQ_REGS);
+}
+
+void gen2_irq_reset(struct intel_display *display, struct i915_irq_regs regs)
+{
+	intel_de_write(display, regs.imr, 0xffffffff);
+	intel_de_read(display, regs.imr);
+
+	intel_de_write(display,regs.ier, 0);
+
+	/* IIR can theoretically queue up two events. Be paranoid. */
+	intel_de_write(display, regs.iir, 0xffffffff);
+	intel_de_posting_read(display, regs.iir);
+	intel_de_write(display, regs.iir, 0xffffffff);
+	intel_de_posting_read(display, regs.iir);
+}
+
+static void gen11_irq_reset(struct drm_i915_private *dev_priv)
+{
+	struct intel_display *display=dev_priv->display;
+	struct intel_gt *gt = to_gt(dev_priv);
+
+	gen11_master_intr_disable(display);
+
+	gen11_gt_irq_reset(gt);
+	gen11_display_irq_reset(display);
+
+	gen2_irq_reset(display, GEN11_GU_MISC_IRQ_REGS);
+	gen2_irq_reset(display, GEN8_PCU_IRQ_REGS);
+}
+
+int intel_mode_vblank_start(const struct drm_display_mode *mode)
+{
+	int vblank_start = mode->crtc_vblank_start;
+
+	if (mode->flags & DRM_MODE_FLAG_INTERLACE)
+		vblank_start = DIV_ROUND_UP(vblank_start, 2);
+
+	return vblank_start;
+}
+
+static int cdclk_factor(struct intel_display *display)
+{
+	if (DISPLAY_VER(display) >= 30)
+		return 120;
+	else
+		return 280;
+}
+static int intel_dsb_noarm_exec_time_us(void)
+{
+	return 80;
+}
+
+static int intel_dsb_arm_exec_time_us(void)
+{
+	return 20;
+}
+
+int intel_dsb_exec_time_us(void)
+{
+	return intel_dsb_noarm_exec_time_us() +
+		intel_dsb_arm_exec_time_us();
+}
+int intel_flipq_exec_time_us(struct intel_display *display)
+{
+	return intel_dsb_exec_time_us() +
+		DIV_ROUND_UP(display->port_clock * cdclk_factor(display), 540000) +
+	0;//display->sagv.block_time_us;
+}
+
+
+
+
+
+int intel_usecs_to_scanlines(const struct drm_display_mode *adjusted_mode,
+				 int usecs)
+{
+	/* paranoia */
+	if (!adjusted_mode->crtc_htotal)
+		return 1;
+
+	return DIV_ROUND_UP_ULL(mul_u32_u32(usecs, adjusted_mode->crtc_clock),
+				1000 * adjusted_mode->crtc_htotal);
+}
+static int intel_flipq_exec_time_lines(const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+
+	return intel_usecs_to_scanlines(&crtc_state->hw.adjusted_mode,
+					intel_flipq_exec_time_us(display));
+}
+
+u32 intel_pipedmc_start_mmioaddr(struct intel_display *display, enum pipe pipe)
+{
+	struct intel_dmc *dmc = display_to_dmc(display);
+	enum intel_dmc_id dmc_id = (enum intel_dmc_id)PIPE_TO_DMC_ID(pipe);
+
+	return dmc ? dmc->dmc_info[dmc_id].start_mmioaddr : 0;
+}
+
+void intel_flipq_enable(const struct intel_crtc_state *crtc_state, enum pipe pipe)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	
+	
+	int scanline = intel_mode_vblank_start(&crtc_state->hw.adjusted_mode) -
+		intel_flipq_exec_time_lines(crtc_state);
+
+	if (DISPLAY_VER(display) >= 30) {
+		u32 start_mmioaddr = intel_pipedmc_start_mmioaddr(display,pipe);
+
+		intel_de_write(display, PTL_PIPEDMC_EXEC_TIME_LINES(start_mmioaddr),
+				   intel_flipq_exec_time_lines(crtc_state));
+		intel_de_write(display, PTL_PIPEDMC_END_OF_EXEC_GB(start_mmioaddr),
+				   100);
+	}
+
+	intel_de_write(display, PIPEDMC_SCANLINECMPUPPER(pipe),
+			   PIPEDMC_SCANLINE_UPPER(scanline));
+	intel_de_write(display, PIPEDMC_SCANLINECMPLOWER(pipe),
+			   PIPEDMC_SCANLINEINRANGECMP_EN |
+			   PIPEDMC_SCANLINE_LOWER(scanline - 2));
+
+	enum intel_dmc_id dmc_id = (enum intel_dmc_id)PIPE_TO_DMC_ID(pipe);
+	dmc_configure_event(display, dmc_id, PIPEDMC_EVENT_SCANLINE_INRANGE_FQ_TRIGGER, true);
+	
+	intel_de_write(display, PIPEDMC_FQ_CTRL(pipe), PIPEDMC_FQ_CTRL_ENABLE);
+}
+
+void Gen11::enablePipe(void *that,void *param_1, void *param_2,void *param_3)
+{
+	FunctionCast(enablePipe, callback->oenablePipe)(that, param_1,param_2,param_3);
+	
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_display *display=i915->display;
+	struct intel_dp *intel_dp=&display->intel_dp0;
+	struct intel_crtc_state *crtc_state =&display->crtc_state0;
+	
+	uint32_t fbNum = getMember<uint32_t>(param_1, 0x1dc);
+	enum pipe pipe= PIPE_A;
+	enum intel_dmc_id dmc_id = (enum intel_dmc_id)PIPE_TO_DMC_ID(pipe);
+	
+	if (fbNum!=0) return;
+	
+	icl_set_pipe_chicken(pipe);
+	
+	intel_dmc_enable_pipe(crtc_state,pipe);
+
+	intel_crt_set_dpms(pipe, crtc_state, DRM_MODE_DPMS_ON);
+	
+	/*dmc_configure_event(display, dmc_id, PIPEDMC_EVENT_VBLANK, true);
+	intel_flipq_enable(crtc_state,pipe);
+	
+	char inte= getMember<char>(ccont2, kexttgld ? 0xfdc : 0xfd4);
+	if (inte!='\x02')
+		hwEnableInterrupts(ccont2);
+	*/
+}
+
+static int intel_num_pps(struct intel_display *display)
+{
+	if (display->platform.valleyview || display->platform.cherryview)
+		return 2;
+
+	if (display->platform.geminilake || display->platform.broxton)
+		return 2;
+
+	if (INTEL_PCH_TYPE(display) >= PCH_MTL)
+		return 2;
+
+	if (INTEL_PCH_TYPE(display) >= PCH_DG1)
+		return 1;
+
+	if (INTEL_PCH_TYPE(display) >= PCH_ICP)
+		return 2;
+
+	return 1;
+}
+
+void intel_pps_unlock_regs_wa(struct intel_display *display)
+{
+	int pps_num;
+	int pps_idx;
+
+	if (HAS_DDI(display))
+		return;
+	/*
+	 * This w/a is needed at least on CPT/PPT, but to be sure apply it
+	 * everywhere where registers can be write protected.
+	 */
+	pps_num = intel_num_pps(display);
+
+	for (pps_idx = 0; pps_idx < pps_num; pps_idx++)
+		intel_de_rmw(display, PP_CONTROL(display, pps_idx),
+				 PANEL_UNLOCK_MASK, PANEL_UNLOCK_REGS);
+}
+
+void Gen11::hwInitializeCState(void *that)
+{
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	if (i915->inidmc) return;
+	struct intel_display *display=i915->display;
+	i915->inidmc=true;
+	
+	
+	intel_pps_unlock_regs_wa(display);
+	
+	u32 adpa,adpa_reg;
+
+	if (HAS_PCH_SPLIT(display))
+		adpa_reg = PCH_ADPA;
+	else if (display->platform.valleyview)
+		adpa_reg = VLV_ADPA;
+	else
+		adpa_reg = ADPA;
+	
+	adpa = intel_de_read(display, adpa_reg);
+	if ((adpa & ADPA_DAC_ENABLE) == 0) {
+		intel_de_write(display, adpa_reg,
+				   adpa | ADPA_DAC_ENABLE |
+				   ADPA_HSYNC_CNTL_DISABLE |
+				   ADPA_VSYNC_CNTL_DISABLE);
+		if ((intel_de_read(display, adpa_reg) & ADPA_DAC_ENABLE) != 0)
+			intel_de_write(display, adpa_reg, adpa);
+	}
+	
+	//if (getMember<int>(that, kexticl ? 0xb38 : 0xb48) != 1) return;//dc6config
+	
+	if (parse_dmc_fw(display)!=0) return;
+	
+	//intel_early_display_was
+	if (intel_display_wa(display, INTEL_DISPLAY_WA_14010480278))
+			intel_de_rmw(display, GEN9_CLKGATE_DIS_0, 0, DARBF_GATING_DIS);
+	
+	
+	intel_dmc_load_program(display);
+	
+	/* Wa_14011508470:tgl,dg1,rkl,adl-s,adl-p,dg2 */
+	if (intel_display_wa(display, INTEL_DISPLAY_WA_14011508470))
+		intel_de_rmw(display, GEN11_CHICKEN_DCPR_2, 0,
+				 DCPR_CLEAR_MEMSTAT_DIS | DCPR_SEND_RESP_IMM |
+				 DCPR_MASK_LPMODE | DCPR_MASK_MAXLATENCY_MEMUP_CLR);
+
+	/* Wa_14011503030:xelpd */
+	if (intel_display_wa(display, INTEL_DISPLAY_WA_14011503030))
+		intel_de_write(display, XELPD_DISPLAY_ERR_FATAL_MASK, ~0);
+
+	/* Wa_15013987218 */
+	if (intel_display_wa(display, INTEL_DISPLAY_WA_15013987218)) {
+		intel_de_rmw(display, SOUTH_DSPCLK_GATE_D,
+				 0, PCH_GMBUSUNIT_CLOCK_GATE_DISABLE);
+		intel_de_rmw(display, SOUTH_DSPCLK_GATE_D,
+				 PCH_GMBUSUNIT_CLOCK_GATE_DISABLE, 0);
+	}
+	
+	//hwConfigureCustomAUX(that, true);
+	
+	
+	
+}
+
+
+static inline bool
+intel_crtc_has_type(const struct intel_crtc_state *crtc_state,
+			enum intel_output_type type)
+{
+	return crtc_state->output_types & BIT(type);
+}
+
+
+void Gen11::setupPipeWatermarks (void *that,void *param_1,void *param_2,CRTCParams *param_3)
+{
+	if (setpc && !kexticl) {
+		SetupParams2(param_2, param_3);
+	}
+	FunctionCast(setupPipeWatermarks, callback->osetupPipeWatermarks)(that ,param_1,param_2,param_3);
+}
+
+static u32 intel_ddi_transcoder_func_reg_val_get()
+{
+	struct intel_display *display=NBlue::callback->i915b->display;
+	enum pipe pipe = display->pipe0;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+	enum port port = display->port0;
+	u32 temp;
+	
+	temp = TRANS_DDI_FUNC_ENABLE;
+	if (DISPLAY_VER(display) >= 12)
+		temp |= TGL_TRANS_DDI_SELECT_PORT(port);
+	else
+		temp |= TRANS_DDI_SELECT_PORT(port);
+
+	switch (crtc_state->pipe_bpp) {
+	default:
+	/*case 18:
+		temp |= TRANS_DDI_BPC_6;
+		break;*/
+	case 24:
+		temp |= TRANS_DDI_BPC_8;
+		break;
+	case 30:
+		temp |= TRANS_DDI_BPC_10;
+		break;
+	case 36:
+		temp |= TRANS_DDI_BPC_12;
+		break;
+	}
+
+	if (crtc_state->hw.adjusted_mode.flags & DRM_MODE_FLAG_PVSYNC)
+		temp |= TRANS_DDI_PVSYNC;
+	if (crtc_state->hw.adjusted_mode.flags & DRM_MODE_FLAG_PHSYNC)
+		temp |= TRANS_DDI_PHSYNC;
+
+	if (cpu_transcoder == TRANSCODER_EDP) {
+		switch (pipe) {
+		default:
+		case PIPE_A:
+			if (crtc_state->pch_pfit.force_thru)
+				temp |= TRANS_DDI_EDP_INPUT_A_ONOFF;
+			else
+				temp |= TRANS_DDI_EDP_INPUT_A_ON;
+			break;
+		case PIPE_B:
+			temp |= TRANS_DDI_EDP_INPUT_B_ONOFF;
+			break;
+		case PIPE_C:
+			temp |= TRANS_DDI_EDP_INPUT_C_ONOFF;
+			break;
+		}
+	}
+
+	
+	if (intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI)) {
+		if (crtc_state->has_hdmi_sink)
+			temp |= TRANS_DDI_MODE_SELECT_HDMI;
+		else
+			temp |= TRANS_DDI_MODE_SELECT_DVI;
+
+		if (crtc_state->hdmi_scrambling)
+			temp |= TRANS_DDI_HDMI_SCRAMBLING;
+		if (crtc_state->hdmi_high_tmds_clock_ratio)
+			temp |= TRANS_DDI_HIGH_TMDS_CHAR_RATE;
+		if (DISPLAY_VER(display) >= 14)
+			temp |= TRANS_DDI_PORT_WIDTH(crtc_state->lane_count);
+	} else {
+		temp |= TRANS_DDI_MODE_SELECT_DP_SST;
+		temp |= DDI_PORT_WIDTH(crtc_state->lane_count);
+	}
+
+	
+
+	return temp;
+}
+
+static inline bool
+intel_crtc_has_dp_encoder(const struct intel_crtc_state *crtc_state)
+{
+	return crtc_state->output_types &
+		(BIT(INTEL_OUTPUT_DP) |
+		 BIT(INTEL_OUTPUT_DP_MST) |
+		 BIT(INTEL_OUTPUT_EDP));
+}
+
+static u32 intel_ddi_set_dp_msa(struct intel_display *display, bool wr)
+{
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+	u32 temp;
+
+	if (!intel_crtc_has_dp_encoder(crtc_state))
+		return 0;
+	
+	temp = DP_MSA_MISC_SYNC_CLOCK;
+
+	switch (display->panel.vbt.edp.bpp) {
+	//case 18:
+	//	temp |= DP_MSA_MISC_6_BPC;
+	//	break;
+	default:
+	case 24:
+		temp |= DP_MSA_MISC_8_BPC;
+		break;
+	case 30:
+		temp |= DP_MSA_MISC_10_BPC;
+		break;
+	case 36:
+		temp |= DP_MSA_MISC_12_BPC;
+		break;
+
+	}
+
+
+	if (crtc_state->limited_color_range)
+		temp |= DP_MSA_MISC_COLOR_CEA_RGB;
+
+
+	if (crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR444)
+		temp |= DP_MSA_MISC_COLOR_YCBCR_444_BT709;
+
+//DP 1.4a
+	//if (intel_dp_needs_vsc_sdp())
+		//temp |= DP_MSA_MISC_COLOR_VSC_SDP;
+	
+	if (wr)
+	intel_de_write(display, TRANS_MSA_MISC(display, cpu_transcoder),temp);
+	return temp;
+}
+
+u8 icl_hdr_plane_mask(void)
+{
+	return BIT(PLANE_1) | BIT(PLANE_2) | BIT(PLANE_3);
+}
+
+static bool is_hdr_mode(const struct intel_crtc_state *crtc_state)
+{
+	return (crtc_state->active_planes &
+		~(icl_hdr_plane_mask() | BIT(PLANE_CURSOR))) == 0;
+}
+
+static u32 bdw_set_pipe_misc()
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	
+	u32 val = 0;
+
+	switch (crtc_state->pipe_bpp) {
+		default:
+	/*case 18:
+		val |= PIPE_MISC_BPC_6;
+		break;*/
+	case 24:
+		val |= PIPE_MISC_BPC_8;
+		break;
+	case 30:
+		val |= PIPE_MISC_BPC_10;
+		break;
+	case 36:
+		if (DISPLAY_VER(display) >= 13)
+			val |= PIPE_MISC_BPC_12_ADLP;
+		break;
+	//default:
+		//break;
+	}
+
+	if (crtc_state->dither)
+		val |= PIPE_MISC_DITHER_ENABLE | PIPE_MISC_DITHER_TYPE_SP;
+
+	if (crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR420 ||
+		crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR444)
+		val |= PIPE_MISC_OUTPUT_COLORSPACE_YUV;
+
+	if (crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR420)
+		val |= DISPLAY_VER(display) >= 30 ? PIPE_MISC_YUV420_ENABLE :
+			PIPE_MISC_YUV420_ENABLE | PIPE_MISC_YUV420_MODE_FULL_BLEND;
+
+	if (DISPLAY_VER(display) >= 11 && is_hdr_mode(crtc_state))
+		val |= PIPE_MISC_HDR_MODE_PRECISION;
+
+	if (DISPLAY_VER(display) >= 12)
+		val |= PIPE_MISC_PIXEL_ROUNDING_TRUNC;
+
+
+	//intel_de_write_dsb(display, dsb, PIPE_MISC(crtc->pipe), val);
+
+	
+	return val;
+}
+
+
+
+static const struct intel_ddi_buf_trans *
+intel_get_buf_trans(const struct intel_ddi_buf_trans *trans, int *num_entries)
+{
+	*num_entries = trans->num_entries;
+	return trans;
+}
+
+
+
+static bool use_edp_low_vswing()
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	return display->panel.vbt.edp.low_vswing;
+}
+
+static bool use_edp_hobl()
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_dp *intel_dp = &display->intel_dp0;
+
+	return display->panel.vbt.edp.hobl && !intel_dp->hobl_failed;
+}
+
+static const struct intel_ddi_buf_trans *
+tgl_get_combo_buf_trans_dp(const struct intel_crtc_state *crtc_state,
+			   int *n_entries)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+
+	if (crtc_state->port_clock > 270000) {
+		if (display->platform.tigerlake_uy) {
+			return intel_get_buf_trans(&tgl_uy_combo_phy_trans_dp_hbr2,
+						   n_entries);
+		} else {
+			return intel_get_buf_trans(&tgl_combo_phy_trans_dp_hbr2,
+						   n_entries);
+		}
+	} else {
+		return intel_get_buf_trans(&tgl_combo_phy_trans_dp_hbr,
+					   n_entries);
+	}
+}
+
+static const struct intel_ddi_buf_trans *
+tgl_get_combo_buf_trans_edp(const struct intel_crtc_state *crtc_state,
+				int *n_entries)
+{
+	if (crtc_state->port_clock > 540000) {
+		return intel_get_buf_trans(&icl_combo_phy_trans_dp_hbr2_edp_hbr3,
+					   n_entries);
+	} else if (use_edp_hobl()) {
+		return intel_get_buf_trans(&tgl_combo_phy_trans_edp_hbr2_hobl,
+					   n_entries);
+	} else if (use_edp_low_vswing()) {
+		return intel_get_buf_trans(&icl_combo_phy_trans_edp_hbr2,
+					   n_entries);
+	}
+
+	return tgl_get_combo_buf_trans_dp( crtc_state, n_entries);
+}
+
+
+
+static const struct intel_ddi_buf_trans *
+tgl_get_combo_buf_trans(const struct intel_crtc_state *crtc_state,
+			int *n_entries)
+{
+	if (intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI))
+		return intel_get_buf_trans(&icl_combo_phy_trans_hdmi, n_entries);
+	else if (intel_crtc_has_type(crtc_state, INTEL_OUTPUT_EDP))
+		return tgl_get_combo_buf_trans_edp( crtc_state, n_entries);
+	else
+		return tgl_get_combo_buf_trans_dp( crtc_state, n_entries);
+}
+
+static u32 icl_combo_phy_loadgen_select(int lane)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	if (display->port_clock > 600000)
+		return 0;
+
+	if (NBlue::callback->i915b->display->panel.vbt.edp.lanes == 4)
+		return lane >= 1 ? LOADGEN_SELECT : 0;
+	else
+		return lane == 1 || lane == 2 ? LOADGEN_SELECT : 0;
+}
+
+
+static int translate_signal_level(u8 signal_levels)
+{
+	const u8 *signal_array;
+	size_t array_size;
+	int i;
+
+	signal_array = index_to_dp_signal_levels;
+	array_size = ARRAY_SIZE(index_to_dp_signal_levels);
+
+	for (i = 0; i < array_size; i++) {
+		if (signal_array[i] == signal_levels)
+			return i;
+	}
+
+
+	return 0;
+}
+
+static inline bool drm_dp_is_uhbr_rate(int link_rate)
+{
+	return link_rate >= 1000000;
+}
+bool intel_dp_is_uhbr(const struct intel_crtc_state *crtc_state)
+{
+	return drm_dp_is_uhbr_rate(crtc_state->port_clock);
+}
+
+static int intel_ddi_dp_level(struct intel_display *display,
+				  int lane)
+{
+	u8 train_set = display->intel_dp0.train_set[lane];
+	
+	if (intel_dp_is_uhbr(&display->crtc_state0)) {
+		return train_set & DP_TX_FFE_PRESET_VALUE_MASK;
+	} else {
+		u8 signal_levels = train_set & (DP_TRAIN_VOLTAGE_SWING_MASK |
+						DP_TRAIN_PRE_EMPHASIS_MASK);
+
+		return translate_signal_level( signal_levels);
+	}
+}
+
+
+
+int intel_ddi_level(struct intel_display *display,
+			int lane)
+{
+	const struct intel_ddi_buf_trans *trans;
+	int level, n_entries;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+
+	trans=tgl_get_combo_buf_trans(crtc_state,&n_entries);
+
+	/*if (intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI))
+		level = intel_ddi_hdmi_level(encoder, trans);
+	else*/
+	level = intel_ddi_dp_level(display, lane);
+
+	if (( level >= n_entries))
+		level = n_entries - 1;
+
+	return level;
+}
+
+bool is_hobl_buf_trans(const struct intel_ddi_buf_trans *table)
+{
+	return table == &tgl_combo_phy_trans_edp_hbr2_hobl;
+}
+
+static void icl_ddi_combo_vswing_program(struct intel_display *display)
+{
+	const struct intel_ddi_buf_trans *trans;
+	enum phy phy = display->phy0;
+	int n_entries, ln;
+	u32 val;
+
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+
+	trans=tgl_get_combo_buf_trans(crtc_state,&n_entries);
+	
+	if (intel_crtc_has_type(crtc_state, INTEL_OUTPUT_EDP)) {
+		struct intel_dp *intel_dp = &display->intel_dp0;
+
+		val = EDP4K2K_MODE_OVRD_EN | EDP4K2K_MODE_OVRD_OPTIMIZED;
+		intel_dp->hobl_active = is_hobl_buf_trans(trans);
+		intel_de_rmw(display, ICL_PORT_CL_DW10(phy), val,
+				 intel_dp->hobl_active ? val : 0);
+	}
+
+	
+	val = intel_de_read(display,  ICL_PORT_TX_DW5_LN(0, phy));
+	val &= ~(SCALING_MODE_SEL_MASK | RTERM_SELECT_MASK |
+		 COEFF_POLARITY | CURSOR_PROGRAM |
+		 TAP2_DISABLE | TAP3_DISABLE);
+	val |= SCALING_MODE_SEL(0x2);
+	val |= RTERM_SELECT(0x6);
+	val |= TAP3_DISABLE;
+	intel_de_write(display, ICL_PORT_TX_DW5_GRP(phy), val);
+
+	for (ln = 0; ln < 4; ln++) {
+		int level = intel_ddi_level(display, ln);
+
+		intel_de_rmw(display, ICL_PORT_TX_DW2_LN(ln, phy),
+				 SWING_SEL_UPPER_MASK | SWING_SEL_LOWER_MASK | RCOMP_SCALAR_MASK,
+				 SWING_SEL_UPPER(trans->entries[level].icl.dw2_swing_sel) |
+				 SWING_SEL_LOWER(trans->entries[level].icl.dw2_swing_sel) |
+				 RCOMP_SCALAR(0x98));
+	}
+
+
+	for (ln = 0; ln < 4; ln++) {
+		int level = intel_ddi_level(display, ln);
+
+		intel_de_rmw(display, ICL_PORT_TX_DW4_LN(ln, phy),
+				 POST_CURSOR_1_MASK | POST_CURSOR_2_MASK | CURSOR_COEFF_MASK,
+				 POST_CURSOR_1(trans->entries[level].icl.dw4_post_cursor_1) |
+				 POST_CURSOR_2(trans->entries[level].icl.dw4_post_cursor_2) |
+				 CURSOR_COEFF(trans->entries[level].icl.dw4_cursor_coeff));
+	}
+
+	for (ln = 0; ln < 4; ln++) {
+		int level = intel_ddi_level(display, ln);
+
+		intel_de_rmw(display, ICL_PORT_TX_DW7_LN(ln, phy),
+				 N_SCALAR_MASK,
+				 N_SCALAR(trans->entries[level].icl.dw7_n_scalar));
+	}
+}
+
+
+static void icl_combo_phy_set_signal_levels(struct intel_display *display)
+{
+	enum phy phy = display->phy0;
+	u32 val;
+	int ln;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+
+	val = intel_de_read(display, ICL_PORT_PCS_DW1_LN(0, phy));
+	if (intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI))
+		val &= ~COMMON_KEEPER_EN;
+	else
+		val |= COMMON_KEEPER_EN;
+	intel_de_write(display, ICL_PORT_PCS_DW1_GRP(phy), val);
+
+	
+	for (ln = 0; ln < 4; ln++) {
+		intel_de_rmw(display, ICL_PORT_TX_DW4_LN(ln, phy),
+				 LOADGEN_SELECT,
+				 icl_combo_phy_loadgen_select(ln));
+	}
+
+	intel_de_rmw(display, ICL_PORT_CL_DW5(phy),
+			 0, SUS_CLOCK_CONFIG);
+
+	val = intel_de_read(display, ICL_PORT_TX_DW5_LN(0, phy));
+	val &= ~TX_TRAINING_EN;
+	intel_de_write(display, ICL_PORT_TX_DW5_GRP(phy), val);
+
+	icl_ddi_combo_vswing_program(display);
+
+	val = intel_de_read(display, ICL_PORT_TX_DW5_LN(0, phy));
+	val |= TX_TRAINING_EN;
+	intel_de_write(display, ICL_PORT_TX_DW5_GRP(phy), val);
+}
+
+
+static int intel_dp_training_pattern_set_reg(struct intel_dp *intel_dp,enum drm_dp_phy dp_phy)
+{
+	return dp_phy == DP_PHY_DPRX ?
+		DP_TRAINING_PATTERN_SET :
+		DP_TRAINING_PATTERN_SET_PHY_REPEATER(dp_phy);
+}
+
+static inline u8 intel_dp_training_pattern_symbol(u8 pattern)
+{
+	return pattern & ~DP_LINK_SCRAMBLING_DISABLE;
+}
+
+u32 dp_tp_ctl_reg()
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_crtc_state *crtc_state = &display->crtc_state0;
+	return TGL_DP_TP_CTL(display, crtc_state->cpu_transcoder);
+}
+static void intel_ddi_set_link_train(struct intel_dp *intel_dp,u8 dp_train_pat)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	u32 temp;
+
+	temp = intel_de_read(display, dp_tp_ctl_reg());
+	
+	temp &= ~DP_TP_CTL_LINK_TRAIN_MASK;
+	switch (intel_dp_training_pattern_symbol(dp_train_pat)) {
+	case DP_TRAINING_PATTERN_DISABLE:
+		temp |= DP_TP_CTL_LINK_TRAIN_NORMAL;
+		break;
+	case DP_TRAINING_PATTERN_1:
+		temp |= DP_TP_CTL_LINK_TRAIN_PAT1;
+		break;
+	case DP_TRAINING_PATTERN_2:
+		temp |= DP_TP_CTL_LINK_TRAIN_PAT2;
+		break;
+	case DP_TRAINING_PATTERN_3:
+		temp |= DP_TP_CTL_LINK_TRAIN_PAT3;
+		break;
+	case DP_TRAINING_PATTERN_4:
+		temp |= DP_TP_CTL_LINK_TRAIN_PAT4;
+		break;
+	}
+
+	intel_de_write(display, dp_tp_ctl_reg(), temp);
+}
+
+void
+intel_dp_program_link_training_pattern(struct intel_dp *intel_dp,enum drm_dp_phy dp_phy,
+					   u8 dp_train_pat)
+{
+	u8 train_pat = intel_dp_training_pattern_symbol(dp_train_pat);
+	intel_ddi_set_link_train( intel_dp,dp_train_pat);
+}
+
+static bool
+intel_dp_set_link_train(struct intel_dp *intel_dp,enum drm_dp_phy dp_phy,
+			u8 dp_train_pat)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	int reg = intel_dp_training_pattern_set_reg(intel_dp, dp_phy);
+	u8 buf[sizeof(intel_dp->train_set) + 1];
+	int len;
+
+	intel_dp_program_link_training_pattern(intel_dp,
+						   dp_phy, dp_train_pat);
+
+	buf[0] = dp_train_pat;
+
+	memcpy(buf + 1, intel_dp->train_set, display->panel.vbt.edp.lanes);
+	len = display->panel.vbt.edp.lanes+ 1;
+
+	return Gen11::callback->writeAUX(linkp,reg,buf, len)>=0;
+}
+
+static bool
+intel_dp_reset_link_train(struct intel_dp *intel_dp,enum drm_dp_phy dp_phy,
+			  u8 dp_train_pat)
+{
+	memset(intel_dp->train_set, 0, sizeof(intel_dp->train_set));
+	icl_combo_phy_set_signal_levels(NBlue::callback->i915b->display);
+	return intel_dp_set_link_train( intel_dp,dp_phy, dp_train_pat);
+}
+
+static u8 dp_link_status(const u8 link_status[DP_LINK_STATUS_SIZE], int r)
+{
+	return link_status[r - DP_LANE0_1_STATUS];
+}
+
+static u8 dp_get_lane_status(const u8 link_status[DP_LINK_STATUS_SIZE],
+				 int lane)
+{
+	int i = DP_LANE0_1_STATUS + (lane >> 1);
+	int s = (lane & 1) * 4;
+	u8 l = dp_link_status(link_status, i);
+
+	return (l >> s) & 0xf;
+}
+
+bool drm_dp_clock_recovery_ok(const u8 link_status[DP_LINK_STATUS_SIZE],
+				  int lane_count)
+{
+	int lane;
+	u8 lane_status;
+
+	for (lane = 0; lane < lane_count; lane++) {
+		lane_status = dp_get_lane_status(link_status, lane);
+		if ((lane_status & DP_LANE_CR_DONE) == 0)
+			return false;
+	}
+	return true;
+}
+
+
+static u8 drm_dp_get_adjust_request_voltage(const u8 link_status[DP_LINK_STATUS_SIZE],
+					 int lane)
+{
+	int i = DP_ADJUST_REQUEST_LANE0_1 + (lane >> 1);
+	int s = ((lane & 1) ?
+		 DP_ADJUST_VOLTAGE_SWING_LANE1_SHIFT :
+		 DP_ADJUST_VOLTAGE_SWING_LANE0_SHIFT);
+	u8 l = dp_link_status(link_status, i);
+
+	return ((l >> s) & 0x3) << DP_TRAIN_VOLTAGE_SWING_SHIFT;
+}
+
+static u8 drm_dp_get_adjust_request_pre_emphasis(const u8 link_status[DP_LINK_STATUS_SIZE],
+					  int lane)
+{
+	int i = DP_ADJUST_REQUEST_LANE0_1 + (lane >> 1);
+	int s = ((lane & 1) ?
+		 DP_ADJUST_PRE_EMPHASIS_LANE1_SHIFT :
+		 DP_ADJUST_PRE_EMPHASIS_LANE0_SHIFT);
+	u8 l = dp_link_status(link_status, i);
+
+	return ((l >> s) & 0x3) << DP_TRAIN_PRE_EMPHASIS_SHIFT;
+}
+
+
+
+static u8 intel_dp_phy_preemph_max(struct intel_dp *intel_dp,
+				   enum drm_dp_phy dp_phy)
+{
+	u8 preemph_max;
+
+	preemph_max = DP_TRAIN_PRE_EMPH_LEVEL_3;
+
+	return preemph_max;
+}
+
+static u8 dp_voltage_max(u8 preemph)
+{
+	switch (preemph & DP_TRAIN_PRE_EMPHASIS_MASK) {
+	case DP_TRAIN_PRE_EMPH_LEVEL_0:
+		return DP_TRAIN_VOLTAGE_SWING_LEVEL_3;
+	case DP_TRAIN_PRE_EMPH_LEVEL_1:
+		return DP_TRAIN_VOLTAGE_SWING_LEVEL_2;
+	case DP_TRAIN_PRE_EMPH_LEVEL_2:
+		return DP_TRAIN_VOLTAGE_SWING_LEVEL_1;
+	case DP_TRAIN_PRE_EMPH_LEVEL_3:
+	default:
+		return DP_TRAIN_VOLTAGE_SWING_LEVEL_0;
+	}
+}
+
+static u8 intel_ddi_dp_voltage_max(struct intel_display *display)
+{
+	
+	int n_entries;
+	const struct intel_ddi_buf_trans *trans;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	trans=tgl_get_combo_buf_trans(crtc_state,&n_entries);
+
+	return index_to_dp_signal_levels[n_entries - 1] &
+		DP_TRAIN_VOLTAGE_SWING_MASK;
+}
+
+static u8 intel_dp_phy_voltage_max(struct intel_dp *intel_dp,
+				   enum drm_dp_phy dp_phy)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	u8 voltage_max;
+
+
+	//if (intel_dp_phy_is_downstream_of_source(intel_dp, dp_phy))
+		voltage_max = intel_ddi_dp_voltage_max(display);
+	//else
+	//	voltage_max = intel_dp_lttpr_voltage_max(intel_dp, dp_phy + 1);
+
+
+	return voltage_max;
+}
+
+static u8 intel_dp_get_lane_adjust_vswing_preemph(struct intel_dp *intel_dp, struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy,
+						  const u8 link_status[DP_LINK_STATUS_SIZE],
+						  int lane)
+{
+	u8 v = 0;
+	u8 p = 0;
+	u8 voltage_max;
+	u8 preemph_max;
+
+	if (1/*has_per_lane_signal_levels(intel_dp, dp_phy)*/) {
+		lane = min(lane, NBlue::callback->i915b->display->panel.vbt.edp.lanes - 1);
+
+		v = drm_dp_get_adjust_request_voltage(link_status, lane);
+		p = drm_dp_get_adjust_request_pre_emphasis(link_status, lane);
+	} /*else {
+		for (lane = 0; lane < crtc_state->lane_count; lane++) {
+			v = max(v, drm_dp_get_adjust_request_voltage(link_status, lane));
+			p = max(p, drm_dp_get_adjust_request_pre_emphasis(link_status, lane));
+		}
+	}*/
+
+	preemph_max = intel_dp_phy_preemph_max(intel_dp, dp_phy);
+	if (p >= preemph_max)
+		p = preemph_max | DP_TRAIN_MAX_PRE_EMPHASIS_REACHED;
+
+	v = min(v, dp_voltage_max(p));
+
+	voltage_max = intel_dp_phy_voltage_max(intel_dp, dp_phy);
+	if (v >= voltage_max)
+		v = voltage_max | DP_TRAIN_MAX_SWING_REACHED;
+
+	return v | p;
+}
+
+# define DP_ADJUST_TX_FFE_PRESET_LANE0_MASK  (0xf << 0)
+# define DP_ADJUST_TX_FFE_PRESET_LANE0_SHIFT 0
+# define DP_ADJUST_TX_FFE_PRESET_LANE1_MASK  (0xf << 4)
+# define DP_ADJUST_TX_FFE_PRESET_LANE1_SHIFT 4
+
+u8 drm_dp_get_adjust_tx_ffe_preset(const u8 link_status[DP_LINK_STATUS_SIZE],
+				   int lane)
+{
+	int i = DP_ADJUST_REQUEST_LANE0_1 + (lane >> 1);
+	int s = ((lane & 1) ?
+		 DP_ADJUST_TX_FFE_PRESET_LANE1_SHIFT :
+		 DP_ADJUST_TX_FFE_PRESET_LANE0_SHIFT);
+	u8 l = dp_link_status(link_status, i);
+
+	return (l >> s) & 0xf;
+}
+
+static u8 intel_dp_get_lane_adjust_tx_ffe_preset(struct intel_dp *intel_dp,
+						 const struct intel_crtc_state *crtc_state,
+						 enum drm_dp_phy dp_phy,
+						 const u8 link_status[DP_LINK_STATUS_SIZE],
+						 int lane)
+{
+	u8 tx_ffe = 0;
+
+	if (0/*has_per_lane_signal_levels(intel_dp, dp_phy)*/) {
+		lane = min(lane, crtc_state->lane_count - 1);
+		tx_ffe = drm_dp_get_adjust_tx_ffe_preset(link_status, lane);
+	} else {
+		for (lane = 0; lane < crtc_state->lane_count; lane++)
+			tx_ffe = max(tx_ffe, drm_dp_get_adjust_tx_ffe_preset(link_status, lane));
+	}
+
+	return tx_ffe;
+}
+
+static u8 intel_dp_get_lane_adjust_train(struct intel_dp *intel_dp, struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy,
+					 const u8 link_status[DP_LINK_STATUS_SIZE],
+					 int lane)
+{
+	if (intel_dp_is_uhbr(crtc_state))
+		return intel_dp_get_lane_adjust_tx_ffe_preset(intel_dp, crtc_state, dp_phy, link_status, lane);
+	else
+		return intel_dp_get_lane_adjust_vswing_preemph( intel_dp, crtc_state, dp_phy, link_status, lane);
+}
+
+bool
+intel_dp_get_adjust_train(struct intel_dp *intel_dp,struct intel_crtc_state *crtc_state, enum drm_dp_phy dp_phy,
+			  const u8 link_status[DP_LINK_STATUS_SIZE])
+{
+	bool changed = false;
+	int lane;
+
+
+	for (lane = 0; lane < 4; lane++) {
+		u8 new2 = intel_dp_get_lane_adjust_train(intel_dp, crtc_state, dp_phy, link_status, lane);
+		if (intel_dp->train_set[lane] == new2)
+			continue;
+
+		intel_dp->train_set[lane] = new2;
+		changed = true;
+	}
+
+	return changed;
+}
+
+static bool intel_dp_adjust_request_changed(struct intel_dp *intel_dp, struct intel_crtc_state *crtc_state,const u8 old_link_status[DP_LINK_STATUS_SIZE],
+						const u8 new_link_status[DP_LINK_STATUS_SIZE])
+{
+	int lane;
+
+	for (lane = 0; lane < NBlue::callback->i915b->display->panel.vbt.edp.lanes; lane++) {
+		u8 old, new2;
+		u8 n1, n2;
+
+		if (intel_dp_is_uhbr(crtc_state)) {
+			old = drm_dp_get_adjust_tx_ffe_preset(old_link_status, lane);
+			new2 = drm_dp_get_adjust_tx_ffe_preset(new_link_status, lane);
+			n1 = drm_dp_get_adjust_request_voltage(new_link_status, lane);
+		} else {
+			old = drm_dp_get_adjust_request_voltage(old_link_status, lane) |
+			drm_dp_get_adjust_request_pre_emphasis(old_link_status, lane);
+			
+			n1 = drm_dp_get_adjust_request_voltage(new_link_status, lane);
+		}
+		
+		n2=	drm_dp_get_adjust_request_pre_emphasis(new_link_status, lane);
+		new2 = n1 | n2;
+		
+		if (intel_dp->para != nullptr) {
+			intel_dp->para->voltageSwing = n1;
+			intel_dp->para->preEmphasis = n2;
+		}
+		
+		intel_dp->para0.  voltage=n1;
+		intel_dp->para0.  preEmphasis=n2;
+
+		if (old != new2)
+			return true;
+	}
+
+	return false;
+}
+
+static bool intel_dp_lane_max_vswing_reached(u8 train_set_lane)
+{
+	u8 v = (train_set_lane & DP_TRAIN_VOLTAGE_SWING_MASK) >>
+		DP_TRAIN_VOLTAGE_SWING_SHIFT;
+	u8 p = (train_set_lane & DP_TRAIN_PRE_EMPHASIS_MASK) >>
+		DP_TRAIN_PRE_EMPHASIS_SHIFT;
+
+	if ((train_set_lane & DP_TRAIN_MAX_SWING_REACHED) == 0)
+		return false;
+
+	if (v + p != 3)
+		return false;
+
+	return true;
+}
+
+static bool intel_dp_lane_max_tx_ffe_reached(u8 train_set_lane)
+{
+	return (train_set_lane & DP_TX_FFE_PRESET_VALUE_MASK) ==
+		DP_TX_FFE_PRESET_VALUE_MASK;
+}
+
+static bool intel_dp_link_max_vswing_reached(struct intel_dp *intel_dp,struct intel_crtc_state *crtc_state)
+{
+	int lane;
+
+	for (lane = 0; lane < NBlue::callback->i915b->display->panel.vbt.edp.lanes; lane++) {
+		u8 train_set_lane = intel_dp->train_set[lane];
+
+		if (intel_dp_is_uhbr(crtc_state)) {
+			if (!intel_dp_lane_max_tx_ffe_reached(train_set_lane))
+				return false;
+		} else {
+			if (!intel_dp_lane_max_vswing_reached(train_set_lane))
+				return false;
+		}
+	}
+
+	return true;
+}
+
+
+
+static bool
+intel_dp_update_link_train(struct intel_dp *intel_dp,struct intel_crtc_state *crtc_state,
+			   enum drm_dp_phy dp_phy)
+{
+	int reg = dp_phy == DP_PHY_DPRX ?
+				DP_TRAINING_LANE0_SET :
+				DP_TRAINING_LANE0_SET_PHY_REPEATER(dp_phy);
+	int ret;
+
+	icl_combo_phy_set_signal_levels(NBlue::callback->i915b->display);
+	
+	ret=Gen11::callback->writeAUX(linkp,reg,intel_dp->train_set, NBlue::callback->i915b->display->panel.vbt.edp.lanes);
+	
+
+	return ret >= 0;
+}
+
+
+static inline void fsleep(unsigned long usecs)
+{
+	if (usecs <= 10)
+		// IODelay: takes microseconds (unsigned int)
+		IODelay((unsigned int)usecs);
+	else if (usecs < USLEEP_RANGE_UPPER_BOUND)
+		// IOPause: takes nanoseconds (unsigned int).
+		IOPause((unsigned int)(usecs * NSEC_PER_USEC));
+	else
+		// IOSleep: takes milliseconds (unsigned int)
+		IOSleep((unsigned int)((usecs + 999) / 1000));
+}
+
+
+
+static int __8b10b_clock_recovery_delay_us(u8 rd_interval)
+{
+	if (rd_interval == 0)
+		return 100;
+	return rd_interval * 4 * USEC_PER_MSEC;
+}
+static int __8b10b_channel_eq_delay_us(u8 rd_interval)
+{
+	if (rd_interval == 0)
+		return 400;
+	return rd_interval * 4 * USEC_PER_MSEC;
+}
+static int __read_delay(const u8 dpcd[DP_RECEIVER_CAP_SIZE],
+			enum drm_dp_phy dp_phy, bool uhbr, bool cr)
+{
+	unsigned int offset;
+	u8 rd_interval, mask;
+	
+	if (dp_phy == DP_PHY_DPRX) {
+		if (0) {
+		} else {
+			if (cr && dpcd[DP_DPCD_REV] >= DP_DPCD_REV_14)
+				return 100;
+
+			offset = DP_TRAINING_AUX_RD_INTERVAL;
+			mask = DP_TRAINING_AUX_RD_MASK;
+
+		}
+	}
+
+	if (offset < DP_RECEIVER_CAP_SIZE) {
+		rd_interval = dpcd[offset];
+	} else {
+		
+		if (Gen11::callback->readAUX(linkp,offset,&rd_interval,1) < 0) {
+			return 400;
+		}
+	}
+	
+	if (cr)
+		return __8b10b_clock_recovery_delay_us( rd_interval & mask);
+	else
+		return __8b10b_channel_eq_delay_us( rd_interval & mask);
+
+}
+int drm_dp_read_clock_recovery_delay(struct drm_dp_aux *aux, const u8 dpcd[DP_RECEIVER_CAP_SIZE],
+					 enum drm_dp_phy dp_phy, bool uhbr)
+{
+	return __read_delay( dpcd, dp_phy, uhbr, true);
+}
+
+int drm_dp_read_channel_eq_delay(struct drm_dp_aux *aux, const u8 dpcd[DP_RECEIVER_CAP_SIZE],
+				 enum drm_dp_phy dp_phy, bool uhbr)
+{
+	return __read_delay( dpcd, dp_phy, uhbr, false);
+}
+
+static bool
+intel_dp_link_training_clock_recovery(struct intel_dp *intel_dp,enum drm_dp_phy dp_phy)
+{
+	u8 old_link_status[DP_LINK_STATUS_SIZE] = {};
+	int voltage_tries, cr_tries, max_cr_tries;
+	u8 link_status[DP_LINK_STATUS_SIZE];
+	bool max_vswing_reached = false;
+	int delay_us;
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	
+	delay_us = drm_dp_read_clock_recovery_delay(nullptr, intel_dp->dpcd, DP_PHY_DPRX,false);
+
+	if (intel_dp->para != nullptr) {
+		intel_dp->para->CR = (u16)delay_us;
+	}
+	
+	intel_dp->para0. t1Time=(u16)delay_us;
+	
+	if (!intel_dp_reset_link_train( intel_dp,dp_phy,
+					   DP_TRAINING_PATTERN_1 |
+					   DP_LINK_SCRAMBLING_DISABLE)) {
+		return false;
+	}
+
+	if (intel_dp->dpcd[DP_DPCD_REV] >= DP_DPCD_REV_14)
+		max_cr_tries = 10;
+	else
+		max_cr_tries = 80;
+
+	voltage_tries = 1;
+	for (cr_tries = 0; cr_tries < max_cr_tries; ++cr_tries) {
+		fsleep(delay_us);
+		
+		int r=Gen11::callback->readAUX(linkp,DP_LANE0_1_STATUS,link_status,DP_LINK_STATUS_SIZE);
+		if (r < 0) {
+			return false;
+		}
+
+		if (drm_dp_clock_recovery_ok(link_status, display->panel.vbt.edp.lanes)) {
+			return true;
+		}
+
+		if (voltage_tries == 5) {
+			//intel_dp_dump_link_status(intel_dp, dp_phy, link_status);
+			return false;
+		}
+
+		if (max_vswing_reached) {
+			//intel_dp_dump_link_status(intel_dp, dp_phy, link_status);
+			return false;
+		}
+
+		intel_dp_get_adjust_train(intel_dp, crtc_state, dp_phy,link_status);
+		if (!intel_dp_update_link_train(intel_dp, crtc_state, dp_phy)) {
+			return false;
+		}
+
+		if (!intel_dp_adjust_request_changed(intel_dp, crtc_state, old_link_status, link_status))
+			++voltage_tries;
+		else
+			voltage_tries = 1;
+
+		memcpy(old_link_status, link_status, sizeof(link_status));
+
+		if (intel_dp_link_max_vswing_reached(intel_dp,crtc_state))
+			max_vswing_reached = true;
+	}
+
+	//intel_dp_dump_link_status(intel_dp, dp_phy, link_status);
+
+
+	return false;
+}
+
+
+static bool drm_dp_channel_eq_ok(const u8 link_status[DP_LINK_STATUS_SIZE],
+			  int lane_count)
+{
+	u8 lane_align;
+	u8 lane_status;
+	int lane;
+
+	lane_align = dp_link_status(link_status,
+					DP_LANE_ALIGN_STATUS_UPDATED);
+	if ((lane_align & DP_INTERLANE_ALIGN_DONE) == 0)
+		return false;
+	for (lane = 0; lane < lane_count; lane++) {
+		lane_status = dp_get_lane_status(link_status, lane);
+		if ((lane_status & DP_CHANNEL_EQ_BITS) != DP_CHANNEL_EQ_BITS)
+			return false;
+	}
+	return true;
+}
+
+bool intel_dp_source_supports_tps4(struct intel_display *display)
+{
+	return DISPLAY_VER(display) >= 10;
+}
+static inline bool
+drm_dp_tps4_supported(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	return dpcd[DP_DPCD_REV] >= 0x14 &&
+		dpcd[DP_MAX_DOWNSPREAD] & DP_TPS4_SUPPORTED;
+}
+
+
+static u32 intel_dp_training_pattern(struct intel_dp *intel_dp,
+					 const struct intel_crtc_state *crtc_state,
+					 enum drm_dp_phy dp_phy)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	bool source_tps3, sink_tps3, source_tps4, sink_tps4;
+
+	if (intel_dp_is_uhbr(crtc_state))
+		return DP_TRAINING_PATTERN_2;
+
+
+	source_tps4 = intel_dp_source_supports_tps4(display);
+	sink_tps4 = dp_phy != DP_PHY_DPRX ||
+			drm_dp_tps4_supported(intel_dp->dpcd);
+	if (source_tps4 && sink_tps4) {
+		return DP_TRAINING_PATTERN_4;
+	} else if (crtc_state->port_clock == 810000) {
+
+	}
+
+
+	source_tps3 = intel_dp_source_supports_tps3(display);
+	sink_tps3 = dp_phy != DP_PHY_DPRX ||
+			drm_dp_tps3_supported(intel_dp->dpcd);
+	if (source_tps3 && sink_tps3) {
+		return  DP_TRAINING_PATTERN_3;
+	} else if (crtc_state->port_clock >= 540000) {
+
+	}
+
+	return DP_TRAINING_PATTERN_2;
+}
+
+static bool
+intel_dp_link_training_channel_equalization(struct intel_dp *intel_dp,enum drm_dp_phy dp_phy)
+{
+	int tries;
+	u32 training_pattern;
+	u8 link_status[DP_LINK_STATUS_SIZE];
+	bool channel_eq = false;
+	int delay_us;
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	
+	delay_us = drm_dp_read_channel_eq_delay(nullptr, intel_dp->dpcd, DP_PHY_DPRX,false);;
+	
+	if (intel_dp->para != nullptr) {
+		intel_dp->para->EQ = (u16)delay_us;
+	}
+	intel_dp->para0. t2Time=(u16)delay_us;
+	
+	training_pattern = intel_dp_training_pattern(intel_dp, crtc_state, dp_phy);
+
+	if (training_pattern != DP_TRAINING_PATTERN_4)
+		training_pattern |= DP_LINK_SCRAMBLING_DISABLE;
+
+
+	if (!intel_dp_set_link_train(intel_dp,  dp_phy,
+					 training_pattern)) {
+		return false;
+	}
+	
+
+	for (tries = 0; tries < 5; tries++) {
+		fsleep(delay_us);
+
+		int r=Gen11::callback->readAUX(linkp,DP_LANE0_1_STATUS,link_status,DP_LINK_STATUS_SIZE);
+		
+		if (r < 0) {
+			break;
+		}
+
+
+		if (!drm_dp_clock_recovery_ok(link_status,
+									  display->panel.vbt.edp.lanes)) {
+			//intel_dp_dump_link_status(intel_dp, dp_phy, link_status);
+			break;
+		}
+
+		if (drm_dp_channel_eq_ok(link_status,
+								 display->panel.vbt.edp.lanes)) {
+			channel_eq = true;
+			break;
+		}
+
+
+		intel_dp_get_adjust_train(intel_dp,crtc_state,  dp_phy,link_status);
+		if (!intel_dp_update_link_train(intel_dp, crtc_state, dp_phy)) {
+			break;
+		}
+	}
+
+
+	if (tries == 5) {
+		//intel_dp_dump_link_status(intel_dp, dp_phy, link_status);
+	}
+
+	return channel_eq;
+}
+
+static bool
+intel_dp_link_train_phy(struct intel_dp *intel_dp,enum drm_dp_phy dp_phy)
+{
+	bool ret = false;
+
+	if (!intel_dp_link_training_clock_recovery( intel_dp,dp_phy))
+	{
+		if (intel_dp->para != nullptr) 	intel_dp->para->status = 3;
+		goto out;
+	}
+	if (!intel_dp_link_training_channel_equalization( intel_dp,dp_phy))
+	{
+		if (intel_dp->para != nullptr) 	intel_dp->para->status = 5;
+		goto out;
+		
+	}
+
+	ret = true;
+
+out:
+	
+	
+	return ret;
+}
+
+static bool intel_dp_disable_dpcd_training_pattern(struct intel_dp *intel_dp,
+						   enum drm_dp_phy dp_phy)
+{
+	int reg = intel_dp_training_pattern_set_reg(intel_dp, dp_phy);
+	u8 val = DP_TRAINING_PATTERN_DISABLE;
+
+	auto ret=Gen11::callback->writeAUX(linkp,reg,&val, 1);
+	
+	return ret >= 0;
+}
+
+u8 drm_dp_link_rate_to_bw_code(int link_rate)
+{
+	switch (link_rate) {
+	case 1000000:
+		return DP_LINK_BW_10;
+	case 1350000:
+		return DP_LINK_BW_13_5;
+	case 2000000:
+		return DP_LINK_BW_20;
+	default:
+		/* Spec says link_bw = link_rate / 0.27Gbps */
+		return link_rate / 27000;
+	}
+}
+
+
+static void intel_ddi_init_dp_buf_reg(struct intel_display *display, struct intel_dp *intel_dp)
+{
+	u32 ddi_buf_ctl = intel_de_read(display, DDI_BUF_CTL(display->port0));
+
+	intel_dp->DP = DDI_PORT_WIDTH(display->panel.vbt.edp.lanes) |
+		DDI_BUF_TRANS_SELECT(0);
+
+	if (display->child0->lane_reversal || ddi_buf_ctl & DDI_BUF_PORT_REVERSAL)
+		intel_dp->DP |= DDI_BUF_PORT_REVERSAL;
+	
+	
+	
+	if (DISPLAY_VER(display) < 11 && ddi_buf_ctl & DDI_A_4_LANES /*display->panel.vbt.edp.lanes==4*/)
+		intel_dp->DP |= DDI_A_4_LANES;
+	
+/*
+	if (DISPLAY_VER(display) >= 14) {
+		if (intel_dp_is_uhbr(crtc_state))
+			intel_dp->DP |= DDI_BUF_PORT_DATA_40BIT;
+		else
+			intel_dp->DP |= DDI_BUF_PORT_DATA_10BIT;
+	}
+
+
+	if (IS_DISPLAY_VER(display, 11, 13) && intel_encoder_is_tc(encoder)) {
+		int delay = dp_phy_lane_stagger_delay(crtc_state->port_clock);
+
+		intel_dp->DP |= DDI_BUF_LANE_STAGGER_DELAY(delay);
+	}*/
+	
+}
+
+
+
+
+static u32 intel_ddi_buf_status_reg(struct intel_display *display, enum port port)
+{
+	if (DISPLAY_VER(display) >= 14)
+		return 0;//XELPDP_PORT_BUF_CTL1(display, port);
+	else
+		return DDI_BUF_CTL(port);
+}
+static void intel_wait_ddi_buf_active()
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	enum port port = display->port0;
+
+
+	intel_de_wait_for_clear_ms(display, intel_ddi_buf_status_reg(display, port),
+								  DDI_BUF_IS_IDLE, 10);
+}
+
+static void intel_ddi_buf_enable( u32 buf_ctl)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	enum port port = display->port0;
+
+		intel_de_write(display, DDI_BUF_CTL(port), buf_ctl | DDI_BUF_CTL_ENABLE);
+	intel_de_posting_read(display, DDI_BUF_CTL(port));
+
+	intel_wait_ddi_buf_active();
+}
+
+
+
+static void intel_ddi_prepare_link_retrain(struct intel_display *display, struct intel_dp *intel_dp)
+{
+	struct intel_crtc_state *crtc_state = &display->crtc_state0;
+	u32 dp_tp_ctl;
+
+	
+	//dp_tp_ctl = intel_de_read(display, dp_tp_ctl_reg( ));
+	
+	dp_tp_ctl = DP_TP_CTL_ENABLE | DP_TP_CTL_LINK_TRAIN_PAT1;
+	
+	if (intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DP_MST) ||
+		intel_dp_is_uhbr(crtc_state)) {
+		dp_tp_ctl |= DP_TP_CTL_MODE_MST;
+	} else {
+		dp_tp_ctl |= DP_TP_CTL_MODE_SST;
+		if (crtc_state->enhanced_framing)
+			dp_tp_ctl |= DP_TP_CTL_ENHANCED_FRAME_ENABLE;
+	}
+
+	intel_de_write(display, dp_tp_ctl_reg(), dp_tp_ctl);
+	intel_de_posting_read(display, dp_tp_ctl_reg());
+
+	/*if (display->platform.alderlake_p &&
+		(intel_tc_port_in_dp_alt_mode(dig_port) || intel_tc_port_in_legacy_mode(dig_port)))
+		adlp_tbt_to_dp_alt_switch_wa(encoder);*/
+
+	intel_ddi_buf_enable( intel_dp->DP);
+	intel_dp->DP |= DDI_BUF_CTL_ENABLE;
+}
+
+static void _icl_ddi_enable_clock(struct intel_display *display, u32 reg,
+				  u32 clk_sel_mask, u32 clk_sel, u32 clk_off)
+{
+	
+	IOSimpleLock *myLock;
+	myLock = IOSimpleLockAlloc();
+	IOSimpleLockLock(myLock);
+
+	intel_de_rmw(display, reg, clk_sel_mask, clk_sel);
+	intel_de_rmw(display, reg, clk_off, 0);
+
+	IOSimpleLockUnlock(myLock);
+	IOSimpleLockFree(myLock);
+}
+
+void intel_combo_phy_power_up_lanes(struct intel_display *display,
+					enum phy phy, bool is_dsi,
+					int lane_count, bool lane_reversal)
+{
+	u8 lane_mask;
+
+	if (is_dsi) {
+
+		switch (lane_count) {
+		/*case 1:
+			lane_mask = PWR_DOWN_LN_3_1_0;
+			break;
+		case 2:
+			lane_mask = PWR_DOWN_LN_3_1;
+			break;
+		case 3:
+			lane_mask = PWR_DOWN_LN_3;
+			break;*/
+		default:
+		case 4:
+			lane_mask = PWR_UP_ALL_LANES;
+			break;
+		}
+	} else {
+		switch (lane_count) {
+		/*case 1:
+			lane_mask = lane_reversal ? PWR_DOWN_LN_2_1_0 :
+							PWR_DOWN_LN_3_2_1;
+			break;*/
+		case 2:
+			lane_mask = lane_reversal ? PWR_DOWN_LN_1_0 :
+							PWR_DOWN_LN_3_2;
+			break;
+		default:
+		case 4:
+			lane_mask = PWR_UP_ALL_LANES;
+			break;
+		}
+	}
+
+	intel_de_rmw(display, ICL_PORT_CL_DW10(phy),
+			 PWR_DOWN_LN_MASK, lane_mask);
+}
+
+int drm_dp_pcon_convert_rgb_to_ycbcr(u8 color_spc)
+{
+	int ret;
+	u8 buf;
+
+	ret = Gen11::callback->readAUX(linkp,DP_PROTOCOL_CONVERTER_CONTROL_2,&buf,1);
+	if (ret < 0)
+		return ret;
+
+	if (color_spc & DP_CONVERSION_RGB_YCBCR_MASK)
+		buf |= (color_spc & DP_CONVERSION_RGB_YCBCR_MASK);
+	else
+		buf &= ~DP_CONVERSION_RGB_YCBCR_MASK;
+
+	return Gen11::callback->writeAUX(linkp,DP_PROTOCOL_CONVERTER_CONTROL_2, &buf,1);
+}
+
+void intel_dp_configure_protocol_converter(struct intel_display *display, struct intel_dp *intel_dp)
+{
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	
+	bool ycbcr444_to_420 = false;
+	bool rgb_to_ycbcr = false;
+	u8 tmp;
+	
+	if (intel_dp->dpcd[DP_DPCD_REV] < 0x13)
+		return;
+
+	//tmp = intel_dp_has_hdmi_sink(intel_dp) ? DP_HDMI_DVI_OUTPUT_CONFIG : 0;
+	tmp = 0;
+	
+	Gen11::callback->writeAUX(linkp,DP_PROTOCOL_CONVERTER_CONTROL_0, &tmp,1);
+
+
+	if (crtc_state->sink_format == INTEL_OUTPUT_FORMAT_YCBCR420) {
+		switch (crtc_state->output_format) {
+		case INTEL_OUTPUT_FORMAT_YCBCR420:
+			break;
+		case INTEL_OUTPUT_FORMAT_YCBCR444:
+			ycbcr444_to_420 = true;
+			break;
+		case INTEL_OUTPUT_FORMAT_RGB:
+			rgb_to_ycbcr = true;
+			ycbcr444_to_420 = true;
+			break;
+		default:
+			break;
+		}
+	} else if (crtc_state->sink_format == INTEL_OUTPUT_FORMAT_YCBCR444) {
+		switch (crtc_state->output_format) {
+		case INTEL_OUTPUT_FORMAT_YCBCR444:
+			break;
+		case INTEL_OUTPUT_FORMAT_RGB:
+			rgb_to_ycbcr = true;
+			break;
+		default:
+			break;
+		}
+	}
+
+	tmp = ycbcr444_to_420 ? DP_CONVERSION_TO_YCBCR420_ENABLE : 0;
+	Gen11::callback->writeAUX(linkp,DP_PROTOCOL_CONVERTER_CONTROL_1, &tmp,1);
+
+
+	tmp = rgb_to_ycbcr ? DP_CONVERSION_BT709_RGB_YCBCR_ENABLE : 0;
+	
+	drm_dp_pcon_convert_rgb_to_ycbcr(tmp);
+
+
+}
+
+
+
+static int
+write_dsc_decompression_flag( u8 flag, bool set)
+{
+	int err;
+	u8 val;
+
+	err = Gen11::callback->readAUX(linkp,DP_DSC_ENABLE,&val,1);
+	if (err < 0)
+		return err;
+
+	if (set)
+		val |= flag;
+	else
+		val &= ~flag;
+	
+	return Gen11::callback->writeAUX(linkp,DP_DSC_ENABLE,&val,1);
+}
+
+
+
+static u32 dp_tp_status_reg()
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_crtc_state *crtc_state = &display->crtc_state0;
+	
+	if (DISPLAY_VER(display) >= 12)
+		return TGL_DP_TP_STATUS(display,
+								crtc_state->cpu_transcoder);
+	else
+		return DP_TP_STATUS(display->port0);
+}
+
+
+static void intel_ddi_set_idle_link_train(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	enum port port = display->port0;
+
+	intel_de_rmw(display, dp_tp_ctl_reg(),
+			 DP_TP_CTL_LINK_TRAIN_MASK, DP_TP_CTL_LINK_TRAIN_IDLE);
+
+	if (port == PORT_A && DISPLAY_VER(display) < 12)
+		return;
+
+	intel_de_wait_for_set_ms(display,
+					 dp_tp_status_reg( ),
+							 DP_TP_STATUS_IDLE_DONE, 2);
+
+}
+
+static bool intel_dp_link_train_all_phys(struct intel_dp *intel_dp)
+{
+	bool ret;
+
+	ret = intel_dp_link_train_phy(intel_dp, DP_PHY_DPRX);
+
+	intel_dp_disable_dpcd_training_pattern(intel_dp, DP_PHY_DPRX);
+	intel_ddi_set_idle_link_train(intel_dp);
+
+	return ret;
+}
+
+int intel_dp_rate_index(int *rates, int len, int rate)
+{
+	int i;
+
+	for (i = 0; i < len; i++)
+		if (rate == rates[i])
+			return i;
+
+	return -1;
+}
+int intel_dp_rate_select(struct intel_dp *intel_dp, int rate)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	int i = intel_dp_rate_index(intel_dp->sink_rates,
+					intel_dp->num_sink_rates, rate);
+
+	if (i < 0)
+		i = 0;
+
+	return i;
+}
+void intel_dp_compute_rate(struct intel_dp *intel_dp, int port_clock,
+			   u8 *link_bw, u8 *rate_select)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+
+	/* eDP 1.4 rate select method. */
+	if (intel_dp->use_rate_select) {
+		*link_bw = 0;
+		*rate_select =
+			intel_dp_rate_select(intel_dp, port_clock);
+	} else {
+		*link_bw = drm_dp_link_rate_to_bw_code(port_clock);
+		*rate_select = 0;
+	}
+}
+
+void intel_dp_link_training_set_mode(struct intel_dp *intel_dp, int link_rate, bool is_vrr)
+{
+	u8 link_config[2];
+
+	link_config[0] = is_vrr ? DP_MSA_TIMING_PAR_IGNORE_EN : 0;
+	link_config[1] = drm_dp_is_uhbr_rate(link_rate) ?
+			 DP_SET_ANSI_128B132B : DP_SET_ANSI_8B10B;
+
+	Gen11::callback->writeAUX(linkp,DP_DOWNSPREAD_CTRL,link_config, 2);
+}
+
+static void intel_dp_update_downspread_ctrl(struct intel_dp *intel_dp)
+{
+	struct intel_display *display=NBlue::callback->i915b->display;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	intel_dp_link_training_set_mode(intel_dp,
+									display->port_clock, crtc_state->vrr.in_range);
+}
+
+void intel_dp_link_training_set_bw(struct intel_dp *intel_dp,
+				   int link_bw, int rate_select, int lane_count,
+				   bool enhanced_framing)
+{
+	if (enhanced_framing)
+		lane_count |= DP_LANE_COUNT_ENHANCED_FRAME_EN;
+
+	if (link_bw) {
+		u8 link_config[2];
+		link_config[0]=link_bw;
+		link_config[1]=lane_count;
+		
+		Gen11::callback->writeAUX(linkp,DP_LINK_BW_SET,link_config, ARRAY_SIZE(link_config));
+
+	} else {
+		Gen11::callback->writeAUX(linkp,DP_LANE_COUNT_SET,&lane_count, 1);
+		Gen11::callback->writeAUX(linkp,DP_LINK_RATE_SET,&rate_select, 1);
+	}
+}
+
+static void intel_dp_update_link_bw_set(struct intel_dp *intel_dp,
+					u8 link_bw, u8 rate_select)
+{
+	struct intel_display *display=NBlue::callback->i915b->display;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	
+	intel_dp_link_training_set_bw(intel_dp, link_bw, rate_select, display->panel.vbt.edp.lanes,
+								  crtc_state->enhanced_framing);
+}
+
+static bool
+intel_dp_prepare_link_train(struct intel_display *display, struct intel_dp *intel_dp)
+{
+	u8 link_bw, rate_select;
+	
+	intel_ddi_prepare_link_retrain(display, intel_dp);
+	intel_dp_compute_rate(intel_dp, display->port_clock,&link_bw, &rate_select);
+
+	if (!link_bw) {
+		u16 sink_rates[DP_MAX_SUPPORTED_RATES];
+		Gen11::callback->readAUX(linkp,DP_SUPPORTED_LINK_RATES,sink_rates, sizeof(sink_rates));
+	}
+
+	intel_dp_update_downspread_ctrl(intel_dp);
+	intel_dp_update_link_bw_set(intel_dp, link_bw,
+					rate_select);
+
+	return true;
+}
+
+void intel_dp_stop_link_train(struct intel_display *display, struct intel_dp *intel_dp)
+{
+	int ret;
+
+	intel_dp->link.active = true;
+
+	intel_dp_program_link_training_pattern(intel_dp, DP_PHY_DPRX,
+						   DP_TRAINING_PATTERN_DISABLE);
+
+
+	//intel_hpd_unblock(encoder);
+
+	/*if (!display->hotplug.ignore_long_hpd &&
+		intel_dp->link.seq_train_failures < MAX_SEQ_TRAIN_FAILURES) {
+		int delay_ms = intel_dp->link.seq_train_failures ? 0 : 2000;
+
+		intel_encoder_link_check_queue_work(encoder, delay_ms);
+	}*/
+}
+
+static inline bool
+drm_dp_is_branch(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	return dpcd[DP_DOWNSTREAMPORT_PRESENT] & DP_DWN_STRM_PORT_PRESENT;
+}
+
+static void
+intel_dp_init_source_oui(struct intel_dp *intel_dp)
+{
+	u8 oui[] = { 0x00, 0xaa, 0x01 };
+	u8 buf[3] = {};
+
+	if (intel_dp->oui_valid) return;
+	
+	int r=Gen11::callback->readAUX(linkp,DP_SOURCE_OUI,buf, sizeof(buf));
+	if (r<0) return;
+	intel_dp->oui_valid=true;
+	if (memcmp(oui, buf, sizeof(oui)) == 0) {
+		return;
+	}
+
+	Gen11::callback->writeAUX(linkp,DP_SOURCE_OUI,oui,sizeof(oui));
+}
+
+static bool downstream_hpd_needs_d0(struct intel_dp *intel_dp)
+{
+
+	return intel_dp->dpcd[DP_DPCD_REV] == 0x11 &&
+		drm_dp_is_branch(intel_dp->dpcd) &&
+		intel_dp->downstream_ports[0] & DP_DS_PORT_HPD;
+}
+
+void intel_dp_set_power(struct intel_dp *intel_dp, u8 mode)
+{
+	int ret, i;
+
+	if (intel_dp->dpcd[DP_DPCD_REV] < 0x11)
+		return;
+	
+	if (mode != DP_SET_POWER_D0) {
+		if (downstream_hpd_needs_d0(intel_dp))
+			return;
+
+		Gen11::callback->writeAUX(linkp,DP_SET_POWER,&mode,1);
+
+	} else {
+
+		intel_dp_init_source_oui(intel_dp);
+		
+		for (i = 0; i < 3; i++) {
+			ret=Gen11::callback->writeAUX(linkp,DP_SET_POWER,&mode,1);
+			if (ret == 1)
+				break;
+			IOSleep(1);
+			//msleep(1);
+		}
+
+	}
+
+}
+
+
+
+void
+intel_ddi_config_transcoder_func(struct intel_crtc_state *crtc_state)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+	u32 ctl;
+
+	//intel_ddi_config_transcoder_dp2(crtc_state, true);
+
+	ctl = intel_ddi_transcoder_func_reg_val_get();
+	ctl &= ~TRANS_DDI_FUNC_ENABLE;
+	intel_de_write(display, TRANS_DDI_FUNC_CTL(display, cpu_transcoder),
+			   ctl);
+}
+
+
+static void intel_ddi_mso_configure(struct intel_display *display, struct intel_crtc_state *crtc_state)
+{
+	enum pipe pipe = display->pipe0;
+	struct intel_dp *intel_dp=&display->intel_dp0;
+	
+	u32 dss1 = 0;
+
+	if (!HAS_MSO(display))
+		return;
+	
+	
+	if (crtc_state->splitter.enable) {
+		dss1 |= SPLITTER_ENABLE;
+		dss1 |= OVERLAP_PIXELS(crtc_state->splitter.pixel_overlap);
+		if (crtc_state->splitter.link_count == 2)
+			dss1 |= SPLITTER_CONFIGURATION_2_SEGMENT;
+		else
+			dss1 |= SPLITTER_CONFIGURATION_4_SEGMENT;
+	}
+
+	intel_de_rmw(display, ICL_PIPE_DSS_CTL1(pipe),
+			 SPLITTER_ENABLE | SPLITTER_CONFIGURATION_MASK |
+			 OVERLAP_PIXELS_MASK, dss1);
+}
+
+
+void intel_dp_sink_enable_decompression(struct intel_display *display)
+{
+
+	//if (!new_crtc_state->dsc.compression_enable)
+		return;
+
+	/*if (drm_WARN_ON(display->drm,
+			!connector->dp.dsc_decompression_aux ||
+			connector->dp.dsc_decompression_enabled))
+		return;
+
+	if (!intel_dp_dsc_aux_get_ref(state, connector))
+		return;*/
+
+	u32 dss_ctl2;
+	dss_ctl2 = intel_de_read(display, ICL_PIPE_DSS_CTL2(display->pipe0));
+
+	if (dss_ctl2 & VDSC0_ENABLE) {
+		write_dsc_decompression_flag(DP_DSC_PASSTHROUGH_EN, true);
+		write_dsc_decompression_flag( DP_DECOMPRESSION_EN, true);
+	}
+}
+
+static int drm_dp_read_extended_dpcd_caps(struct intel_dp *intel_dp,
+					  u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	u8 dpcd_ext[DP_RECEIVER_CAP_SIZE];
+	int ret;
+
+
+	if (!(dpcd[DP_TRAINING_AUX_RD_INTERVAL] &
+		  DP_EXTENDED_RECEIVER_CAP_FIELD_PRESENT))
+		return 0;
+
+	ret = Gen11::callback->readAUX(linkp, DP_DP13_DPCD_REV, dpcd_ext,
+					sizeof(dpcd_ext));
+	if (ret < 0)
+		return ret;
+
+	if (dpcd[DP_DPCD_REV] > dpcd_ext[DP_DPCD_REV]) {
+		return 0;
+	}
+
+	if (!memcmp(dpcd, dpcd_ext, sizeof(dpcd_ext)))
+		return 0;
+
+
+	memcpy(dpcd, dpcd_ext, sizeof(dpcd_ext));
+
+	return 0;
+}
+
+int drm_dp_read_dpcd_caps(struct intel_dp *intel_dp,
+			  u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	int ret;
+
+	ret = Gen11::callback->readAUX(linkp, DP_DPCD_REV, dpcd, DP_RECEIVER_CAP_SIZE);
+	if (ret < 0)
+		return ret;
+	if (dpcd[DP_DPCD_REV] == 0)
+		return -EIO;
+
+	
+	ret = drm_dp_read_extended_dpcd_caps(intel_dp, dpcd);
+	if (ret < 0)
+		return ret;
+
+	
+	
+	return ret;
+}
+static u8 drm_dp_downstream_port_count(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	u8 port_count = dpcd[DP_DOWN_STREAM_PORT_COUNT] & DP_PORT_COUNT_MASK;
+
+	if (dpcd[DP_DOWNSTREAMPORT_PRESENT] & DP_DETAILED_CAP_INFO_AVAILABLE && port_count > 4)
+		port_count = 4;
+
+	return port_count;
+}
+
+enum drm_dp_mst_mode drm_dp_read_mst_cap(struct intel_dp *intel_dp,
+					 const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	u8 mstm_cap;
+
+	if (dpcd[DP_DPCD_REV] < DP_DPCD_REV_12)
+		return DRM_DP_SST;
+
+	if (Gen11::callback->readAUX(linkp, DP_MSTM_CAP, &mstm_cap,1) < 0)
+		return DRM_DP_SST;
+
+	if (mstm_cap & DP_MST_CAP)
+		return DRM_DP_MST;
+
+	if (mstm_cap & DP_SINGLE_STREAM_SIDEBAND_MSG)
+		return DRM_DP_SST_SIDEBAND_MSG;
+
+	return DRM_DP_SST;
+}
+
+bool intel_dp_mst_source_support(struct intel_dp *intel_dp)
+{
+	return false;//intel_dp->mst.mgr.cbs;
+}
+
+static enum drm_dp_mst_mode intel_dp_mst_mode_choose(struct intel_display *display, struct intel_dp *intel_dp,
+			 enum drm_dp_mst_mode sink_mst_mode)
+{
+
+	//if (!display->params.enable_dp_mst)
+	//	return DRM_DP_SST;
+
+	if (!intel_dp_mst_source_support(intel_dp))
+		return DRM_DP_SST;
+
+	if (sink_mst_mode == DRM_DP_SST_SIDEBAND_MSG &&
+		!(intel_dp->dpcd[DP_MAIN_LINK_CHANNEL_CODING] & DP_CAP_ANSI_128B132B))
+		return DRM_DP_SST;
+
+	return sink_mst_mode;
+}
+
+static enum drm_dp_mst_mode
+intel_dp_mst_detect(struct intel_display *display, struct intel_dp *intel_dp)
+{
+	enum drm_dp_mst_mode sink_mst_mode;
+	enum drm_dp_mst_mode mst_detect;
+
+	sink_mst_mode = drm_dp_read_mst_cap(intel_dp, intel_dp->dpcd);
+
+	mst_detect = intel_dp_mst_mode_choose(display, intel_dp, sink_mst_mode);
+
+	return mst_detect;
+}
+int drm_dp_read_downstream_info(struct intel_dp *intel_dp,
+				const u8 dpcd[DP_RECEIVER_CAP_SIZE],
+				u8 downstream_ports[DP_MAX_DOWNSTREAM_PORTS])
+{
+	int ret;
+	u8 len;
+
+	memset(downstream_ports, 0, DP_MAX_DOWNSTREAM_PORTS);
+
+	if (!drm_dp_is_branch(dpcd) || dpcd[DP_DPCD_REV] == DP_DPCD_REV_10)
+		return 0;
+
+
+	len = drm_dp_downstream_port_count(dpcd);
+	if (!len)
+		return 0;
+	
+	intel_dp->para0.downspread=1;
+
+	if (dpcd[DP_DOWNSTREAMPORT_PRESENT] & DP_DETAILED_CAP_INFO_AVAILABLE)
+		len *= 4;
+
+	ret = Gen11::callback->readAUX(linkp, DP_DOWNSTREAM_PORT_0, downstream_ports, len);
+	if (ret < 0)
+		return ret;
+
+
+	return 0;
+}
+
+static int drm_dp_read_extended_dpcd_caps(
+					  u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	u8 dpcd_ext[DP_RECEIVER_CAP_SIZE];
+	int ret;
+
+	/*
+	 * Prior to DP1.3 the bit represented by
+	 * DP_EXTENDED_RECEIVER_CAP_FIELD_PRESENT was reserved.
+	 * If it is set DP_DPCD_REV at 0000h could be at a value less than
+	 * the true capability of the panel. The only way to check is to
+	 * then compare 0000h and 2200h.
+	 */
+	if (!(dpcd[DP_TRAINING_AUX_RD_INTERVAL] &
+		  DP_EXTENDED_RECEIVER_CAP_FIELD_PRESENT))
+		return 0;
+
+	ret = Gen11::callback->readAUX(linkp,DP_DP13_DPCD_REV,dpcd_ext,
+									sizeof(dpcd_ext));
+	
+	//ret = drm_dp_dpcd_read_data( DP_DP13_DPCD_REV, &dpcd_ext,
+				//	sizeof(dpcd_ext));
+	if (ret < 0)
+		return ret;
+
+	if (dpcd[DP_DPCD_REV] > dpcd_ext[DP_DPCD_REV]) {
+		//drm_dbg_kms(aux->drm_dev,
+		//		"%s: Extended DPCD rev less than base DPCD rev (%d > %d)\n",
+			//	aux->name, dpcd[DP_DPCD_REV], dpcd_ext[DP_DPCD_REV]);
+		return 0;
+	}
+
+	if (!memcmp(dpcd, dpcd_ext, sizeof(dpcd_ext)))
+		return 0;
+
+	//drm_dbg_kms(aux->drm_dev, "%s: Base DPCD: %*ph\n", aux->name, DP_RECEIVER_CAP_SIZE, dpcd);
+
+	memcpy(dpcd, dpcd_ext, sizeof(dpcd_ext));
+
+	return 0;
+}
+
+int drm_dp_read_dpcd_caps(
+			  u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	int ret;
+
+	
+	ret =Gen11::callback->readAUX(linkp,DP_DPCD_REV,dpcd,
+							  DP_RECEIVER_CAP_SIZE);
+	
+	//ret = drm_dp_dpcd_read_data( DP_DPCD_REV, dpcd, DP_RECEIVER_CAP_SIZE);
+	if (ret < 0)
+		return ret;
+	if (dpcd[DP_DPCD_REV] == 0)
+		return -EIO;
+
+	ret = drm_dp_read_extended_dpcd_caps( dpcd);
+	if (ret < 0)
+		return ret;
+
+	//drm_dbg_kms(aux->drm_dev, "%s: DPCD: %*ph\n", aux->name, DP_RECEIVER_CAP_SIZE, dpcd);
+
+	return ret;
+}
+
+static void intel_dp_reset_lttpr_common_caps(struct intel_dp *intel_dp)
+{
+	memset(intel_dp->lttpr_common_caps, 0, sizeof(intel_dp->lttpr_common_caps));
+}
+
+int intel_dp_init_lttpr_and_dprx_caps(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	int lttpr_count = 0;
+
+	/*
+	 * Detecting LTTPRs must be avoided on platforms with an AUX timeout
+	 * period < 3.2ms. (see DP Standard v2.0, 2.11.2, 3.6.6.1).
+	 */
+	/*if (!intel_dp_is_edp() &&
+		(DISPLAY_VER(display) >= 10 && !display->platform.geminilake)) {
+		u8 dpcd[DP_RECEIVER_CAP_SIZE];
+		int err = intel_dp_read_dprx_caps(intel_dp, dpcd);
+
+		if (err != 0)
+			return err;
+
+		lttpr_count = intel_dp_init_lttpr(intel_dp, dpcd);
+	}*/
+
+	/*
+	 * The DPTX shall read the DPRX caps after LTTPR detection, so re-read
+	 * it here.
+	 */
+	if (drm_dp_read_dpcd_caps( intel_dp->dpcd)) {
+		intel_dp_reset_lttpr_common_caps(intel_dp);
+		return -EIO;
+	}
+
+	return lttpr_count;
+}
+
+bool intel_dp_start_link_train(struct intel_display *display, struct intel_crtc_state *crtc_state,struct intel_dp *intel_dp)
+{
+	//struct intel_digital_port *dig_port = dp_to_dig_port(intel_dp);
+	//struct intel_encoder *encoder = &dig_port->base;
+	bool passed;
+
+	int lttpr_count=0;
+
+	//intel_hpd_block(encoder);
+
+	lttpr_count = intel_dp_init_lttpr_and_dprx_caps(intel_dp);
+
+	if (lttpr_count < 0)
+		lttpr_count = 0;
+
+	intel_dp_prepare_link_train(display, intel_dp);
+
+	/*if (intel_dp_is_uhbr(crtc_state))
+		passed = intel_dp_128b132b_link_train(intel_dp, crtc_state, lttpr_count);
+	else*/
+		passed = intel_dp_link_train_all_phys(intel_dp);
+
+	if (intel_dp->link.force_train_failure) {
+		intel_dp->link.force_train_failure--;
+	} else if (passed) {
+		intel_dp->link.seq_train_failures = 0;
+		return passed;
+	}
+
+	intel_dp->link.seq_train_failures++;
+
+	if (display->hotplug.ignore_long_hpd) {
+		return passed;
+	}
+
+	if (intel_dp->link.seq_train_failures < 2)
+		return passed;
+	
+	if (intel_dp->hobl_active) {
+		intel_dp->hobl_failed = true;
+	}
+
+
+	intel_dp->link.retrain_disabled = true;
+	return passed;
+}
+
+void intel_dp_set_link_params(struct intel_dp *intel_dp,
+				  int link_rate, int lane_count)
+{
+	memset(intel_dp->train_set, 0, sizeof(intel_dp->train_set));
+	intel_dp->link.active = false;
+	intel_dp->needs_modeset_retry = false;
+	intel_dp->link_rate = link_rate;
+	intel_dp->lane_count = lane_count;
+}
+
+
+u32 intel_ddi_enable_transcoder_clock(struct intel_crtc_state *crtc_state, bool rval)
+{
+	struct intel_display *display =NBlue::callback->i915b->display;
+	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+	enum phy phy = display->phy0;
+	u32 val;
+
+	if (cpu_transcoder == TRANSCODER_EDP)
+		return 0;
+
+	if (DISPLAY_VER(display) >= 13)
+		val = TGL_TRANS_CLK_SEL_PORT(phy);
+	else if (DISPLAY_VER(display) >= 12)
+		val = TGL_TRANS_CLK_SEL_PORT(display->port0);
+	else
+		val = TRANS_CLK_SEL_PORT(display->port0);
+	
+	if (rval) return val;
+	
+	intel_de_write(display, TRANS_CLK_SEL(cpu_transcoder), val);
+	
+	return val;
+}
+
+static void intel_dp_enable_port(struct intel_dp *intel_dp,
+				 const struct intel_crtc_state *crtc_state)
+{
+	struct intel_display *display =NBlue::callback->i915b->display;
+
+	intel_dp_program_link_training_pattern(intel_dp,
+						   DP_PHY_DPRX, DP_TRAINING_PATTERN_1);
+
+	intel_dp->DP |= DP_PORT_EN;
+
+	intel_de_write(display, intel_dp->output_reg, intel_dp->DP);
+	intel_de_posting_read(display, intel_dp->output_reg);
+}
+
+int intel_ddi_wait_for_fec_status(struct intel_display *display,
+				  const struct intel_crtc_state *crtc_state,
+				  bool enabled)
+{
+	struct intel_dp *intel_dp = &display->intel_dp0;
+	int ret;
+
+	if (!crtc_state->fec_enable)
+		return 0;
+
+	if (enabled)
+		ret = intel_de_wait_for_set_ms(display, dp_tp_status_reg(),
+						   DP_TP_STATUS_FEC_ENABLE_LIVE, 1);
+	else
+		ret = intel_de_wait_for_clear_ms(display, dp_tp_status_reg(),
+						 DP_TP_STATUS_FEC_ENABLE_LIVE, 1);
+
+	if (ret) {
+		return ret;
+	}
+
+	if (enabled) {
+		IOSleep(1000);
+		return 1;
+		//ret = wait_for_fec_detected(&intel_dp->aux, enabled);
+		//if (ret)
+		//	return ret;
+	}
+
+	return 0;
+}
+
+static void intel_ddi_enable_fec(struct intel_display *display,
+				 const struct intel_crtc_state *crtc_state)
+{
+	int i;
+	int ret;
+
+	if (!crtc_state->fec_enable)
+		return;
+
+	intel_de_rmw(display, dp_tp_ctl_reg(),
+			 0, DP_TP_CTL_FEC_ENABLE);
+
+	if (DISPLAY_VER(display) < 30)
+		return;
+
+	ret = intel_ddi_wait_for_fec_status(display, crtc_state, true);
+	if (!ret)
+		return;
+
+	for (i = 0; i < 3; i++) {
+
+		intel_de_rmw(display, dp_tp_ctl_reg(),
+				 DP_TP_CTL_FEC_ENABLE, 0);
+
+		ret = intel_ddi_wait_for_fec_status(display, crtc_state, false);
+		if (ret)
+			continue;
+
+		intel_de_rmw(display, dp_tp_ctl_reg(),
+				 0, DP_TP_CTL_FEC_ENABLE);
+
+		ret = intel_ddi_wait_for_fec_status(display, crtc_state, true);
+		if (!ret)
+			return;
+	}
+
+}
+
+
+
+int drm_dp_dpcd_write_payload(struct intel_display *display,
+				  int vcpid, u8 start_time_slot, u8 time_slot_count)
+{
+	u8 payload_alloc[3], status;
+	int ret;
+	int retries = 0;
+
+	u8 val=DP_PAYLOAD_TABLE_UPDATED;
+	Gen11::callback->writeAUX(linkp,DP_PAYLOAD_TABLE_UPDATE_STATUS,&val,1);
+	
+	payload_alloc[0] = vcpid;
+	payload_alloc[1] = start_time_slot;
+	payload_alloc[2] = time_slot_count;
+
+	ret =Gen11::callback->writeAUX(linkp,DP_PAYLOAD_ALLOCATE_SET,payload_alloc,3);
+	if (ret < 0) {
+		goto fail;
+	}
+
+retry:
+	ret = Gen11::callback->readAUX(linkp,DP_PAYLOAD_TABLE_UPDATE_STATUS,&status, 1);
+	if (ret < 0) {
+		goto fail;
+	}
+
+	if (!(status & DP_PAYLOAD_TABLE_UPDATED)) {
+		retries++;
+		if (retries < 20) {
+			//usleep_range(10000, 20000);
+			IOSleep(10000);
+			goto retry;
+		}
+
+		ret = -EINVAL;
+		goto fail;
+	}
+	ret = 0;
+fail:
+	return ret;
+}
+
+
+
+static void intel_dp_sink_set_fec_ready(struct intel_display *display,
+					const struct intel_crtc_state *crtc_state,
+					bool enable)
+{
+	struct intel_dp *intel_dp = &display->intel_dp0;
+
+	if (!crtc_state->fec_enable)
+		return;
+
+	u8 val=enable ? DP_FEC_READY : 0;
+	Gen11::callback->writeAUX(linkp,DP_FEC_CONFIGURATION,&val,1);
+	
+	val=DP_FEC_DECODE_EN_DETECTED | DP_FEC_DECODE_DIS_DETECTED;
+	
+	
+	if (enable)
+		Gen11::callback->writeAUX(linkp,DP_FEC_STATUS,&val,1);
+}
+
+static bool
+is_trans_port_sync_slave(const struct intel_crtc_state *crtc_state)
+{
+	return crtc_state->master_transcoder != INVALID_TRANSCODER;
+}
+
+bool
+is_trans_port_sync_master(const struct intel_crtc_state *crtc_state)
+{
+	return crtc_state->sync_mode_slaves_mask != 0;
+}
+
+bool
+is_trans_port_sync_mode(const struct intel_crtc_state *crtc_state)
+{
+	return is_trans_port_sync_master(crtc_state) ||
+		is_trans_port_sync_slave(crtc_state);
+}
+
+
+
+
+static void icl_pll_power_enable(struct intel_display *display,
+				 u32 enable_reg)
+{
+	intel_de_rmw(display, enable_reg, 0, PLL_POWER_ENABLE);
+
+
+	if (intel_de_wait_for_set_ms(display, enable_reg, PLL_POWER_STATE, 1))
+		return;
+}
+
+static void icl_pll_enable(struct intel_display *display,
+						   u32 enable_reg)
+{
+	intel_de_rmw(display, enable_reg, 0, PLL_ENABLE);
+
+	/* Timeout is actually 600us. */
+	if (intel_de_wait_for_set_ms(display, enable_reg, PLL_LOCK, 1))
+		return;
+}
+
+
+
+static void adlp_cmtg_clock_gating_wa(struct intel_display *display)
+{
+	u32 val;
+
+	if (!(display->platform.alderlake_p && IS_DISPLAY_STEP(display, STEP_A0, STEP_B0)) )
+		return;
+
+	val = intel_de_read(display, TRANS_CMTG_CHICKEN);
+	val = intel_de_rmw(display, TRANS_CMTG_CHICKEN, ~0, DISABLE_DPT_CLK_GATING);
+	if (( val & ~DISABLE_DPT_CLK_GATING))
+		return;
+}
+
+static void combo_pll_enable(struct intel_display *display)
+{
+	u32 enable_reg = ICL_DPLL_ENABLE(DPLL_ID_ICL_DPLL0);
+	
+	icl_pll_power_enable(display, enable_reg);
+	
+	u32 val = intel_de_read(display, enable_reg);
+	if (!(val & PLL_ENABLE)) panic("PLL_ENABLE");
+	
+	u32 cfgcr0_reg, cfgcr1_reg, div0_reg = INVALID_MMIO_REG;
+	u32 cfgcr0, cfgcr1;
+	
+	if (display->platform.alderlake_s) {
+		cfgcr0_reg = ADLS_DPLL_CFGCR0(DPLL_ID_ICL_DPLL0);
+		cfgcr1_reg = ADLS_DPLL_CFGCR1(DPLL_ID_ICL_DPLL0);
+	} else if (display->platform.rocketlake) {
+		cfgcr0_reg = RKL_DPLL_CFGCR0(DPLL_ID_ICL_DPLL0);
+		cfgcr1_reg = RKL_DPLL_CFGCR1(DPLL_ID_ICL_DPLL0);
+	} else if (DISPLAY_VER(display) >= 12) {
+		cfgcr0_reg = TGL_DPLL_CFGCR0(DPLL_ID_ICL_DPLL0);
+		cfgcr1_reg = TGL_DPLL_CFGCR1(DPLL_ID_ICL_DPLL0);
+		div0_reg = TGL_DPLL0_DIV0(DPLL_ID_ICL_DPLL0);
+	}
+	
+	cfgcr0=intel_de_read(display, cfgcr0_reg);
+	cfgcr1=intel_de_read(display, cfgcr1_reg);
+	
+	intel_de_write(display, cfgcr0_reg, cfgcr0);
+	intel_de_write(display, cfgcr1_reg, cfgcr1);
+	
+	intel_de_posting_read(display, cfgcr1_reg);
+	
+	icl_pll_enable(display, enable_reg);
+	
+	adlp_cmtg_clock_gating_wa(display);
+	
+}
+
+
+void Gen11::initCDClock(void *that)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	combo_pll_enable(display);
+	
+	FunctionCast(initCDClock, callback->oinitCDClock)(that);
+}
+
+static void icl_pll_disable(struct intel_display *display,
+				u32 enable_reg)
+{
+	/* The first steps are done by intel_ddi_post_disable(). */
+
+	/*
+	 * DVFS pre sequence would be here, but in our driver the cdclk code
+	 * paths should already be setting the appropriate voltage, hence we do
+	 * nothing here.
+	 */
+
+	intel_de_rmw(display, enable_reg, PLL_ENABLE, 0);
+
+	/* Timeout is actually 1us. */
+	if (intel_de_wait_for_clear_ms(display, enable_reg, PLL_LOCK, 1))
+		panic( "PLL %d locked\n", 0);
+
+	/* DVFS post sequence would be here. See the comment above. */
+
+	intel_de_rmw(display, enable_reg, PLL_POWER_ENABLE, 0);
+
+	/*
+	 * The spec says we need to "wait" but it also says it should be
+	 * immediate.
+	 */
+	if (intel_de_wait_for_clear_ms(display, enable_reg, PLL_POWER_STATE, 1))
+		panic( "PLL %d Power not disabled\n",
+			0);
+}
+
+static void combo_pll_disable(struct intel_display *display)
+{
+	u32 enable_reg = ICL_DPLL_ENABLE(DPLL_ID_ICL_DPLL0);
+
+	icl_pll_disable(display, enable_reg);
+}
+
+bool tgl_ddi_pre_enable_dp(struct intel_display *display, struct intel_crtc_state *crtc_state)
+{
+	struct intel_dp *intel_dp = &display->intel_dp0;
+	bool is_mst = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DP_MST);
+	int ret;
+
+	intel_dp_set_link_params(intel_dp,
+				 crtc_state->port_clock,
+				 crtc_state->lane_count);
+
+
+	intel_ddi_init_dp_buf_reg( display, intel_dp);
+	
+	intel_dp_enable_port(intel_dp,crtc_state);
+
+	//if (!kexticl) Gen11::callback->enableVDDForAux(ccont2,linkp);
+	//else Gen11::callback->enableVDDForAux2(ccont2,linkp);
+	
+	intel_pps_vdd_on();
+	
+	if (intel_dp_is_edp())
+	Gen11::callback->hwSetPanelPower(ccont2,2);
+
+	intel_pps_vdd_off();
+	
+	//if (!kexticl) Gen11::callback->disableVDDForAux(ccont2);
+	//else Gen11::callback->disableVDDForAux2(ccont2,linkp);
+	
+	_icl_ddi_enable_clock(display, ICL_DPCLKA_CFGCR0,
+							  ICL_DPCLKA_CFGCR0_DDI_CLK_SEL_MASK(display->phy0),
+							  ICL_DPCLKA_CFGCR0_DDI_CLK_SEL(DPLL_ID_ICL_DPLL0, display->phy0),
+							  ICL_DPCLKA_CFGCR0_DDI_CLK_OFF(display->phy0));
+	
+	/*if (!intel_tc_port_in_tbt_alt_mode(dig_port)) {
+		drm_WARN_ON(display->drm, dig_port->ddi_io_wakeref);
+		dig_port->ddi_io_wakeref = intel_display_power_get(display,
+								   dig_port->ddi_io_power_domain);
+	}*/
+	
+	intel_ddi_enable_transcoder_clock(crtc_state,false);
+	
+	intel_ddi_config_transcoder_func(crtc_state);
+
+	icl_combo_phy_set_signal_levels(display);
+	
+	intel_combo_phy_power_up_lanes(display, display->phy0, false,
+					   crtc_state->lane_count,
+								   display->child0->lane_reversal);
+	
+
+	intel_ddi_mso_configure(display, crtc_state);
+
+	if (!is_mst)
+		intel_dp_set_power(intel_dp, DP_SET_POWER_D0);
+
+	intel_dp_configure_protocol_converter(display,intel_dp);
+	if (!is_mst)
+		intel_dp_sink_enable_decompression(display);
+
+	intel_dp_sink_set_fec_ready(display, crtc_state, true);
+
+	//intel_dp_check_frl_training(intel_dp);
+	//intel_dp_pcon_dsc_configure(intel_dp, crtc_state);
+
+
+	ret=intel_dp_start_link_train( display,crtc_state,intel_dp);
+
+	if (!is_trans_port_sync_mode(crtc_state))
+		intel_dp_stop_link_train(display,intel_dp);
+
+	intel_ddi_enable_fec(display, crtc_state);
+	
+	if (!is_mst && intel_dp_is_uhbr(crtc_state)) {
+		ret = drm_dp_dpcd_write_payload(display, 1, 0, crtc_state->dp_m_n.tu);
+	}
+	
+	return ret;
+}
+
+static int tgl_ddi_min_voltage_level(const struct intel_crtc_state *crtc_state)
+{
+	if (crtc_state->port_clock > 594000)
+		return 2;
+	else
+		return 0;
+}
+
+static inline bool
+drm_dp_enhanced_frame_cap(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	return dpcd[DP_DPCD_REV] >= 0x11 &&
+		(dpcd[9] & DP_ENHANCED_FRAME_CAP);
+}
+
+bool intel_dsc_source_support(struct intel_display *display, const struct intel_crtc_state *crtc_state)
+{
+	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+
+	if (!HAS_DSC(display))
+		return false;
+
+	if (DISPLAY_VER(display) == 11 && cpu_transcoder == TRANSCODER_A)
+		return false;
+
+	return true;
+}
+static inline int fxp_q4_from_int(int val_int)
+{
+	return val_int << 4;
+}
+int intel_dp_output_format_link_bpp_x16(enum intel_output_format output_format, int pipe_bpp)
+{
+
+	if (output_format == INTEL_OUTPUT_FORMAT_YCBCR420)
+		pipe_bpp /= 2;
+
+	return fxp_q4_from_int(pipe_bpp);
+}
+
+#define PSR_SETUP_TIME(x) [DP_PSR_SETUP_TIME_ ## x >> DP_PSR_SETUP_TIME_SHIFT] = (x)
+
+int drm_dp_psr_setup_time(const u8 psr_cap[EDP_PSR_RECEIVER_CAP_SIZE])
+{
+	static const u16 psr_setup_time_us[] = {
+		PSR_SETUP_TIME(330),
+		PSR_SETUP_TIME(275),
+		PSR_SETUP_TIME(220),
+		PSR_SETUP_TIME(165),
+		PSR_SETUP_TIME(110),
+		PSR_SETUP_TIME(55),
+		PSR_SETUP_TIME(0),
+	};
+	int i;
+
+	i = (psr_cap[1] & DP_PSR_SETUP_TIME_MASK) >> DP_PSR_SETUP_TIME_SHIFT;
+	if (i >= ARRAY_SIZE(psr_setup_time_us))
+		return -EINVAL;
+
+	return psr_setup_time_us[i];
+}
+
+static int intel_psr_entry_setup_frames(struct intel_dp *intel_dp,
+					const struct drm_display_mode *adjusted_mode)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	int psr_setup_time = drm_dp_psr_setup_time(intel_dp->psr_caps.dpcd);
+	int entry_setup_frames = 0;
+
+	if (psr_setup_time < 0) {
+
+		return -ETIME;
+	}
+
+	if (intel_usecs_to_scanlines(adjusted_mode, psr_setup_time) >
+		adjusted_mode->crtc_vtotal - adjusted_mode->crtc_vdisplay - 1) {
+		if (DISPLAY_VER(display) >= 20) {
+			/* setup entry frames can be up to 3 frames */
+			entry_setup_frames = 1;
+
+		} else {
+
+			return -ETIME;
+		}
+	}
+
+	return entry_setup_frames;
+}
+
+static bool _psr_compute_config(struct intel_dp *intel_dp,
+				struct intel_crtc_state *crtc_state)
+{
+
+	//struct intel_display *display = to_intel_display(intel_dp);
+	const struct drm_display_mode *adjusted_mode = &crtc_state->hw.adjusted_mode;
+	int entry_setup_frames;
+
+	if (!CAN_PSR(intel_dp))// || !display->params.enable_psr)
+		return false;
+
+
+	if (crtc_state->vrr.enable)
+		return false;
+
+	entry_setup_frames = intel_psr_entry_setup_frames(intel_dp, adjusted_mode);
+
+	if (entry_setup_frames >= 0) {
+		crtc_state->entry_setup_frames = entry_setup_frames;
+	} else {
+		crtc_state->no_psr_reason = "PSR setup timing not met";
+		return false;
+	}
+
+	return true;
+}
+
+
+int intel_dp_compute_config(struct intel_display *display, struct intel_crtc_state *pipe_config)
+{
+	struct intel_dp *intel_dp=&display->intel_dp0;
+	int ret = 0, link_bpp_x16;
+	struct drm_display_mode *adjusted_mode = &pipe_config->hw.adjusted_mode;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	const struct drm_display_mode *fixed_mode;
+	
+	/*
+	fixed_mode = intel_panel_fixed_mode(connector, adjusted_mode);
+	if (intel_dp_is_edp(intel_dp) && fixed_mode) {
+		ret = intel_panel_compute_config(connector, adjusted_mode);
+		if (ret)
+			return ret;
+	}
+
+	if (adjusted_mode->flags & DRM_MODE_FLAG_DBLSCAN)
+		return -EINVAL;
+
+	if (!connector->base.interlace_allowed &&
+		adjusted_mode->flags & DRM_MODE_FLAG_INTERLACE)
+		return -EINVAL;
+
+	if (adjusted_mode->flags & DRM_MODE_FLAG_DBLCLK)
+		return -EINVAL;
+
+	if (intel_dp_hdisplay_bad(display, adjusted_mode->crtc_hdisplay))
+		return -EINVAL;
+	*/
+	
+	pipe_config->sink_format =INTEL_OUTPUT_FORMAT_RGB;
+	pipe_config->output_format = INTEL_OUTPUT_FORMAT_RGB;
+	
+	
+	/*ret = intel_dp_compute_output_format(encoder, pipe_config, conn_state, true);
+	if (ret)
+		ret = intel_dp_compute_output_format(encoder, pipe_config, conn_state, false);
+	if (ret)
+		return ret;
+	 
+	 if ((intel_dp_is_edp() && fixed_mode) ||
+		 pipe_config->output_format == INTEL_OUTPUT_FORMAT_YCBCR420) {
+		 ret = intel_pfit_compute_config(pipe_config, conn_state);
+		 if (ret)
+			 return ret;
+	 }*/
+
+
+	pipe_config->limited_color_range = false;
+		//intel_dp_limited_color_range(pipe_config, conn_state);
+
+
+		pipe_config->enhanced_framing =
+			drm_dp_enhanced_frame_cap(intel_dp->dpcd);
+	
+
+	pipe_config->dsc.compression_enable=intel_dsc_source_support(display, crtc_state);
+	
+	if (pipe_config->dsc.compression_enable)
+		link_bpp_x16 = pipe_config->dsc.compressed_bpp_x16;
+	else
+		link_bpp_x16 = intel_dp_output_format_link_bpp_x16(pipe_config->output_format,
+								   pipe_config->pipe_bpp);
+
+	/*if (intel_dp->mso_link_count) {
+		int n = intel_dp->mso_link_count;
+		int overlap = intel_dp->mso_pixel_overlap;
+
+		pipe_config->splitter.enable = true;
+		pipe_config->splitter.link_count = n;
+		pipe_config->splitter.pixel_overlap = overlap;
+
+		adjusted_mode->crtc_hdisplay = adjusted_mode->crtc_hdisplay / n + overlap;
+		adjusted_mode->crtc_hblank_start = adjusted_mode->crtc_hblank_start / n + overlap;
+		adjusted_mode->crtc_hblank_end = adjusted_mode->crtc_hblank_end / n + overlap;
+		adjusted_mode->crtc_hsync_start = adjusted_mode->crtc_hsync_start / n + overlap;
+		adjusted_mode->crtc_hsync_end = adjusted_mode->crtc_hsync_end / n + overlap;
+		adjusted_mode->crtc_htotal = adjusted_mode->crtc_htotal / n + overlap;
+		adjusted_mode->crtc_clock /= n;
+	}*/
+
+	//intel_dp_audio_compute_config(encoder, pipe_config, conn_state);
+
+	/*if (!intel_dp_is_uhbr(pipe_config)) {
+		intel_link_compute_m_n(link_bpp_x16,
+					   pipe_config->lane_count,
+					   adjusted_mode->crtc_clock,
+					   pipe_config->port_clock,
+					   intel_dp_bw_fec_overhead(pipe_config->fec_enable),
+					   &pipe_config->dp_m_n);
+	}
+
+	ret = intel_dp_compute_min_hblank(pipe_config, conn_state);
+	if (ret)
+		return ret;
+
+	if (pipe_config->splitter.enable)
+		pipe_config->dp_m_n.data_m *= pipe_config->splitter.link_count;*/
+	
+	crtc_state->vrr.in_range =false;
+
+	//intel_vrr_compute_config(pipe_config, conn_state);
+	//intel_dp_compute_as_sdp(intel_dp, pipe_config);
+	
+	//intel_psr_compute_config(intel_dp, pipe_config, conn_state);
+	pipe_config->panel_replay_dsc_support = INTEL_DP_PANEL_REPLAY_DSC_NOT_SUPPORTED;
+	
+	pipe_config->has_panel_replay = false;//_panel_replay_compute_config(pipe_config, conn_state);
+
+	pipe_config->has_psr = crtc_state->has_panel_replay ? true : _psr_compute_config(intel_dp, pipe_config);
+	
+	pipe_config->has_psr = false; // allow can_enable_pipedmc
+	
+	if (!crtc_state->has_psr)
+		return 0;
+
+	//crtc_state->has_sel_update = intel_sel_update_config_valid(crtc_state);
+
+	return 0;
+}
+
+static u8 intel_ddi_splitter_pipe_mask(struct intel_display *display)
+{
+	if (DISPLAY_VER(display) > 20)
+		return ~0;
+	else if (display->platform.alderlake_p)
+		return BIT(PIPE_A) | BIT(PIPE_B);
+	else
+		return BIT(PIPE_A);
+}
+
+static void intel_ddi_mso_get_config( struct intel_display *display, struct intel_crtc_state *pipe_config)
+{
+	enum pipe pipe = display->pipe0;
+	u32 dss1;
+
+	if (!HAS_MSO(display))
+		return;
+
+	dss1 = intel_de_read(display, ICL_PIPE_DSS_CTL1(pipe));
+
+	pipe_config->splitter.enable = dss1 & SPLITTER_ENABLE;
+	if (!pipe_config->splitter.enable)
+		return;
+
+	if (( !(intel_ddi_splitter_pipe_mask(display) & BIT(pipe)))) {
+		pipe_config->splitter.enable = false;
+		return;
+	}
+
+	switch (dss1 & SPLITTER_CONFIGURATION_MASK) {
+	default:
+	case SPLITTER_CONFIGURATION_2_SEGMENT:
+		pipe_config->splitter.link_count = 2;
+		break;
+	case SPLITTER_CONFIGURATION_4_SEGMENT:
+		pipe_config->splitter.link_count = 4;
+		break;
+	}
+
+	pipe_config->splitter.pixel_overlap = REG_FIELD_GET(OVERLAP_PIXELS_MASK, dss1);
+}
+
+bool
+intel_bios_encoder_supports_dp(struct intel_display *display)
+{
+	return display->child0->device_type & DEVICE_TYPE_DISPLAYPORT_OUTPUT;
+}
+
+bool
+intel_bios_encoder_supports_edp(struct intel_display *display)
+{
+	return intel_bios_encoder_supports_dp(display) &&
+	display->child0->device_type & DEVICE_TYPE_INTERNAL_CONNECTOR;
+}
+
+#define _PIPEA_DATA_M_G4X	0x70050
+#define _PIPEB_DATA_M_G4X	0x71050
+#define PIPE_DATA_M_G4X(pipe) _MMIO_PIPE(pipe, _PIPEA_DATA_M_G4X, _PIPEB_DATA_M_G4X)
+/* Transfer unit size for display port - 1, default is 0x3f (for TU size 64) */
+#define  TU_SIZE_MASK		REG_GENMASK(30, 25)
+#define  TU_SIZE(x)		REG_FIELD_PREP(TU_SIZE_MASK, (x) - 1) /* default size 64 */
+#define  DATA_LINK_M_N_MASK	REG_GENMASK(23, 0)
+#define  DATA_LINK_N_MAX	(0x800000)
+#define _PIPEA_DATA_M1		0x60030
+#define _PIPEB_DATA_M1		0x61030
+#define PIPE_DATA_M1(dev_priv, tran) _MMIO_TRANS2(dev_priv, tran, _PIPEA_DATA_M1)
+
+#define _PIPEA_DATA_N1		0x60034
+#define _PIPEB_DATA_N1		0x61034
+#define PIPE_DATA_N1(dev_priv, tran) _MMIO_TRANS2(dev_priv, tran, _PIPEA_DATA_N1)
+
+#define _PIPEA_DATA_M2		0x60038
+#define _PIPEB_DATA_M2		0x61038
+#define PIPE_DATA_M2(dev_priv, tran) _MMIO_TRANS2(dev_priv, tran, _PIPEA_DATA_M2)
+
+#define _PIPEA_DATA_N2		0x6003c
+#define _PIPEB_DATA_N2		0x6103c
+#define PIPE_DATA_N2(dev_priv, tran) _MMIO_TRANS2(dev_priv, tran, _PIPEA_DATA_N2)
+
+#define _PIPEA_LINK_M1		0x60040
+#define _PIPEB_LINK_M1		0x61040
+#define PIPE_LINK_M1(dev_priv, tran) _MMIO_TRANS2(dev_priv, tran, _PIPEA_LINK_M1)
+
+#define _PIPEA_LINK_N1		0x60044
+#define _PIPEB_LINK_N1		0x61044
+#define PIPE_LINK_N1(dev_priv, tran) _MMIO_TRANS2(dev_priv, tran, _PIPEA_LINK_N1)
+
+#define _PIPEA_LINK_M2		0x60048
+#define _PIPEB_LINK_M2		0x61048
+#define PIPE_LINK_M2(dev_priv, tran) _MMIO_TRANS2(dev_priv, tran, _PIPEA_LINK_M2)
+
+#define _PIPEA_LINK_N2		0x6004c
+#define _PIPEB_LINK_N2		0x6104c
+#define PIPE_LINK_N2(dev_priv, tran) _MMIO_TRANS2(dev_priv, tran, _PIPEA_LINK_N2)
+#define _PIPEA_DATA_M_G4X	0x70050
+#define _PIPEB_DATA_M_G4X	0x71050
+#define PIPE_DATA_M_G4X(pipe) _MMIO_PIPE(pipe, _PIPEA_DATA_M_G4X, _PIPEB_DATA_M_G4X)
+/* Transfer unit size for display port - 1, default is 0x3f (for TU size 64) */
+#define  TU_SIZE_MASK		REG_GENMASK(30, 25)
+#define  TU_SIZE(x)		REG_FIELD_PREP(TU_SIZE_MASK, (x) - 1) /* default size 64 */
+#define  DATA_LINK_M_N_MASK	REG_GENMASK(23, 0)
+#define  DATA_LINK_N_MAX	(0x800000)
+
+#define _PIPEA_DATA_N_G4X	0x70054
+#define _PIPEB_DATA_N_G4X	0x71054
+#define PIPE_DATA_N_G4X(pipe) _MMIO_PIPE(pipe, _PIPEA_DATA_N_G4X, _PIPEB_DATA_N_G4X)
+#define _PIPEA_LINK_M_G4X	0x70060
+#define _PIPEB_LINK_M_G4X	0x71060
+#define PIPE_LINK_M_G4X(pipe) _MMIO_PIPE(pipe, _PIPEA_LINK_M_G4X, _PIPEB_LINK_M_G4X)
+
+#define _PIPEA_LINK_N_G4X	0x70064
+#define _PIPEB_LINK_N_G4X	0x71064
+#define PIPE_LINK_N_G4X(pipe) _MMIO_PIPE(pipe, _PIPEA_LINK_N_G4X, _PIPEB_LINK_N_G4X)
+
+void intel_get_m_n(struct intel_display *display,
+		   struct intel_link_m_n *m_n,
+		   u32 data_m_reg, u32 data_n_reg,
+		  u32 link_m_reg, u32 link_n_reg)
+{
+	m_n->link_m = intel_de_read(display, link_m_reg) & DATA_LINK_M_N_MASK;
+	m_n->link_n = intel_de_read(display, link_n_reg) & DATA_LINK_M_N_MASK;
+	m_n->data_m = intel_de_read(display, data_m_reg) & DATA_LINK_M_N_MASK;
+	m_n->data_n = intel_de_read(display, data_n_reg) & DATA_LINK_M_N_MASK;
+	m_n->tu = REG_FIELD_GET(TU_SIZE_MASK, intel_de_read(display, data_m_reg)) + 1;
+}
+
+void intel_cpu_transcoder_get_m1_n1(struct intel_display *display,
+					enum transcoder transcoder,
+					struct intel_link_m_n *m_n)
+{
+	enum pipe pipe = display->pipe0;
+
+	if (DISPLAY_VER(display) >= 5)
+		intel_get_m_n(display, m_n,
+				  PIPE_DATA_M1(display, transcoder),
+				  PIPE_DATA_N1(display, transcoder),
+				  PIPE_LINK_M1(display, transcoder),
+				  PIPE_LINK_N1(display, transcoder));
+	else
+		intel_get_m_n(display, m_n,
+				  PIPE_DATA_M_G4X(pipe), PIPE_DATA_N_G4X(pipe),
+				  PIPE_LINK_M_G4X(pipe), PIPE_LINK_N_G4X(pipe));
+}
+
+bool intel_cpu_transcoder_has_m2_n2(struct intel_display *display,
+					enum transcoder transcoder)
+{
+	if (display->platform.haswell)
+		return transcoder == TRANSCODER_EDP;
+
+	return IS_DISPLAY_VER(display, 5, 7) || display->platform.cherryview;
+}
+
+void intel_cpu_transcoder_get_m2_n2(struct intel_display *display,
+					enum transcoder transcoder,
+					struct intel_link_m_n *m_n)
+{
+
+	if (!intel_cpu_transcoder_has_m2_n2(display, transcoder))
+		return;
+
+	intel_get_m_n(display, m_n,
+			  PIPE_DATA_M2(display, transcoder),
+			  PIPE_DATA_N2(display, transcoder),
+			  PIPE_LINK_M2(display, transcoder),
+			  PIPE_LINK_N2(display, transcoder));
+}
+
+static void intel_ddi_read_func_ctl_dp_sst(struct intel_display *display, struct intel_crtc_state *crtc_state,
+					   u32 ddi_func_ctl)
+{
+	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+
+	//if (encoder->type == INTEL_OUTPUT_EDP)
+	
+	if (!crtc_state->output_types)
+	{
+		if (intel_bios_encoder_supports_edp(display))
+			crtc_state->output_types |= BIT(INTEL_OUTPUT_EDP);
+		else
+			crtc_state->output_types |= BIT(INTEL_OUTPUT_DP);
+	}
+	//crtc_state->lane_count =
+	//	((ddi_func_ctl & DDI_PORT_WIDTH_MASK) >> DDI_PORT_WIDTH_SHIFT) + 1;
+
+/*	if (DISPLAY_VER(display) >= 12 &&
+		(ddi_func_ctl & TRANS_DDI_MODE_SELECT_MASK) == TRANS_DDI_MODE_SELECT_FDI_OR_128B132B)
+		crtc_state->mst_master_transcoder = static_cast<enum transcoder>(
+			REG_FIELD_GET(TRANS_DDI_MST_TRANSPORT_SELECT_MASK, ddi_func_ctl));
+*/
+	intel_cpu_transcoder_get_m1_n1(display, cpu_transcoder, &crtc_state->dp_m_n);
+	intel_cpu_transcoder_get_m2_n2(display, cpu_transcoder, &crtc_state->dp_m2_n2);
+	crtc_state->dp_m_n.tu=64;
+	
+	crtc_state->enhanced_framing =	intel_de_read(display, dp_tp_ctl_reg()) &		DP_TP_CTL_ENHANCED_FRAME_ENABLE;
+
+	if (DISPLAY_VER(display) >= 11)
+		crtc_state->fec_enable = intel_de_read(display,dp_tp_ctl_reg()) & DP_TP_CTL_FEC_ENABLE;
+
+	/*if (intel_lspcon_active(dig_port) && intel_dp_has_hdmi_sink(&dig_port->dp))
+		crtc_state->infoframes.enable |=
+			intel_lspcon_infoframes_enabled(encoder, crtc_state);
+	else
+		crtc_state->infoframes.enable |=
+			intel_hdmi_infoframes_enabled(encoder, crtc_state);*/
+}
+
+static void intel_ddi_read_func_ctl(struct intel_display *display, struct intel_crtc_state *pipe_config)
+{
+	enum transcoder cpu_transcoder = pipe_config->cpu_transcoder;
+	u32 ddi_func_ctl, ddi_mode, flags = 0;
+
+	ddi_func_ctl = intel_de_read(display, TRANS_DDI_FUNC_CTL(display, cpu_transcoder));
+	if (ddi_func_ctl & TRANS_DDI_PHSYNC)
+		flags |= DRM_MODE_FLAG_PHSYNC;
+	else
+		flags |= DRM_MODE_FLAG_NHSYNC;
+	if (ddi_func_ctl & TRANS_DDI_PVSYNC)
+		flags |= DRM_MODE_FLAG_PVSYNC;
+	else
+		flags |= DRM_MODE_FLAG_NVSYNC;
+
+	pipe_config->hw.adjusted_mode.flags |= flags;
+
+	switch (ddi_func_ctl & TRANS_DDI_BPC_MASK) {
+		default:
+	/*case TRANS_DDI_BPC_6:
+		pipe_config->pipe_bpp = 18;
+		break;*/
+	case TRANS_DDI_BPC_8:
+		pipe_config->pipe_bpp = 24;
+		break;
+	case TRANS_DDI_BPC_10:
+		pipe_config->pipe_bpp = 30;
+		break;
+	case TRANS_DDI_BPC_12:
+		pipe_config->pipe_bpp = 36;
+		break;
+
+	}
+	
+
+	ddi_mode = ddi_func_ctl & TRANS_DDI_MODE_SELECT_MASK;
+
+	/*if (ddi_mode == TRANS_DDI_MODE_SELECT_HDMI) {
+		intel_ddi_read_func_ctl_hdmi(encoder, pipe_config, ddi_func_ctl);
+	} else if (ddi_mode == TRANS_DDI_MODE_SELECT_DVI) {
+		intel_ddi_read_func_ctl_dvi(encoder, pipe_config, ddi_func_ctl);
+	} else if (ddi_mode == TRANS_DDI_MODE_SELECT_FDI_OR_128B132B && !HAS_DP20(display)) {
+		intel_ddi_read_func_ctl_fdi(encoder, pipe_config, ddi_func_ctl);
+	} else*/ if (ddi_mode == TRANS_DDI_MODE_SELECT_DP_SST)
+		intel_ddi_read_func_ctl_dp_sst( display, pipe_config, ddi_func_ctl);
+	/*} else if (ddi_mode == TRANS_DDI_MODE_SELECT_DP_MST) {
+		intel_ddi_read_func_ctl_dp_mst(encoder, pipe_config, ddi_func_ctl);
+	} else if (ddi_mode == TRANS_DDI_MODE_SELECT_FDI_OR_128B132B && HAS_DP20(display)) {
+		struct intel_dp *intel_dp = enc_to_intel_dp(encoder);*/
+		
+
+		
+		
+
+		/*if (intel_dp_mst_active_streams(intel_dp))
+			intel_ddi_read_func_ctl_dp_mst(encoder, pipe_config, ddi_func_ctl);
+		else*/
+			intel_ddi_read_func_ctl_dp_sst( display, pipe_config, ddi_func_ctl);
+}
+
+static enum transcoder bdw_transcoder_master_readout(struct intel_display *display,
+							 enum transcoder cpu_transcoder)
+{
+	u32 master_select;
+
+	if (DISPLAY_VER(display) >= 11) {
+		u32 ctl2 = intel_de_read(display,
+					 TRANS_DDI_FUNC_CTL2(display, cpu_transcoder));
+
+		if ((ctl2 & PORT_SYNC_MODE_ENABLE) == 0)
+			return INVALID_TRANSCODER;
+
+		master_select = REG_FIELD_GET(PORT_SYNC_MODE_MASTER_SELECT_MASK, ctl2);
+	} else {
+		u32 ctl = intel_de_read(display,
+					TRANS_DDI_FUNC_CTL(display, cpu_transcoder));
+
+		if ((ctl & TRANS_DDI_PORT_SYNC_ENABLE) == 0)
+			return INVALID_TRANSCODER;
+
+		master_select = REG_FIELD_GET(TRANS_DDI_PORT_SYNC_MASTER_SELECT_MASK, ctl);
+	}
+
+	if (master_select == 0)
+		return TRANSCODER_EDP;
+	else
+		return static_cast<enum transcoder>(master_select - 1);
+}
+
+static void bdw_get_trans_port_sync_config(struct intel_display *display, struct intel_crtc_state *crtc_state)
+{
+	u32 transcoders = BIT(TRANSCODER_A) | BIT(TRANSCODER_B) |
+		BIT(TRANSCODER_C) | BIT(TRANSCODER_D);
+	enum transcoder cpu_transcoder;
+
+	crtc_state->master_transcoder =
+		bdw_transcoder_master_readout(display, crtc_state->cpu_transcoder);
+
+	for_each_cpu_transcoder_masked(display, cpu_transcoder, transcoders) {
+		/*enum intel_display_power_domain power_domain;
+		struct ref_tracker *trans_wakeref;
+
+		power_domain = POWER_DOMAIN_TRANSCODER(cpu_transcoder);
+		trans_wakeref = intel_display_power_get_if_enabled(display,
+								   power_domain);
+
+		if (!trans_wakeref)
+			continue;*/
+
+		if (bdw_transcoder_master_readout(display, cpu_transcoder) ==
+			crtc_state->cpu_transcoder)
+			crtc_state->sync_mode_slaves_mask |= BIT(cpu_transcoder);
+
+		//intel_display_power_put(display, power_domain, trans_wakeref);
+	}
+
+}
+
+
+
+u32 intel_hdmi_infoframe_enable(unsigned int type)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(infoframe_type_to_idx); i++) {
+		if (infoframe_type_to_idx[i] == type)
+			return BIT(i);
+	}
+
+	return 0;
+}
+
+void intel_psr_get_config(struct intel_display *display, struct intel_crtc_state *pipe_config)
+{
+	enum transcoder cpu_transcoder = pipe_config->cpu_transcoder;
+	struct intel_dp *intel_dp= &display->intel_dp0;
+	u32 val;
+
+
+	//intel_dp = &dig_port->dp;
+	if (!(CAN_PSR(intel_dp) || CAN_PANEL_REPLAY(intel_dp)))
+		return;
+
+//	mutex_lock(&intel_dp->psr.lock);
+	if (!intel_dp->psr.enabled) //always true
+		goto unlock;
+
+	if (intel_dp->psr.panel_replay_enabled) {
+		pipe_config->has_psr = pipe_config->has_panel_replay = true;
+	} else {
+		/*
+		 * Not possible to read EDP_PSR/PSR2_CTL registers as it is
+		 * enabled/disabled because of frontbuffer tracking and others.
+		 */
+		pipe_config->has_psr = true;
+	}
+
+	pipe_config->has_sel_update = intel_dp->psr.sel_update_enabled;
+	pipe_config->infoframes.enable |= intel_hdmi_infoframe_enable(DP_SDP_VSC);
+
+	if (!intel_dp->psr.sel_update_enabled)
+		goto unlock;
+
+	if (HAS_PSR2_SEL_FETCH(display)) {
+		val = intel_de_read(display,
+					PSR2_MAN_TRK_CTL(display, cpu_transcoder));
+		if (val & PSR2_MAN_TRK_CTL_ENABLE)
+			pipe_config->enable_psr2_sel_fetch = true;
+	}
+
+	pipe_config->enable_psr2_su_region_et = intel_dp->psr.su_region_et_enabled;
+
+	if (DISPLAY_VER(display) >= 12) {
+		val = intel_de_read(display,
+					TRANS_EXITLINE(display, cpu_transcoder));
+		pipe_config->dc3co_exitline = REG_FIELD_GET(EXITLINE_MASK, val);
+	}
+unlock:
+	//mutex_unlock(&intel_dp->psr.lock);
+}
+
+static void intel_ddi_get_config(struct intel_display *display, struct intel_crtc_state *pipe_config)
+{
+	enum transcoder cpu_transcoder = pipe_config->cpu_transcoder;
+
+
+	intel_ddi_read_func_ctl( display, pipe_config);
+
+	intel_ddi_mso_get_config( display, pipe_config);
+
+	pipe_config->has_audio = false;
+		//intel_ddi_is_audio_enabled(display, cpu_transcoder);
+
+	//if (encoder->type == INTEL_OUTPUT_EDP)
+	//	intel_edp_fixup_vbt_bpp(encoder, pipe_config->pipe_bpp);
+	
+	//[drm:intel_edp_fixup_vbt_bpp [i915]] pipe has 24 bpp for eDP panel, overriding BIOS-provided max 18 bpp
+	
+	
+	//ddi_dotclock_get(pipe_config);
+
+
+	pipe_config->min_voltage_level = tgl_ddi_min_voltage_level(pipe_config);
+	
+	//intel_hdmi_read_gcp_infoframe(encoder, pipe_config);
+
+	/*intel_read_infoframe(encoder, pipe_config,
+				 HDMI_INFOFRAME_TYPE_AVI,
+				 &pipe_config->infoframes.avi);
+	intel_read_infoframe(encoder, pipe_config,
+				 HDMI_INFOFRAME_TYPE_SPD,
+				 &pipe_config->infoframes.spd);
+	intel_read_infoframe(encoder, pipe_config,
+				 HDMI_INFOFRAME_TYPE_VENDOR,
+				 &pipe_config->infoframes.hdmi);
+	intel_read_infoframe(encoder, pipe_config,
+				 HDMI_INFOFRAME_TYPE_DRM,
+				 &pipe_config->infoframes.drm);*/
+
+	if (DISPLAY_VER(display) >= 8)
+		bdw_get_trans_port_sync_config(display, pipe_config);
+
+	intel_psr_get_config(display, pipe_config);
+
+	/*intel_read_dp_sdp(encoder, pipe_config, HDMI_PACKET_TYPE_GAMUT_METADATA);
+	intel_read_dp_sdp(encoder, pipe_config, DP_SDP_VSC);
+	intel_read_dp_sdp(encoder, pipe_config, DP_SDP_ADAPTIVE_SYNC);
+
+	intel_audio_codec_get_config(encoder, pipe_config);*/
+}
+static u32 bdw_trans_port_sync_master_select(enum transcoder master_transcoder)
+{
+	if (master_transcoder == TRANSCODER_EDP)
+		return 0;
+	else
+		return master_transcoder + 1;
+}
+void intel_ddi_enable_transcoder_func(struct intel_display *display , struct intel_crtc_state *crtc_state)
+{
+	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+
+	if (DISPLAY_VER(display) >= 11) {
+		enum transcoder master_transcoder = crtc_state->master_transcoder;
+		u32 ctl2 = 0;
+
+		if (master_transcoder != INVALID_TRANSCODER) {
+			u8 master_select =
+				bdw_trans_port_sync_master_select(master_transcoder);
+
+			ctl2 |= PORT_SYNC_MODE_ENABLE |
+				PORT_SYNC_MODE_MASTER_SELECT(master_select);
+		}
+
+		intel_de_write(display,
+				   TRANS_DDI_FUNC_CTL2(display, cpu_transcoder),
+				   ctl2);
+	}
+
+	intel_de_write(display, TRANS_DDI_FUNC_CTL(display, cpu_transcoder),
+			   intel_ddi_transcoder_func_reg_val_get());
+}
+
+static bool pipe_scanline_is_moving(struct intel_display *display, enum pipe pipe)
+{
+	u32 reg = PIPEDSL(display, pipe);
+	u32 line1, line2;
+
+	line1 = intel_de_read(display, reg) & PIPEDSL_LINE_MASK;
+	//msleep(5);
+	IOSleep(5);
+	line2 = intel_de_read(display, reg) & PIPEDSL_LINE_MASK;
+
+	return line1 != line2;
+}
+
+#define _FDI_RXA_CTL             0xf000c
+#define _FDI_RXB_CTL             0xf100c
+#define FDI_RX_CTL(pipe)	_MMIO_PIPE(pipe, _FDI_RXA_CTL, _FDI_RXB_CTL)
+#define  FDI_RX_ENABLE          (1 << 31)
+#define  FDI_RX_PLL_ENABLE              (1 << 13)
+
+static void assert_fdi_rx_pll(struct intel_display *display,
+				  enum pipe pipe, bool state)
+{
+	bool cur_state;
+
+	cur_state = intel_de_read(display, FDI_RX_CTL(pipe)) & FDI_RX_PLL_ENABLE;
+	if (cur_state != state) panic("FDI RX PLL assertion failure \n");
+}
+
+void assert_fdi_rx_pll_enabled(struct intel_display *display, enum pipe pipe)
+{
+	assert_fdi_rx_pll(display, pipe, true);
+}
+
+void intel_enable_transcoder(struct intel_display *display, struct intel_crtc_state *new_crtc_state)
+{
+	enum transcoder cpu_transcoder = new_crtc_state->cpu_transcoder;
+	enum pipe pipe = display->pipe0;
+	u32 val;
+
+
+	//assert_planes_disabled(crtc);
+
+
+	/*if (HAS_GMCH(display)) {
+		if (intel_crtc_has_type(new_crtc_state, INTEL_OUTPUT_DSI))
+			assert_dsi_pll_enabled(display);
+		else
+			assert_pll_enabled(display, pipe);
+	} else {*/
+		//if (new_crtc_state->has_pch_encoder) {
+
+			assert_fdi_rx_pll_enabled(display,
+						  (enum pipe)0);
+			//assert_fdi_tx_pll_enabled(display,
+			//			  (enum pipe) cpu_transcoder);
+		//}
+	//}
+
+	/* Wa_22012358565:adl-p */
+	if (intel_display_wa(display, INTEL_DISPLAY_WA_22012358565))
+		intel_de_rmw(display, PIPE_ARB_CTL(display, pipe),
+				 0, PIPE_ARB_USE_PROG_SLOTS);
+
+	/*if (DISPLAY_VER(display) >= 14) {
+		u32 clear = DP_DSC_INSERT_SF_AT_EOL_WA;
+		u32 set = 0;
+
+		if (DISPLAY_VER(display) == 14)
+			set |= DP_FEC_BS_JITTER_WA;
+
+		intel_de_rmw(display, CHICKEN_TRANS(display, cpu_transcoder),
+				 clear, set);
+	}*/
+
+	val = intel_de_read(display, TRANSCONF(display, cpu_transcoder));
+	if (val & TRANSCONF_ENABLE) {
+		return;
+	}
+
+	/* Wa_1409098942:adlp+ */
+	if (DISPLAY_VER(display) >= 13 &&
+		new_crtc_state->dsc.compression_enable) {
+		val &= ~TRANSCONF_PIXEL_COUNT_SCALING_MASK;
+		val |= REG_FIELD_PREP(TRANSCONF_PIXEL_COUNT_SCALING_MASK,
+					  TRANSCONF_PIXEL_COUNT_SCALING_X4);
+	}
+	
+
+	intel_de_write(display, TRANSCONF(display, cpu_transcoder),
+			   val | TRANSCONF_ENABLE);
+	intel_de_posting_read(display, TRANSCONF(display, cpu_transcoder));
+
+
+	//if (intel_crtc_max_vblank_count(new_crtc_state) == 0)
+	//wait_for_pipe_scanline_moving(display);
+}
+
+
+
+static void intel_ddi_enable(struct intel_display *display, struct intel_crtc_state *crtc_state)
+{
+	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+	bool is_hdmi = false;
+	int i;
+
+
+
+	intel_ddi_enable_transcoder_func( display,crtc_state);
+
+	//intel_vrr_transcoder_enable(crtc_state);
+
+	intel_enable_transcoder(display, crtc_state);
+
+	//intel_ddi_wait_for_fec_status(encoder, crtc_state, true);
+
+	/*for_each_pipe_crtc_modeset_enable(display, pipe_crtc, crtc_state, i) {
+		const struct intel_crtc_state *pipe_crtc_state =
+			intel_atomic_get_new_crtc_state(state, pipe_crtc);
+
+		intel_crtc_vblank_on(pipe_crtc_state);
+	}
+	 
+
+	if (is_hdmi)
+		intel_ddi_enable_hdmi(state, encoder, crtc_state, conn_state);
+	else*/
+	//	intel_ddi_enable_dp(  crtc_state);
+
+	//intel_hdcp_enable(  crtc_state);
+
+}
+
+static void icl_ddi_combo_get_config(struct intel_display *display, struct intel_crtc_state *crtc_state)
+{
+	//intel_ddi_get_clock( crtc_state, icl_ddi_combo_get_pll(encoder));
+	intel_ddi_get_config( display, crtc_state);
+}
+
+static bool intel_pipe_is_interlaced(struct intel_display *display, const struct intel_crtc_state *crtc_state)
+{
+	enum transcoder cpu_transcoder = crtc_state->cpu_transcoder;
+
+	if (DISPLAY_VER(display) == 2 || DISPLAY_VER(display) >= 35)
+		return false;
+
+	if (DISPLAY_VER(display) >= 9 ||
+		display->platform.broadwell || display->platform.haswell)
+		return intel_de_read(display,
+					 TRANSCONF(display, cpu_transcoder)) & TRANSCONF_INTERLACE_MASK_HSW;
+	else
+		return intel_de_read(display,
+					 TRANSCONF(display, cpu_transcoder)) & TRANSCONF_INTERLACE_MASK;
+}
+static inline bool transcoder_is_dsi(enum transcoder transcoder)
+{
+	return transcoder == TRANSCODER_DSI_A || transcoder == TRANSCODER_DSI_C;
+}
+
+static u8 hsw_panel_transcoders(struct intel_display *display)
+{
+	u8 panel_transcoder_mask = BIT(TRANSCODER_EDP);
+
+	if (DISPLAY_VER(display) >= 11)
+		panel_transcoder_mask |= BIT(TRANSCODER_DSI_0) | BIT(TRANSCODER_DSI_1);
+
+	return panel_transcoder_mask;
+}
+
+static void intel_get_transcoder_timings(struct intel_display *display, struct intel_crtc_state *pipe_config)
+{
+	enum transcoder cpu_transcoder = pipe_config->cpu_transcoder;
+	struct drm_display_mode *adjusted_mode = &pipe_config->hw.adjusted_mode;
+	u32 tmp;
+
+	tmp = intel_de_read(display, TRANS_HTOTAL(display, cpu_transcoder));
+	adjusted_mode->crtc_hdisplay = REG_FIELD_GET(HACTIVE_MASK, tmp) + 1;
+	adjusted_mode->crtc_htotal = REG_FIELD_GET(HTOTAL_MASK, tmp) + 1;
+
+	if (!transcoder_is_dsi(cpu_transcoder)) {
+		tmp = intel_de_read(display,
+					TRANS_HBLANK(display, cpu_transcoder));
+		adjusted_mode->crtc_hblank_start = REG_FIELD_GET(HBLANK_START_MASK, tmp) + 1;
+		adjusted_mode->crtc_hblank_end = REG_FIELD_GET(HBLANK_END_MASK, tmp) + 1;
+	}
+
+	tmp = intel_de_read(display, TRANS_HSYNC(display, cpu_transcoder));
+	adjusted_mode->crtc_hsync_start = REG_FIELD_GET(HSYNC_START_MASK, tmp) + 1;
+	adjusted_mode->crtc_hsync_end = REG_FIELD_GET(HSYNC_END_MASK, tmp) + 1;
+
+	tmp = intel_de_read(display, TRANS_VTOTAL(display, cpu_transcoder));
+	adjusted_mode->crtc_vdisplay = REG_FIELD_GET(VACTIVE_MASK, tmp) + 1;
+	adjusted_mode->crtc_vtotal = REG_FIELD_GET(VTOTAL_MASK, tmp) + 1;
+
+	if (!transcoder_is_dsi(cpu_transcoder)) {
+		tmp = intel_de_read(display,
+					TRANS_VBLANK(display, cpu_transcoder));
+		adjusted_mode->crtc_vblank_start = REG_FIELD_GET(VBLANK_START_MASK, tmp) + 1;
+		adjusted_mode->crtc_vblank_end = REG_FIELD_GET(VBLANK_END_MASK, tmp) + 1;
+	}
+	tmp = intel_de_read(display, TRANS_VSYNC(display, cpu_transcoder));
+	adjusted_mode->crtc_vsync_start = REG_FIELD_GET(VSYNC_START_MASK, tmp) + 1;
+	adjusted_mode->crtc_vsync_end = REG_FIELD_GET(VSYNC_END_MASK, tmp) + 1;
+
+	if (intel_pipe_is_interlaced(display, pipe_config)) {
+		adjusted_mode->flags |= DRM_MODE_FLAG_INTERLACE;
+		adjusted_mode->crtc_vtotal += 1;
+		adjusted_mode->crtc_vblank_end += 1;
+	}
+
+	if (DISPLAY_VER(display) >= 13 && !transcoder_is_dsi(cpu_transcoder)) {
+		pipe_config->set_context_latency =
+			intel_de_read(display,
+					  TRANS_SET_CONTEXT_LATENCY(display, cpu_transcoder));
+		adjusted_mode->crtc_vblank_start =
+			adjusted_mode->crtc_vdisplay +
+			pipe_config->set_context_latency;
+	} else if (DISPLAY_VER(display) == 12) {
+
+		pipe_config->set_context_latency =
+			adjusted_mode->crtc_vblank_start - adjusted_mode->crtc_vdisplay;
+	}
+
+	if (DISPLAY_VER(display) >= 30)
+		pipe_config->min_hblank = intel_de_read(display,
+							DP_MIN_HBLANK_CTL(cpu_transcoder));
+}
+
+static int intel_ddi_compute_config_late(struct intel_crtc_state *crtc_state)
+{
+	u8 port_sync_transcoders = 0;
+	int ret = 0;
+
+/*	if (intel_crtc_has_dp_encoder(crtc_state))
+		ret = intel_dp_compute_config_late(encoder, crtc_state, conn_state);
+
+	if (ret)
+		return ret;
+
+
+	if (connector->has_tile)
+		port_sync_transcoders = intel_ddi_port_sync_transcoders(crtc_state,
+									connector->tile_group->id);
+*/
+	
+
+	if (port_sync_transcoders & BIT(TRANSCODER_EDP))
+		crtc_state->master_transcoder = TRANSCODER_EDP;
+	else
+		crtc_state->master_transcoder = static_cast<enum transcoder >( ffs(port_sync_transcoders) - 1);
+
+	if (crtc_state->master_transcoder == crtc_state->cpu_transcoder) {
+		crtc_state->master_transcoder = INVALID_TRANSCODER;
+		//crtc_state->sync_mode_slaves_mask =
+		//	port_sync_transcoders & ~BIT(crtc_state->cpu_transcoder);
+	}
+
+	return 0;
+}
+
+uint64_t  Gen11::linkTraining(void *that,void *param_1)
+{
+	PortConfig *pc=(PortConfig *)getMember<void*>(that, kexticl ? 0x440 : 0x548);
+	if (pc->index != 0) return FunctionCast(linkTraining, callback->olinkTraining)(that,param_1);
+	
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_dp *intel_dp=&display->intel_dp0;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	int lane_count=display->panel.vbt.edp.lanes;
+	
+	intel_dp->link_rate = (int)getMember<u64>(frame0, kexticl ? 0x8898 : 0x4358)/1000;//linkSymbolClock
+	crtc_state->port_clock=intel_dp->link_rate;
+
+	intel_dp->para=(struct AGDCDPPortConfig_t *)param_1;
+	if (intel_dp->para != nullptr) {
+		intel_dp->para->portindex=pc->index+1;
+		intel_dp->para->status = 0;
+		intel_dp->para->field1 = 0x200;
+		intel_dp->para->field2 = 0;
+		intel_dp->para->enableMST = (u8)getMember<u8>(that, kexticl ? 0xf : 0x117);
+		intel_dp->para->BitRate = (u8)getMember<u8>(that, kexticl ? 0x24 : 0x128);
+		intel_dp->para->NumberOfLanes = (u8)lane_count;
+		intel_dp->para->EnhancedFraming = (u8)getMember<u8>(that, kexticl ? 0x12 : 0x11a);
+		intel_dp->para->ASR = 0;//(u8)getMember<u8>(that, 0x118);  //DP_EDP_CONFIGURATION_SET
+		intel_dp->para->Downspread = 0;//(u8)getMember<u8>(that, kexticl ? 0x11 : 0x119);
+		intel_dp->para->BitRate2 = intel_dp->para->BitRate;
+		intel_dp->para->NumberOfLanes2 = intel_dp->para->NumberOfLanes;
+		intel_dp->para->CR =0;
+		intel_dp->para->EQ =0;
+		intel_dp->para->voltageSwing = 0;
+		intel_dp->para->preEmphasis = 0;
+	}
+	
+	auto ret=tgl_ddi_pre_enable_dp(display, crtc_state);
+	
+	intel_dp->para0. version=intel_dp->dpcd[DP_DPCD_REV];		 // 8 bit high (major); 8 bit low (minor)
+	intel_dp->para0.  bitRate=(u8)getMember<u8>(that, kexticl ? 0x24 : 0x128);
+	intel_dp->para0.  laneCount=(u8)lane_count;
+	intel_dp->para0.  maxBitRate=intel_dp->para0. bitRate;	 // same encoding as the bitRate field
+	intel_dp->para0.  maxLaneCount=intel_dp->para0.  laneCount;
+	
+	
+	if (!intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DP_MST))
+		intel_ddi_set_dp_msa(display, true);
+	
+	intel_ddi_enable(display, crtc_state);
+	
+	//getMember<uint32_t>(frame0, kexticl ? 0xe45 : 0x420c)=0x3;//fWSAAState
+	//getMember<uint32_t>(frame0, kexticl ? 0x85e0 : 0x4210)=0x1;//fWSAAState2
+	
+	
+	
+	if (ret) return 0;
+
+	return -1;
+}
+
+void  Gen11::fresetSoftwareState(void *that)
+{
+	FunctionCast(fresetSoftwareState, callback->ofresetSoftwareState)(that );
+
+}
+
+uint64_t Gen11::fsetupPort(void *that)
+{
+	auto ret=FunctionCast(fsetupPort, callback->ofsetupPort)(that );
+	PortConfig *pc=(PortConfig*)getMember<void*>(that, kexticl ? 0x544 : 0x548);
+
+	
+	return ret;
+}
+
+uint64_t Gen11::getLinkConfig(void *that,IOFBDPLinkConfig *param_1)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_dp *intel_dp=&display->intel_dp0;
+	
+	auto ret=FunctionCast(getLinkConfig, callback->ogetLinkConfig)(that,param_1 );
+	
+	void *port=getMember<void *>(that, kexticl ? 0x4d20 : 0x3648);
+	PortConfig *pc=(PortConfig *)getMember<void*>(port, kexticl ? 0x440 : 0x548);
+	if (pc->index != 0) return ret;
+	
+
+	param_1->  downspread=0;
+	param_1->  scrambler=0;
+	param_1->  maxDownspread=0;
+	
+	if (intel_dp->para0.t1Time) {
+		param_1->  downspread=intel_dp->para0.downspread;
+		param_1->  maxDownspread=param_1->  downspread;
+		param_1-> version=intel_dp->para0.version;		 // 8 bit high (major); 8 bit low (minor)
+		param_1->  bitRate=intel_dp->para0.bitRate;			 // same encoding as the spec
+		param_1-> t1Time=intel_dp->para0.t1Time;		 // minimum duration of the t1 pattern (microseconds)
+		param_1-> t2Time=intel_dp->para0.t2Time;		 // minimum duration of the t2 pattern
+		param_1-> t3Time=0;	 // minimum duration of the t3 pattern
+		param_1->  idlePatterns=5;   // minimum number of idle patterns
+		param_1->  laneCount=intel_dp->para0.laneCount ;		 // number of lanes in the link
+		param_1->  voltage=intel_dp->para0.voltage;
+		param_1->  preEmphasis=intel_dp->para0.preEmphasis;
+		param_1->  maxBitRate=param_1->  bitRate;	 // same encoding as the bitRate field
+		param_1->  maxLaneCount=param_1->  laneCount;	 // an integer
+	}
+	return ret;
+}
+
+static unsigned int intel_crt_get_flags(struct intel_display *display)
+{
+	u32 tmp, flags = 0;
+
+	u32 adpa_reg ;
+	
+	if (HAS_PCH_SPLIT(display))
+		adpa_reg = PCH_ADPA;
+	else if (display->platform.valleyview)
+		adpa_reg = VLV_ADPA;
+	else
+		adpa_reg = ADPA;
+	
+	tmp = intel_de_read(display, adpa_reg);
+
+	if (tmp & ADPA_HSYNC_ACTIVE_HIGH)
+		flags |= DRM_MODE_FLAG_PHSYNC;
+	else
+		flags |= DRM_MODE_FLAG_NHSYNC;
+
+	if (tmp & ADPA_VSYNC_ACTIVE_HIGH)
+		flags |= DRM_MODE_FLAG_PVSYNC;
+	else
+		flags |= DRM_MODE_FLAG_NVSYNC;
+
+	return flags;
+}
+
+
+
+int intel_dp_link_symbol_size(int rate)
+{
+	return drm_dp_is_uhbr_rate(rate) ? 32 : 10;
+}
+
+int intel_dp_link_symbol_clock(int rate)
+{
+	return DIV_ROUND_CLOSEST(rate * 10, intel_dp_link_symbol_size(rate));
+}
+
+int drm_dp_bw_code_to_link_rate(u8 link_bw)
+{
+	switch (link_bw) {
+	case DP_LINK_BW_10:
+		return 1000000;
+	case DP_LINK_BW_13_5:
+		return 1350000;
+	case DP_LINK_BW_20:
+		return 2000000;
+	default:
+		/* Spec says link_rate = link_bw * 0.27Gbps */
+		return link_bw * 27000;
+	}
+}
+
+static int max_dprx_rate(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	int max_rate;
+
+
+		max_rate = drm_dp_bw_code_to_link_rate(intel_dp->dpcd[0x001]);
+
+	/*
+	 * Some platforms + eDP panels may not reliably support HBR3
+	 * due to signal integrity limitations, despite advertising it.
+	 * Cap the link rate to HBR2 to avoid unstable configurations for the
+	 * known machines.
+	 */
+	//if (intel_dp_is_edp(intel_dp) && intel_has_quirk(display, QUIRK_EDP_LIMIT_RATE_HBR2))
+	//	max_rate = min(max_rate, 540000);
+
+	return max_rate;
+}
+
+
+
+
+static u8 dp_lttpr_common_cap(const u8 caps[DP_LTTPR_COMMON_CAP_SIZE], int r)
+{
+	return caps[r - DP_LT_TUNABLE_PHY_REPEATER_FIELD_DATA_STRUCTURE_REV];
+}
+
+int drm_dp_lttpr_max_link_rate(const u8 caps[DP_LTTPR_COMMON_CAP_SIZE])
+{
+	u8 rate = dp_lttpr_common_cap(caps, DP_MAX_LINK_RATE_PHY_REPEATER);
+
+	return drm_dp_bw_code_to_link_rate(rate);
+}
+static inline bool
+drm_dp_128b132b_supported(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	return dpcd[DP_MAIN_LINK_CHANNEL_CODING] & DP_CAP_ANSI_128B132B;
+}
+int drm_dp_lttpr_count(const u8 caps[DP_LTTPR_COMMON_CAP_SIZE])
+{
+	u8 count = dp_lttpr_common_cap(caps, DP_PHY_REPEATER_CNT);
+
+	switch (hweight8(count)) {
+	case 0:
+		return 0;
+	case 1:
+		return 8 - ilog2(count);
+	case 8:
+		return -ERANGE;
+	default:
+		return -EINVAL;
+	}
+}
+
+static void intel_dp_set_dpcd_sink_rates(struct intel_dp *intel_dp)
+{
+	static const int dp_rates[] = {
+		162000, 270000, 540000, 810000
+	};
+	int i, max_rate;
+	int max_lttpr_rate;
+
+	/*if (drm_dp_has_quirk(&intel_dp->desc, DP_DPCD_QUIRK_CAN_DO_MAX_LINK_RATE_3_24_GBPS)) {
+
+	 static const int quirk_rates[] = { 162000, 270000, 324000 };
+
+		memcpy(intel_dp->sink_rates, quirk_rates, sizeof(quirk_rates));
+		intel_dp->num_sink_rates = ARRAY_SIZE(quirk_rates);
+
+		return;
+	}*/
+
+	/*
+	 * Sink rates for 8b/10b.
+	 */
+	max_rate = max_dprx_rate(intel_dp);
+	max_lttpr_rate = drm_dp_lttpr_max_link_rate(intel_dp->lttpr_common_caps);
+	if (max_lttpr_rate)
+		max_rate = min(max_rate, max_lttpr_rate);
+
+	for (i = 0; i < ARRAY_SIZE(dp_rates); i++) {
+		if (dp_rates[i] > max_rate)
+			break;
+		intel_dp->sink_rates[i] = dp_rates[i];
+	}
+
+	/*
+	 * Sink rates for 128b/132b. If set, sink should support all 8b/10b
+	 * rates and 10 Gbps.
+	 */
+	if (drm_dp_128b132b_supported(intel_dp->dpcd)) {
+		u8 uhbr_rates = 0;
+
+		//BUILD_BUG_ON(ARRAY_SIZE(intel_dp->sink_rates) < ARRAY_SIZE(dp_rates) + 3);
+
+		Gen11::callback->readAUX(linkp,DP_128B132B_SUPPORTED_LINK_RATES,&uhbr_rates, 1);
+		
+		//drm_dp_dpcd_readb(&intel_dp->aux,
+				//  DP_128B132B_SUPPORTED_LINK_RATES, &uhbr_rates);
+
+		if (drm_dp_lttpr_count(intel_dp->lttpr_common_caps)) {
+
+			if (intel_dp->lttpr_common_caps[0] >= 0x20 &&
+				intel_dp->lttpr_common_caps[DP_MAIN_LINK_CHANNEL_CODING_PHY_REPEATER -
+							DP_LT_TUNABLE_PHY_REPEATER_FIELD_DATA_STRUCTURE_REV] &
+				DP_PHY_REPEATER_128B132B_SUPPORTED) {
+				/* Repeater supports 128b/132b, valid UHBR rates */
+				uhbr_rates &= intel_dp->lttpr_common_caps[DP_PHY_REPEATER_128B132B_RATES -
+									  DP_LT_TUNABLE_PHY_REPEATER_FIELD_DATA_STRUCTURE_REV];
+			} else {
+				/* Does not support 128b/132b */
+				uhbr_rates = 0;
+			}
+		}
+
+		if (uhbr_rates & DP_UHBR10)
+			intel_dp->sink_rates[i++] = 1000000;
+		if (uhbr_rates & DP_UHBR13_5)
+			intel_dp->sink_rates[i++] = 1350000;
+		if (uhbr_rates & DP_UHBR20)
+			intel_dp->sink_rates[i++] = 2000000;
+	}
+
+	intel_dp->num_sink_rates = i;
+}
+
+static void intel_dp_set_default_sink_rates(struct intel_dp *intel_dp)
+{
+	intel_dp->sink_rates[0] = 162000;
+	intel_dp->num_sink_rates = 1;
+}
+
+static void intel_dp_set_sink_rates(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+
+	intel_dp_set_dpcd_sink_rates(intel_dp);
+
+	if (intel_dp->num_sink_rates)
+		return;
+
+	/*drm_err(display->drm,
+		"[CONNECTOR:%d:%s][ENCODER:%d:%s] Invalid DPCD with no link rates, using defaults\n",
+		connector->base.base.id, connector->base.name,
+		encoder->base.base.id, encoder->base.name);
+*/
+	intel_dp_set_default_sink_rates(intel_dp);
+}
+
+static void
+intel_edp_set_sink_rates(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+
+	intel_dp->num_sink_rates = 0;
+
+	if (intel_dp->edp_dpcd[0] >= DP_EDP_14) {
+		u16 sink_rates[DP_MAX_SUPPORTED_RATES];
+		int i;
+
+		Gen11::callback->readAUX(linkp,DP_SUPPORTED_LINK_RATES,sink_rates, sizeof(sink_rates));
+		
+		//drm_dp_dpcd_read(&intel_dp->aux, DP_SUPPORTED_LINK_RATES,
+				// sink_rates, sizeof(sink_rates));
+
+		for (i = 0; i < ARRAY_SIZE(sink_rates); i++) {
+			int rate;
+
+			/* Value read multiplied by 200kHz gives the per-lane
+			 * link rate in kHz. The source rates are, however,
+			 * stored in terms of LS_Clk kHz. The full conversion
+			 * back to symbols is
+			 * (val * 200kHz)*(8/10 ch. encoding)*(1/8 bit to Byte)
+			 */
+
+			//rate = le16_to_cpu(sink_rates[i]) * 200 / 10;
+			rate = (u16)(sink_rates[i]) * 200 / 10;
+			
+			if (rate == 0)
+				break;
+
+			/*
+			 * Some platforms cannot reliably drive HBR3 rates due to PHY limitations,
+			 * even if the sink advertises support. Reject any sink rates above HBR2 on
+			 * the known machines for stable output.
+			 */
+			//if (rate > 540000 &&
+			//	intel_has_quirk(display, QUIRK_EDP_LIMIT_RATE_HBR2))
+			//	break;
+
+			intel_dp->sink_rates[i] = rate;
+		}
+		intel_dp->num_sink_rates = i;
+	}
+
+	/*
+	 * Use DP_LINK_RATE_SET if DP_SUPPORTED_LINK_RATES are available,
+	 * default to DP_MAX_LINK_RATE and DP_LINK_BW_SET otherwise.
+	 */
+	if (intel_dp->num_sink_rates)
+		intel_dp->use_rate_select = true;
+	else
+		intel_dp_set_sink_rates(intel_dp);
+
+	//intel_edp_set_data_override_rates(intel_dp);
+}
+
+static inline u8
+drm_dp_max_lane_count(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	return dpcd[DP_MAX_LANE_COUNT] & 0x1f;
+}
+
+
+static int max_dprx_lane_count(struct intel_dp *intel_dp)
+{
+	//if (intel_dp_tunnel_bw_alloc_is_enabled(intel_dp))
+	//	return drm_dp_tunnel_max_dprx_lane_count(intel_dp->tunnel);
+
+	return drm_dp_max_lane_count(intel_dp->dpcd);
+}
+static void intel_dp_set_default_max_sink_lane_count(struct intel_dp *intel_dp)
+{
+	intel_dp->max_sink_lane_count = 1;
+}
+
+static void intel_dp_set_max_sink_lane_count(struct intel_dp *intel_dp)
+{
+	struct intel_display *display =NBlue::callback->i915b->display;
+
+
+	intel_dp->max_sink_lane_count = max_dprx_lane_count(intel_dp);
+
+	switch (intel_dp->max_sink_lane_count) {
+	case 1:
+	case 2:
+	case 4:
+		return;
+	}
+
+	/*drm_err(display->drm,
+		"[CONNECTOR:%d:%s][ENCODER:%d:%s] Invalid DPCD max lane count (%d), using default\n",
+		connector->base.base.id, connector->base.name,
+		encoder->base.base.id, encoder->base.name,
+		intel_dp->max_sink_lane_count);
+*/
+	intel_dp_set_default_max_sink_lane_count(intel_dp);
+}
+
+static int intel_dp_read_dsc_dpcd(
+				  u8 dsc_dpcd[DP_DSC_RECEIVER_CAP_SIZE])
+{
+	int ret;
+
+	ret =Gen11::callback->readAUX(linkp, DP_DSC_SUPPORT,dsc_dpcd,DP_DSC_RECEIVER_CAP_SIZE);
+	
+	//ret = drm_dp_dpcd_read_data(aux, DP_DSC_SUPPORT, dsc_dpcd,
+	//				DP_DSC_RECEIVER_CAP_SIZE);
+	if (ret) {
+		/*drm_dbg_kms(aux->drm_dev,
+				"Could not read DSC DPCD register 0x%x Error: %pe\n",
+				DP_DSC_SUPPORT, ERR_PTR(ret));*/
+		return ret;
+	}
+
+	/*drm_dbg_kms(aux->drm_dev, "DSC DPCD: %*ph\n",
+			DP_DSC_RECEIVER_CAP_SIZE,
+			dsc_dpcd);*/
+	return 0;
+}
+
+static void intel_edp_get_dsc_sink_cap(struct intel_dp *intel_dp, u8 edp_dpcd_rev)
+{
+	if (edp_dpcd_rev < DP_EDP_14)
+		return;
+
+	if (intel_dp_read_dsc_dpcd(
+							   intel_dp->dsc_dpcd) < 0)
+		return;
+
+	//if (intel_dp->dsc_dpcd[0] & DP_DSC_DECOMPRESSION_IS_SUPPORTED)
+	//	init_dsc_overall_throughput_limits(connector, false);
+}
+
+static void
+intel_dp_detect_dsc_caps(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+
+	/* Read DP Sink DSC Cap DPCD regs for DP v1.4 */
+	if (!HAS_DSC(display))
+		return;
+
+	if (intel_dp_is_edp())
+		intel_edp_get_dsc_sink_cap(intel_dp,intel_dp->edp_dpcd[0]
+					   );
+	/*else
+		intel_dp_get_dsc_sink_cap(intel_dp->dpcd[DP_DPCD_REV],
+					  &intel_dp->desc, drm_dp_is_branch(intel_dp->dpcd),
+	*/				//  connector);
+}
+
+
+
+static void _panel_replay_compute_su_granularity(struct intel_dp *intel_dp)
+{
+	u16 w;
+	u8 y;
+
+	if (!(intel_dp->panel_replay_caps.dpcd[INTEL_PR_DPCD_INDEX(DP_PANEL_REPLAY_CAP_CAPABILITY)] &
+		   DP_PANEL_REPLAY_SU_GRANULARITY_REQUIRED)) {
+		w = 4;
+		y = 4;
+		goto exit;
+	}
+
+	/*
+	 * Spec says that if the value read is 0 the default granularity should
+	 * be used instead.
+	 */
+	w = (u16)(*(u16 *)&intel_dp->panel_replay_caps.dpcd[INTEL_PR_DPCD_INDEX(DP_PANEL_REPLAY_CAP_X_GRANULARITY)]) ? : 4;
+	y = intel_dp->panel_replay_caps.dpcd[INTEL_PR_DPCD_INDEX(DP_PANEL_REPLAY_CAP_Y_GRANULARITY)] ? : 1;
+
+exit:
+	intel_dp->panel_replay_caps.su_w_granularity = w;
+	intel_dp->panel_replay_caps.su_y_granularity = y;
+}
+
+static enum intel_panel_replay_dsc_support
+compute_pr_dsc_support(struct intel_dp *intel_dp)
+{
+	u8 pr_dsc_mode;
+	u8 val;
+
+	val = intel_dp->panel_replay_caps.dpcd[INTEL_PR_DPCD_INDEX(DP_PANEL_REPLAY_CAP_CAPABILITY)];
+	//pr_dsc_mode = REG_FIELD_GET8(DP_PANEL_REPLAY_DSC_DECODE_CAPABILITY_IN_PR_MASK, val);
+	pr_dsc_mode = (u8)REG_FIELD_GET(DP_PANEL_REPLAY_DSC_DECODE_CAPABILITY_IN_PR_MASK, val);
+	
+	switch (pr_dsc_mode) {
+	case DP_DSC_DECODE_CAPABILITY_IN_PR_FULL_FRAME_ONLY:
+		return INTEL_DP_PANEL_REPLAY_DSC_FULL_FRAME_ONLY;
+	case DP_DSC_DECODE_CAPABILITY_IN_PR_SUPPORTED:
+		return INTEL_DP_PANEL_REPLAY_DSC_SELECTIVE_UPDATE;
+	default:
+	case DP_DSC_DECODE_CAPABILITY_IN_PR_NOT_SUPPORTED:
+	case DP_DSC_DECODE_CAPABILITY_IN_PR_RESERVED:
+		return INTEL_DP_PANEL_REPLAY_DSC_NOT_SUPPORTED;
+	}
+}
+
+static void _panel_replay_init_dpcd(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	int ret;
+
+	/* TODO: Enable Panel Replay on MST once it's properly implemented. */
+	if (intel_dp->mst_detect == DRM_DP_MST)
+		return;
+
+	/*if (intel_dp_is_edp(intel_dp) &&
+		intel_has_dpcd_quirk(intel_dp, QUIRK_DISABLE_EDP_PANEL_REPLAY)) {
+		drm_dbg_kms(display->drm,
+				"Panel Replay support not currently available for this setup\n");
+		return;
+	}*/
+
+	ret =Gen11::callback->readAUX(linkp, DP_PANEL_REPLAY_CAP_SUPPORT,intel_dp->panel_replay_caps.dpcd,
+								  sizeof(intel_dp->panel_replay_caps.dpcd));
+	
+//	ret = drm_dp_dpcd_read_data(&intel_dp->aux, DP_PANEL_REPLAY_CAP_SUPPORT,
+				//	&connector->dp.panel_replay_caps.dpcd,
+				//	sizeof(connector->dp.panel_replay_caps.dpcd));
+	if (ret < 0)
+		return;
+
+	if (!(intel_dp->panel_replay_caps.dpcd[INTEL_PR_DPCD_INDEX(DP_PANEL_REPLAY_CAP_SUPPORT)] &
+		  DP_PANEL_REPLAY_SUPPORT))
+		return;
+
+	if (intel_dp_is_edp()) {
+		if (!intel_alpm_aux_less_wake_supported(intel_dp)) {
+			//drm_dbg_kms(display->drm,
+				//	"Panel doesn't support AUX-less ALPM, eDP Panel Replay not possible\n");
+			return;
+		}
+
+		if (!(intel_dp->panel_replay_caps.dpcd[INTEL_PR_DPCD_INDEX(DP_PANEL_REPLAY_CAP_SUPPORT)] &
+			  DP_PANEL_REPLAY_EARLY_TRANSPORT_SUPPORT)) {
+			//drm_dbg_kms(display->drm,
+					//"Panel doesn't support early transport, eDP Panel Replay not possible\n");
+			return;
+		}
+	}
+
+	intel_dp->panel_replay_caps.support = true;
+	intel_dp->psr.sink_panel_replay_support = true;
+
+	if (intel_dp->panel_replay_caps.dpcd[INTEL_PR_DPCD_INDEX(DP_PANEL_REPLAY_CAP_SUPPORT)] &
+		DP_PANEL_REPLAY_SU_SUPPORT) {
+		intel_dp->panel_replay_caps.su_support = true;
+
+		_panel_replay_compute_su_granularity(intel_dp);
+	}
+
+	intel_dp->panel_replay_caps.dsc_support = compute_pr_dsc_support(intel_dp);
+
+	/*drm_dbg_kms(display->drm,
+			"Panel replay %sis supported by panel (in DSC mode: %s)\n",
+			connector->dp.panel_replay_caps.su_support ?
+			"selective_update " : "",
+			panel_replay_dsc_support_str(connector->dp.panel_replay_caps.dsc_support));*/
+}
+
+bool intel_alpm_aux_wake_supported(struct intel_dp *intel_dp)
+{
+	return intel_dp->alpm_dpcd & DP_ALPM_CAP;
+}
+
+static void _psr_compute_su_granularity(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	ssize_t r;
+	u16 w;
+	u8 y;
+
+	/*
+	 * If sink don't have specific granularity requirements set legacy
+	 * ones.
+	 */
+	if (!(intel_dp->psr_caps.dpcd[1] & DP_PSR2_SU_GRANULARITY_REQUIRED)) {
+		/* As PSR2 HW sends full lines, we do not care about x granularity */
+		w = (u16)(4);
+		y = 4;
+		goto exit;
+	}
+
+	r =Gen11::callback->readAUX(linkp, DP_PSR2_SU_X_GRANULARITY,&w, sizeof(w));
+	
+	//r = drm_dp_dpcd_read(&intel_dp->aux, DP_PSR2_SU_X_GRANULARITY, &w, sizeof(w));
+	//if (r != sizeof(w))
+		//drm_dbg_kms(display->drm,
+			//	"Unable to read selective update x granularity\n");
+	/*
+	 * Spec says that if the value read is 0 the default granularity should
+	 * be used instead.
+	 */
+	if (r != sizeof(w) || w == 0)
+		w = (u16)(4);
+
+	r =Gen11::callback->readAUX(linkp, DP_PSR2_SU_Y_GRANULARITY,&y, 1);
+	
+	//r = drm_dp_dpcd_read(&intel_dp->aux, DP_PSR2_SU_Y_GRANULARITY, &y, 1);
+	if (r != 1) {
+		//drm_dbg_kms(display->drm,
+			//	"Unable to read selective update y granularity\n");
+		y = 4;
+	}
+	if (y == 0)
+		y = 1;
+
+exit:
+	intel_dp->psr_caps.su_w_granularity = (u16)(w);
+	intel_dp->psr_caps.su_y_granularity = y;
+}
+
+static void _psr_init_dpcd(struct intel_dp *intel_dp)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	int ret;
+	
+	ret =Gen11::callback->readAUX(linkp, DP_PSR_SUPPORT,intel_dp->psr_caps.dpcd,
+								  sizeof(intel_dp->psr_caps.dpcd));
+
+	//ret = drm_dp_dpcd_read_data(&intel_dp->aux, DP_PSR_SUPPORT, connector->dp.psr_caps.dpcd,
+				//	sizeof(connector->dp.psr_caps.dpcd));
+	if (ret < 0)
+		return;
+
+	if (!intel_dp->psr_caps.dpcd[0])
+		return;
+
+	//drm_dbg_kms(display->drm, "eDP panel supports PSR version %x\n",
+			//	intel_dp->dp.psr_caps.dpcd[0]);
+
+	//if (drm_dp_has_quirk(&intel_dp->desc, DP_DPCD_QUIRK_NO_PSR)) {
+	//drm_dbg_kms(display->drm,
+			//	"PSR support not currently available for this panel\n");
+		//return;
+	//}
+
+	if (!(intel_dp->edp_dpcd[1] & DP_EDP_SET_POWER_CAP)) {
+		//drm_dbg_kms(display->drm,
+			//	"Panel lacks power state control, PSR cannot be enabled\n");
+		return;
+	}
+
+	intel_dp->psr_caps.support = true;
+	intel_dp->psr.sink_support = true;
+
+	intel_dp->psr_caps.sync_latency = intel_dp_get_sink_sync_latency(intel_dp);
+
+	if (DISPLAY_VER(display) >= 9 &&
+		intel_dp->psr_caps.dpcd[0] >= DP_PSR2_WITH_Y_COORD_IS_SUPPORTED) {
+		bool y_req = intel_dp->psr_caps.dpcd[1] &
+				 DP_PSR2_SU_Y_COORDINATE_REQUIRED;
+
+		/*
+		 * All panels that supports PSR version 03h (PSR2 +
+		 * Y-coordinate) can handle Y-coordinates in VSC but we are
+		 * only sure that it is going to be used when required by the
+		 * panel. This way panel is capable to do selective update
+		 * without a aux frame sync.
+		 *
+		 * To support PSR version 02h and PSR version 03h without
+		 * Y-coordinate requirement panels we would need to enable
+		 * GTC first.
+		 */
+		intel_dp->psr_caps.su_support = y_req &&
+			intel_alpm_aux_wake_supported(intel_dp);
+		//drm_dbg_kms(display->drm, "PSR2 %ssupported\n",
+			//	connector->dp.psr_caps.su_support ? "" : "not ");
+	}
+
+	if (intel_dp->psr_caps.su_support)
+		_psr_compute_su_granularity(intel_dp);
+}
+
+
+void intel_psr_init_dpcd(struct intel_dp *intel_dp)
+{
+	_psr_init_dpcd(intel_dp);
+
+	_panel_replay_init_dpcd(intel_dp);
+}
+
+
+void Gen11::SetupParams (void *that,void *param_1,void *param_2,CRTCParams *param_3,void *param_4)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	void *port=getMember<void *>(param_2, kexticl ? 0x4d20 : 0x3648);
+	
+	PortConfig *pc=(PortConfig *)getMember<void*>(port, kexticl ? 0x440 : 0x548);
+	if (pc->index == 0) setpc=1;
+	
+	
+	if (!dpcdconf && pc->index == 0)
+	{
+		dpcdconf=true;
+		struct intel_dp *intel_dp=&display->intel_dp0;
+		struct intel_crtc_state *crtc_state=&display->crtc_state0;
+		
+		//dpcd_access_needs_probe
+		drm_dp_read_dpcd_caps(intel_dp,intel_dp->dpcd);
+		
+		readAUX(linkp,DP_EDP_DPCD_REV,intel_dp->edp_dpcd, sizeof(intel_dp->edp_dpcd));
+		
+		drm_dp_read_downstream_info(intel_dp, intel_dp->dpcd,intel_dp->downstream_ports);
+		
+		intel_dp->mst_detect = intel_dp_mst_detect(display, intel_dp);
+		intel_dp->is_mst = intel_dp->mst_detect != DRM_DP_SST;
+		if (!intel_dp->is_mst) intel_dp->mst_detect = DRM_DP_SST;
+
+		memset(intel_dp->lttpr_common_caps, 0, sizeof(intel_dp->lttpr_common_caps));
+		intel_dp->use_max_params = intel_dp->edp_dpcd[0] < DP_EDP_14;
+		
+		intel_dp_init_source_oui(intel_dp);
+		
+		readAUX(linkp, DP_RECEIVER_ALPM_CAP,&intel_dp->alpm_dpcd,1);
+		
+		crtc_state->hw.adjusted_mode.flags |= intel_crt_get_flags(display);
+		
+		if ((HAS_DP20(display) && !intel_dp_is_edp()) ||
+			DISPLAY_VER(display) >= 20)
+			intel_dp->psr.source_panel_replay_support = true;
+
+		if (HAS_PSR(display) && intel_dp_is_edp())
+			intel_dp->psr.source_support = true;
+
+		intel_psr_init_dpcd(intel_dp);
+		
+		intel_dp->sink_rates[0] = 162000;
+		intel_dp->num_sink_rates = 1;
+		intel_dp->max_sink_lane_count = 1;
+		
+		intel_edp_set_sink_rates(intel_dp);
+		intel_dp_set_max_sink_lane_count(intel_dp);
+		intel_dp_detect_dsc_caps(intel_dp);
+
+		 //hsw_get_pipe_config
+		//intel_ddi_init
+		intel_get_transcoder_timings(display,crtc_state);
+		icl_ddi_combo_get_config(display, crtc_state);
+		intel_ddi_mso_get_config(display, crtc_state);
+		intel_dp_compute_config(display, crtc_state);
+		intel_ddi_compute_config_late(crtc_state);
+		
+		if (hsw_panel_transcoders(display) & BIT(crtc_state->cpu_transcoder)) {
+			u32 tmp = intel_de_read(display,
+						TRANS_DDI_FUNC_CTL(display, crtc_state->cpu_transcoder));
+
+			if ((tmp & TRANS_DDI_EDP_INPUT_MASK) == TRANS_DDI_EDP_INPUT_A_ONOFF)
+				crtc_state->pch_pfit.force_thru = true;
+		}
+		
+	}
+	
+	if (kexticl && setpc) {
+		SetupParams2(param_2, param_3);
+		setpc=1;
+	}
+	
+	FunctionCast(SetupParams, callback->oSetupParams)(that ,param_1,param_2,param_3,param_4);
+	if (kexticl && setpc) {
+		SetupParams2(param_2, param_3);
+	}
+}
+
+void Gen11::SetupParams2 (void *param_2, CRTCParams *param_3)
+{
+	
+	struct intel_display *display = NBlue::callback->i915b->display;
+	struct intel_crtc_state *crtc_state=&display->crtc_state0;
+	
+	if (setpc){
+		setpc=0;
+
+		param_3->TRANS_CLK_SEL=intel_ddi_enable_transcoder_clock(crtc_state,true);
+		param_3->TRANS_MSA_MISC =intel_ddi_set_dp_msa(display, false);
+		param_3->TRANS_DDI_FUNC_CTL= intel_ddi_transcoder_func_reg_val_get();
+		param_3->PIPE_MISC=bdw_set_pipe_misc();
+		param_3->TRANSCONF= 0xc0000024;
+		
+		/*int fScanoutHeight=getMember<int>(param_2, kexticl ? 0x2fc : 0xfc);
+		int fLinkScanoutWidth=getMember<int>(param_2, kexticl ? 0x2f8 : 0xf8);
+		param_3->PIPESRC =
+		((fScanoutHeight - 1) & 0x1fff) |
+		(param_3->PIPESRC & 0xe000e000) |
+		((fLinkScanoutWidth * 0x10000 + 0x1fff0000) & 0x1fff0000);
+		*/
+	}
+	
+}
+
+int Gen11::writeAUX(void *that,uint param_1,void *param_2,uint param_3)
+{
+	auto ret=FunctionCast(writeAUX, callback->owriteAUX)(that ,param_1,param_2,param_3);
+	return ret;
+}
+
+uint64_t Gen11::hwSetPanelPower(void *that,uint param_1)
+{
+	struct intel_display *display=NBlue::callback->i915b->display;
+	if (IS_DISPLAY_VER(NBlue::callback->i915b->display, 13, 14))
+		intel_de_rmw(display, SOUTH_DSPCLK_GATE_D,
+				 0, PCH_DPLSUNIT_CLOCK_GATE_DISABLE);
+	
+	auto ret= FunctionCast(hwSetPanelPower, callback->ohwSetPanelPower)(that,param_1);
+	
+	if (IS_DISPLAY_VER(NBlue::callback->i915b->display, 13, 14))
+		intel_de_rmw(display, SOUTH_DSPCLK_GATE_D,
+				 PCH_DPLSUNIT_CLOCK_GATE_DISABLE, 0);
+	
+	return ret;
+};
+
+
+int Gen11::readAUX(void *that,uint param_1,void *param_2,uint param_3)
+{
+	auto ret=FunctionCast(readAUX, callback->oreadAUX)(that ,param_1,param_2,param_3);
+	return ret;
+}
+
+int Gen11::isConflictRegister(void *that,uint param_1)
+{
+	return -1;
+}
+
+int Gen11::fgetPixelInformation(void *that,int param_1,int param_2,int param_3,void *param_4)
+{
+	
+	auto ret=FunctionCast(fgetPixelInformation, callback->ofgetPixelInformation)(that ,param_1,param_2,param_3,param_4);
+	uint32_t fbNum = getMember<uint32_t>(that, 0x1dc);
+	if (fbNum==0) return 0;
+	return ret;
+	
+}
+
+
+
+
+
+
+
+
+static constexpr size_t RING_MMIO_PTR			= 0x18;
+static constexpr size_t RING_HEAD_REG			= 0x10;
+static constexpr uint32_t RING_HEAD_MASK	= 0x1ffffc;
+static constexpr size_t RING_HEAD				= 0x60;
+static constexpr size_t RING_EMIT				= 0x64;
+static constexpr size_t RING_SPACE				= 0x88;
+static constexpr size_t RING_SIZE				= 0x8c;
+static constexpr size_t RING_EFFECTIVE_SIZE	= 0x90;
+
+
+bool Gen11::linux_wait_for_space(void *ring, uint32_t total_bytes, uint64_t timeout_ns)
+{
+	uint32_t size = getMember<uint32_t>(ring, RING_SIZE);
+	uint32_t emit = getMember<uint32_t>(ring, RING_EMIT);
+	
+	uint64_t deadline_ticks;
+	nanoseconds_to_absolutetime(timeout_ns, &deadline_ticks);
+	uint64_t end_time = mach_absolute_time() + deadline_ticks;
+
+	do {
+		uintptr_t mmio = getMember<uintptr_t>(ring, RING_MMIO_PTR);
+		uint32_t head = (*reinterpret_cast<volatile uint32_t *>(mmio + RING_HEAD_REG)) & RING_HEAD_MASK;
+		
+		if (head < size) {
+			head &= (size - 1);
+			getMember<uint32_t>(ring, RING_HEAD) = head;
+
+			int32_t space = (int32_t)(head - emit) - 8;
+			if (space < 0) space += (int32_t)size;
+			getMember<int32_t>(ring, RING_SPACE) = space;
+
+			if ((uint32_t)space >= total_bytes) {
+				return true;
+			}
+		}
+
+		IODelay(10);
+
+	} while (mach_absolute_time() < end_time);
+
+	return false;
+}
+
+
+uint64_t Gen11::waitForSpace(void *ring, unsigned int num_dwords)
+{
+	
+	const uint32_t effective_size = getMember<uint32_t>(ring, RING_EFFECTIVE_SIZE);
+	const uint32_t emit = getMember<uint32_t>(ring, RING_EMIT);
+	const uint32_t size = getMember<uint32_t>(ring, RING_SIZE);
+	const uint32_t remain_usable = effective_size - emit;
+	
+	const uint32_t bytes = num_dwords * sizeof(uint32_t);
+	uint32_t need_wrap = 0;
+	uint32_t total_bytes = bytes;
+
+	if (size - 8 < bytes) {
+		return 0;
+	}
+
+	if (bytes > remain_usable) {
+		const uint32_t remain_actual = size - emit;
+		total_bytes = bytes + remain_actual;
+		need_wrap = remain_actual;
+	}
+
+	if (total_bytes > getMember<uint32_t>(ring, RING_SPACE)) {
+			if (!linux_wait_for_space(ring, total_bytes, 5000000000ULL)) {
+				return 0;
+			}
+		}
+
+	if (need_wrap) {
+		uint32_t wrap_bytes = need_wrap & ~3U;
+		
+		void *pvaddr = getMember<void*>(ring, 0x80);
+		uint8_t *vaddr = getMember<uint8_t *>(pvaddr, 0x38);
+		
+		uint32_t cur_space = getMember<uint32_t>(ring, RING_SPACE);
+
+		if (wrap_bytes > cur_space) return 0;
+
+		memset(vaddr + emit, 0, wrap_bytes);
+
+		getMember<uint32_t>(ring, RING_SPACE) = cur_space - wrap_bytes;
+		getMember<uint32_t>(ring, RING_EMIT) = 0;
+	}
+
+
+	uint32_t cur_emit = getMember<uint32_t>(ring, RING_EMIT);
+	uint32_t cur_space = getMember<uint32_t>(ring, RING_SPACE);
+
+	if (cur_space < bytes || cur_emit > size - bytes) return 0;
+
+	void *pvaddr = getMember<void*>(ring, 0x80);
+	uint8_t *vaddr = getMember<uint8_t *>(pvaddr, 0x38);
+
+	memset(vaddr + cur_emit, 0, bytes);
+
+	getMember<uint32_t>(ring, RING_EMIT) = cur_emit + bytes;
+	getMember<uint32_t>(ring, RING_SPACE) = cur_space - bytes;
+
+
+	return (uint64_t)num_dwords << 8 | 1ULL;
+}
+
+
+
+
+
+
+
+static u32 pipe_mbus_dbox_ctl(struct intel_display *display, enum pipe pipe,
+				  const struct intel_dbuf_state *dbuf_state)
+{
+	u32 val = 0;
+
+	if (DISPLAY_VER(display) >= 14)
+		val |= MBUS_DBOX_I_CREDIT(2);
+
+	if (DISPLAY_VER(display) >= 12) {
+		val |= MBUS_DBOX_B2B_TRANSACTIONS_MAX(16);
+		val |= MBUS_DBOX_B2B_TRANSACTIONS_DELAY(1);
+		val |= MBUS_DBOX_REGULATE_B2B_TRANSACTIONS_EN;
+	}
+
+	if (DISPLAY_VER(display) >= 14)
+		val |= dbuf_state->joined_mbus ?
+			MBUS_DBOX_A_CREDIT(12) : MBUS_DBOX_A_CREDIT(8);
+	else if (intel_display_wa(display, INTEL_DISPLAY_WA_22010947358))
+		/* Wa_22010947358:adl-p */
+		val |= dbuf_state->joined_mbus ?
+			MBUS_DBOX_A_CREDIT(6) : MBUS_DBOX_A_CREDIT(4);
+	else
+		val |= MBUS_DBOX_A_CREDIT(2);
+
+	if (DISPLAY_VER(display) >= 14) {
+		val |= MBUS_DBOX_B_CREDIT(0xA);
+	} else if (display->platform.alderlake_p) {
+		val |= MBUS_DBOX_BW_CREDIT(2);
+		val |= MBUS_DBOX_B_CREDIT(8);
+	} else if (DISPLAY_VER(display) >= 12) {
+		val |= MBUS_DBOX_BW_CREDIT(2);
+		val |= MBUS_DBOX_B_CREDIT(12);
+	} else {
+		val |= MBUS_DBOX_BW_CREDIT(1);
+		val |= MBUS_DBOX_B_CREDIT(8);
+	}
+
+	/*if (DISPLAY_VERx100(display) == 1400) {
+		if (xelpdp_is_only_pipe_per_dbuf_bank(pipe, dbuf_state->active_pipes))
+			val |= MBUS_DBOX_BW_8CREDITS_MTL;
+		else
+			val |= MBUS_DBOX_BW_4CREDITS_MTL;
+	}*/
+
+	return val;
+}
+
+static void pipe_mbus_dbox_ctl_update(struct intel_display *display,
+					  const struct intel_dbuf_state *dbuf_state)
+{
+	enum pipe pipe;
+
+	for_each_pipe(display, pipe) {
+		if (dbuf_state->active_pipes & BIT(pipe))
+			intel_de_write(display, PIPE_MBUS_DBOX_CTL(pipe),
+					   pipe_mbus_dbox_ctl(display, pipe, dbuf_state));
+	}
+}
+
+static void gen9_wait_for_power_well_fuses(struct intel_display *display,
+					   enum skl_power_gate pg)
+{
+
+			intel_de_wait_for_set_ms(display, SKL_FUSE_STATUS,
+						 SKL_FUSE_PG_DIST_STATUS(pg), 1);
+}
+
+static int cnp_rawclk(struct intel_display *display)
+{
+	int divider, fraction;
+	u32 rawclk;
+
+	if (intel_de_read(display, SFUSE_STRAP) & SFUSE_STRAP_RAW_FREQUENCY) {
+		/* 24 MHz */
+		divider = 24000;
+		fraction = 0;
+	} else {
+		/* 19.2 MHz */
+		divider = 19000;
+		fraction = 200;
+	}
+
+	rawclk = CNP_RAWCLK_DIV(divider / 1000);
+	if (fraction) {
+		int numerator = 1;
+
+		rawclk |= CNP_RAWCLK_DEN(DIV_ROUND_CLOSEST(numerator * 1000,
+							   fraction) - 1);
+		if (INTEL_PCH_TYPE(display) >= PCH_ICP)
+			rawclk |= ICP_RAWCLK_NUM(numerator);
+	}
+
+	intel_de_write(display, PCH_RAWCLK_FREQ, rawclk);
+	return divider + fraction;
+}
+
+static void mbus_ctl_join_update(struct intel_display *display,
+				 const struct intel_dbuf_state *dbuf_state,
+				 enum pipe pipe)
+{
+	u32 mbus_ctl;
+
+	if (dbuf_state->joined_mbus)
+		mbus_ctl = MBUS_HASHING_MODE_1x4 | MBUS_JOIN;
+	else
+		mbus_ctl = MBUS_HASHING_MODE_2x2;
+
+	if (pipe != INVALID_PIPE)
+		mbus_ctl |= MBUS_JOIN_PIPE_SELECT(pipe);
+	else
+		mbus_ctl |= MBUS_JOIN_PIPE_SELECT_NONE;
+
+	intel_de_rmw(display, MBUS_CTL,
+			 MBUS_HASHING_MODE_MASK | MBUS_JOIN |
+			 MBUS_JOIN_PIPE_SELECT_MASK, mbus_ctl);
+}
+
+void intel_dbuf_mdclk_cdclk_ratio_update(struct intel_display *display,
+					 int ratio, bool joined_mbus)
+{
+	enum dbuf_slice slice;
+
+	if (!HAS_MBUS_JOINING(display))
+		return;
+
+	/*if (DISPLAY_VER(display) >= 35)
+		intel_de_rmw(display, MBUS_CTL, XE3P_MBUS_TRANSLATION_THROTTLE_MIN_MASK,
+				 XE3P_MBUS_TRANSLATION_THROTTLE_MIN(ratio - 1));
+	else if (DISPLAY_VER(display) >= 20)
+		intel_de_rmw(display, MBUS_CTL, MBUS_TRANSLATION_THROTTLE_MIN_MASK,
+				 MBUS_TRANSLATION_THROTTLE_MIN(ratio - 1));
+*/
+	if (joined_mbus)
+		ratio *= 2;
+
+	for_each_dbuf_slice(display, slice)
+		/*if (DISPLAY_VER(display) >= 35)
+			intel_de_rmw(display, DBUF_CTL_S(slice),
+					 XE3P_DBUF_MIN_TRACKER_STATE_SERVICE_MASK,
+					 XE3P_DBUF_MIN_TRACKER_STATE_SERVICE(ratio - 1));
+		else*/
+			intel_de_rmw(display, DBUF_CTL_S(slice),
+					 DBUF_MIN_TRACKER_STATE_SERVICE_MASK,
+					 DBUF_MIN_TRACKER_STATE_SERVICE(ratio - 1));
+}
+
+
+void  Gen11::enableDisplayEngine(void *that0)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	u32 pg_state, pll_state, dbuf_state0, ddi_state;
+	AppleIntelPowerWell0 *that=(AppleIntelPowerWell0*)that0;
+	
+	pg_state = intel_de_read(display, HSW_PWR_WELL_CTL2); // 0x45404
+	pll_state = intel_de_read(display, BXT_DE_PLL_ENABLE); // 0x46070
+	dbuf_state0 = intel_de_read(display, DBUF_CTL_S(DBUF_S1)); // 0x45008 = DBUF_S0 rename bug
+
+	bool de_enabled = ((pg_state & (HSW_PWR_WELL_CTL_REQ(0) | HSW_PWR_WELL_CTL_STATE(0))) == (HSW_PWR_WELL_CTL_REQ(0) | HSW_PWR_WELL_CTL_STATE(0))) &&
+					  ((pll_state & BXT_DE_PLL_LOCK) != 0) &&
+					  ((dbuf_state0 & (DBUF_POWER_REQUEST | DBUF_POWER_STATE)) != 0);
+
+	
+	if (!de_enabled) {
+		ddi_state = intel_de_read(display, ICL_PWR_WELL_CTL_DDI2); // 0x45454
+		
+		bool any_ddi_requested = false;
+		for (int i = 0; i < 9; i++) {
+			if (ddi_state & HSW_PWR_WELL_CTL_REQ(i)) {
+				any_ddi_requested = true;
+				break;
+			}
+		}
+		
+		if (!any_ddi_requested) {
+			overridePowerWellsState(that0, false);
+		} else {
+			intel_de_rmw(display, GEN8_CHICKEN_DCPR_1, 0, MASK_WAKEMEM);
+			initCDClock(that->contr);
+			return;
+		}
+	}
+
+	
+
+	if (DISPLAY_VER(display) == 12)
+		intel_de_rmw(display, CLKREQ_POLICY, CLKREQ_POLICY_MEM_UP_OVRD, 0);
+	
+	gen9_set_dc_state(display, DC_STATE_DISABLE);
+
+	if (intel_display_wa(display, INTEL_DISPLAY_WA_14011294188))
+		intel_de_rmw(display, SOUTH_DSPCLK_GATE_D, 0, PCH_DPMGUNIT_CLOCK_GATE_DISABLE);
+	
+
+	intel_pch_reset_handshake(display, !HAS_PCH_NOP(display));
+	
+	icl_combo_phys_init(display);
+
+
+	if (!(pg_state & HSW_PWR_WELL_CTL_STATE(0))) {
+		
+		if (display->platform.alderlake_p)
+			intel_de_rmw(display, GEN8_CHICKEN_DCPR_1, 0, DISABLE_FLR_SRC);
+			
+		gen9_wait_for_power_well_fuses(display, SKL_PG0);
+		
+		intel_de_rmw(display, HSW_PWR_WELL_CTL2, 0, HSW_PWR_WELL_CTL_REQ(0));
+		
+		if (intel_de_wait_for_set_ms(display, HSW_PWR_WELL_CTL2, HSW_PWR_WELL_CTL_STATE(0), 1) != 0) {
+
+		}
+		
+		gen9_wait_for_power_well_fuses(display, SKL_PG1);
+		that->PG1=1;
+	}
+
+
+	intel_de_rmw(display, HSW_PWR_WELL_CTL2, 0, HSW_PWR_WELL_CTL_REQ(1));
+	if (intel_de_wait_for_set_ms(display, HSW_PWR_WELL_CTL2, HSW_PWR_WELL_CTL_STATE(1), 1) != 0) {
+
+	}
+	
+	gen9_wait_for_power_well_fuses(display, SKL_PG2);
+	that->PG2=1;
+	
+	callback->orgSetCDClockFrequency(that->contr, getMember<u64>(that->contr, kexttglp ? 0xe90 : kexttglp ? 0xea0 : 0xea8)/*that->contr->fPendingCDClockFrequency*/);
+	
+	if (DISPLAY_VER(display) == 12 || display->platform.dg2)
+		gen12_dbuf_slices_config(display);
+
+	gen9_dbuf_enable(display);
+	
+	icl_mbus_init(display);
+
+	if (DISPLAY_VER(display) >= 12)
+		tgl_bw_buddy_init(display);
+	
+	/* Wa_14011508470:tgl,dg1,rkl,adl-s,adl-p,dg2 */
+	if (intel_display_wa(display, INTEL_DISPLAY_WA_14011508470))
+		intel_de_rmw(display, GEN11_CHICKEN_DCPR_2, 0,
+				 DCPR_CLEAR_MEMSTAT_DIS | DCPR_SEND_RESP_IMM |
+				 DCPR_MASK_LPMODE | DCPR_MASK_MAXLATENCY_MEMUP_CLR);
+
+	/* Wa_14011503030:xelpd */
+	if (intel_display_wa(display, INTEL_DISPLAY_WA_14011503030))
+		intel_de_write(display, XELPD_DISPLAY_ERR_FATAL_MASK, ~0);
+
+	/* Wa_15013987218 */
+	if (intel_display_wa(display, INTEL_DISPLAY_WA_15013987218)) {
+		intel_de_rmw(display, SOUTH_DSPCLK_GATE_D,
+				 0, PCH_GMBUSUNIT_CLOCK_GATE_DISABLE);
+		intel_de_rmw(display, SOUTH_DSPCLK_GATE_D,
+				 PCH_GMBUSUNIT_CLOCK_GATE_DISABLE, 0);
+	}
+	
+	
+	
+//skl_mbus_sanitize
+/*	struct intel_dbuf_state dbuf_state;
+	
+	dbuf_state.joined_mbus = false;
+	
+	if (HAS_MBUS_JOINING(display))
+		dbuf_state.joined_mbus = intel_de_read(display, MBUS_CTL) & MBUS_JOIN;
+	
+	//tgl_allowed_dbufs
+	dbuf_state.active_pipes = BIT(PIPE_A);
+	
+	mbus_ctl_join_update(display, &dbuf_state, PIPE_A);
+	pipe_mbus_dbox_ctl_update(display, &dbuf_state);
+	
+	if (HAS_MBUS_JOINING(display))
+	intel_dbuf_mdclk_cdclk_ratio_update(display, 1,dbuf_state.joined_mbus);
+*/
+}
+
+
+int Gen11::probePortMode(struct intel_display *display, int port)
+{
+	u32 val;
+	int tc_port;
+	int local_tc_port;
+	u32 reg;
+
+	if (port < 3) return 1;
+
+	tc_port = port - 3;
+
+	// FIA0 (0x1638A0) handles TC1-TC4 (global 0-3)
+	// FIA1 (0x1648A0) handles TC5-TC6 (global 4-5)
+	if (tc_port < 4) {
+		reg = 0x1638A0;
+		local_tc_port = tc_port;
+	} else {
+		reg = 0x1648A0;
+		local_tc_port = tc_port - 4;
+	}
+
+	val = intel_de_read(display, reg);
+
+	if (val == 0xffffffff) return 0;
+
+	if (val & BIT(local_tc_port * 8 + 6)) return 2; // TBT mode
+
+	if (val & BIT(local_tc_port * 8 + 5)) return 3; // DP_ALT mode
+	
+	return 1;
+}
+
+void  Gen11::AppleIntelPowerWellinit(void *that0, void *param_1)
+{
+	struct intel_display *display = NBlue::callback->i915b->display;
+	u32 pg_state, ddi_state, aux_state, tbt_state;
+	int bootPipe;
+	int active_ddi = 0;
+	int i;
+	AppleIntelPowerWell0 *that=(AppleIntelPowerWell0*)that0;
+	
+	that->contr = param_1;
+
+	if (!kexticl) that->mmio = getMember<void *>(param_1, 0xc40);
+	that->powerwellalwaysON = 0;
+	
+	if (!kexticl){
+		memset(&that->fRefCountPG, 0, 0x14);
+		memset(&that->DDIA, 0, 0x24);
+		memset(&that->AUXA, 0, 0x24);
+	}
+	
+	//if ((that->contr->flags_ig & FB_FLAG_BOOST_PIXEL_FREQUENCY_LIMIT) != 0) {
+	if ((getMember<u32>(that->contr, kexticl ? 0xc10 : 0xc58) & FB_FLAG_BOOST_PIXEL_FREQUENCY_LIMIT) != 0) {
+		that->powerwellalwaysON = 1;
+	}
+
+
+	pg_state  = intel_de_read(display, HSW_PWR_WELL_CTL2);       // 0x45404 (PG1-PG5)
+	ddi_state = intel_de_read(display, ICL_PWR_WELL_CTL_DDI2);   // 0x45454 (DDI A/B/C/TC1-6)
+	aux_state = intel_de_read(display, ICL_PWR_WELL_CTL_AUX2);   // 0x45444 (AUX A/B/C/USBC1-6)
+	tbt_state = intel_de_read(display, TGL_PWR_WELL_CTL_AUX4);   // 0x45470 (AUX TBT1-6)
+
+
+	that->fRefCountPG = 1;
+
+	that->PG1 = (pg_state & (HSW_PWR_WELL_CTL_REQ(0) | HSW_PWR_WELL_CTL_STATE(0))) == (HSW_PWR_WELL_CTL_REQ(0) | HSW_PWR_WELL_CTL_STATE(0));
+	that->PG2 = (pg_state & (HSW_PWR_WELL_CTL_REQ(1) | HSW_PWR_WELL_CTL_STATE(1))) == (HSW_PWR_WELL_CTL_REQ(1) | HSW_PWR_WELL_CTL_STATE(1));
+	that->PG3 = (pg_state & (HSW_PWR_WELL_CTL_REQ(2) | HSW_PWR_WELL_CTL_STATE(2))) == (HSW_PWR_WELL_CTL_REQ(2) | HSW_PWR_WELL_CTL_STATE(2));
+	that->PG4 = (pg_state & (HSW_PWR_WELL_CTL_REQ(3) | HSW_PWR_WELL_CTL_STATE(3))) == (HSW_PWR_WELL_CTL_REQ(3) | HSW_PWR_WELL_CTL_STATE(3));
+
+	bool pg5_enabled = (pg_state & (HSW_PWR_WELL_CTL_REQ(4) | HSW_PWR_WELL_CTL_STATE(4))) == (HSW_PWR_WELL_CTL_REQ(4) | HSW_PWR_WELL_CTL_STATE(4));
+
+	if (that->PG2 && getMember<int>(param_1, kexticl ? 0xb38 : 0xb48 ) == 1) {
+		disableHWDC6(that->contr);
+		getMember<u32>(param_1, kexticl ? 0xc18 : 0xc24) = 0xffffffff;
+	}
+	/*if (that->PG2 && that->contr->dc6config == 1) {
+		that->contr->fDC6EnabledRefCount = 0xffffffff;
+	}*/
+
+	that->DDIA = (ddi_state & (HSW_PWR_WELL_CTL_REQ(0) | HSW_PWR_WELL_CTL_STATE(0))) == (HSW_PWR_WELL_CTL_REQ(0) | HSW_PWR_WELL_CTL_STATE(0));
+	that->DDIB = (ddi_state & (HSW_PWR_WELL_CTL_REQ(1) | HSW_PWR_WELL_CTL_STATE(1))) == (HSW_PWR_WELL_CTL_REQ(1) | HSW_PWR_WELL_CTL_STATE(1));
+	that->DDIC = (ddi_state & (HSW_PWR_WELL_CTL_REQ(2) | HSW_PWR_WELL_CTL_STATE(2))) == (HSW_PWR_WELL_CTL_REQ(2) | HSW_PWR_WELL_CTL_STATE(2));
+	that->TC1  = (ddi_state & (HSW_PWR_WELL_CTL_REQ(3) | HSW_PWR_WELL_CTL_STATE(3))) == (HSW_PWR_WELL_CTL_REQ(3) | HSW_PWR_WELL_CTL_STATE(3));
+	that->TC2  = (ddi_state & (HSW_PWR_WELL_CTL_REQ(4) | HSW_PWR_WELL_CTL_STATE(4))) == (HSW_PWR_WELL_CTL_REQ(4) | HSW_PWR_WELL_CTL_STATE(4));
+	that->TC3  = (ddi_state & (HSW_PWR_WELL_CTL_REQ(5) | HSW_PWR_WELL_CTL_STATE(5))) == (HSW_PWR_WELL_CTL_REQ(5) | HSW_PWR_WELL_CTL_STATE(5));
+	that->TC4  = (ddi_state & (HSW_PWR_WELL_CTL_REQ(6) | HSW_PWR_WELL_CTL_STATE(6))) == (HSW_PWR_WELL_CTL_REQ(6) | HSW_PWR_WELL_CTL_STATE(6));
+	that->TC5  = (ddi_state & (HSW_PWR_WELL_CTL_REQ(7) | HSW_PWR_WELL_CTL_STATE(7))) == (HSW_PWR_WELL_CTL_REQ(7) | HSW_PWR_WELL_CTL_STATE(7));
+	that->TC6  = (ddi_state & (HSW_PWR_WELL_CTL_REQ(8) | HSW_PWR_WELL_CTL_STATE(8))) == (HSW_PWR_WELL_CTL_REQ(8) | HSW_PWR_WELL_CTL_STATE(8));
+
+	that->AUXA   = (aux_state & (HSW_PWR_WELL_CTL_REQ(0) | HSW_PWR_WELL_CTL_STATE(0))) == (HSW_PWR_WELL_CTL_REQ(0) | HSW_PWR_WELL_CTL_STATE(0));
+	that->AUXB   = (aux_state & (HSW_PWR_WELL_CTL_REQ(1) | HSW_PWR_WELL_CTL_STATE(1))) == (HSW_PWR_WELL_CTL_REQ(1) | HSW_PWR_WELL_CTL_STATE(1));
+	that->AUXC   = (aux_state & (HSW_PWR_WELL_CTL_REQ(2) | HSW_PWR_WELL_CTL_STATE(2))) == (HSW_PWR_WELL_CTL_REQ(2) | HSW_PWR_WELL_CTL_STATE(2));
+	
+	
+	if (!kexticl){
+		that->auxTC1 = (aux_state & (HSW_PWR_WELL_CTL_REQ(3) | HSW_PWR_WELL_CTL_STATE(3))) == (HSW_PWR_WELL_CTL_REQ(3) | HSW_PWR_WELL_CTL_STATE(3));
+		that->auxTC2 = (aux_state & (HSW_PWR_WELL_CTL_REQ(4) | HSW_PWR_WELL_CTL_STATE(4))) == (HSW_PWR_WELL_CTL_REQ(4) | HSW_PWR_WELL_CTL_STATE(4));
+		that->AUXTC3 = (aux_state & (HSW_PWR_WELL_CTL_REQ(5) | HSW_PWR_WELL_CTL_STATE(5))) == (HSW_PWR_WELL_CTL_REQ(5) | HSW_PWR_WELL_CTL_STATE(5));
+		that->AUXTC4 = (aux_state & (HSW_PWR_WELL_CTL_REQ(6) | HSW_PWR_WELL_CTL_STATE(6))) == (HSW_PWR_WELL_CTL_REQ(6) | HSW_PWR_WELL_CTL_STATE(6));
+		that->AUXTC5 = (aux_state & (HSW_PWR_WELL_CTL_REQ(7) | HSW_PWR_WELL_CTL_STATE(7))) == (HSW_PWR_WELL_CTL_REQ(7) | HSW_PWR_WELL_CTL_STATE(7));
+		that->AUXTC6 = (aux_state & (HSW_PWR_WELL_CTL_REQ(8) | HSW_PWR_WELL_CTL_STATE(8))) == (HSW_PWR_WELL_CTL_REQ(8) | HSW_PWR_WELL_CTL_STATE(8));
+		
+		if ((tbt_state & (HSW_PWR_WELL_CTL_REQ(0) | HSW_PWR_WELL_CTL_STATE(0))) == (HSW_PWR_WELL_CTL_REQ(0) | HSW_PWR_WELL_CTL_STATE(0))) {
+			that->auxTC1 = 1;
+		}
+		if ((tbt_state & (HSW_PWR_WELL_CTL_REQ(1) | HSW_PWR_WELL_CTL_STATE(1))) == (HSW_PWR_WELL_CTL_REQ(1) | HSW_PWR_WELL_CTL_STATE(1))) {
+			that->auxTC2 = 1;
+		}
+		if ((tbt_state & (HSW_PWR_WELL_CTL_REQ(2) | HSW_PWR_WELL_CTL_STATE(2))) == (HSW_PWR_WELL_CTL_REQ(2) | HSW_PWR_WELL_CTL_STATE(2))) {
+			that->AUXTC3 = 1;
+		}
+		if ((tbt_state & (HSW_PWR_WELL_CTL_REQ(3) | HSW_PWR_WELL_CTL_STATE(3))) == (HSW_PWR_WELL_CTL_REQ(3) | HSW_PWR_WELL_CTL_STATE(3))) {
+			that->AUXTC4 = 1;
+		}
+		if ((tbt_state & (HSW_PWR_WELL_CTL_REQ(4) | HSW_PWR_WELL_CTL_STATE(4))) == (HSW_PWR_WELL_CTL_REQ(4) | HSW_PWR_WELL_CTL_STATE(4))) that->AUXTC5 = 1;
+		if ((tbt_state & (HSW_PWR_WELL_CTL_REQ(5) | HSW_PWR_WELL_CTL_STATE(5))) == (HSW_PWR_WELL_CTL_REQ(5) | HSW_PWR_WELL_CTL_STATE(5))) that->AUXTC6 = 1;
+	}
+
+	bootPipe = probeBootPipe(that->contr, (bool *)0x0, &active_ddi);
+	
+	
+	//if (bootPipe != 0xffff && that->PG1 == 0 && getMember<u32>(param_1, 0xd5c) /*that->contr->NumFrameBuffers*/ != 0) {
+	if (bootPipe != 0xffff && that->PG1 == 0){
+	enableDisplayEngine(that);
+	}
+
+	int max=kexticl ? 6:9;
+	for (i = 0; i < max; i++) {
+		if (i == active_ddi) {
+			if ((&that->AUXA)[i] != 0) {
+				// Combo PHYs (DDI A, B, C) use AUX A, B, C which are safe to leave enabled.
+				int port_type = probePortMode(display, i);
+				void *port=getPortByDDI(i);
+				
+				if (kexticl) getMember<int>(port, 0x565)=1;
+				setPortMode(port,port_type);
+				
+				if (i >= 3) {
+					if (port_type != 2) {
+						//drm_err(display->drm, "EFI should not enable AUX%d power well - overriding\n", i);
+						disablePowerWellAux(that, i);
+						(&that->AUXA)[i] = 0; // Clear local state
+					}
+				}
+			}
+		} else {
+			if ((&that->DDIA)[i] != 0) {
+				//drm_err(display->drm, "EFI should not enable DDI%d power well - overriding\n", i);
+				disablePowerWellDDI(that, i);
+				(&that->DDIA)[i] = 0; // Clear local state
+			}
+			if ((&that->AUXA)[i] != 0) {
+				//drm_err(display->drm, "EFI should not enable AUX%d power well - overriding\n", i);
+				disablePowerWellAux(that, i);
+				(&that->AUXA)[i] = 0; // Clear local state
+			}
+		}
+	}
+
+
+	if (bootPipe == 0) {
+		if (pg5_enabled) { that->PG1 = 2; disablePowerWellPG(that, 5); pg5_enabled = 0; }
+		if (that->PG4) { that->PG1 = 2; disablePowerWellPG(that, 4); that->PG4 = 0; }
+		if (that->PG3) { that->PG1 = 2; disablePowerWellPG(that, 3); that->PG3 = 0; }
+		if (that->PG2) { that->PG1 = 2; disablePowerWellPG(that, 2); that->PG2 = 0; }
+	}
+	else if (bootPipe == 1) {
+		if (pg5_enabled) { that->PG1 = 2; that->PG2 = 2; that->PG3 = 2; that->PG4 = 2; disablePowerWellPG(that, 5); pg5_enabled = 0; }
+		if (that->PG4) { that->PG1 = 2; that->PG2 = 2; that->PG3 = 2; disablePowerWellPG(that, 4); that->PG4 = 0; }
+	}
+	else if (bootPipe == 0xffff) {
+		if (pg5_enabled) { disablePowerWellPG(that, 5); pg5_enabled = 0; }
+		if (that->PG4) { disablePowerWellPG(that, 4); that->PG4 = 0; }
+		if (that->PG3) { disablePowerWellPG(that, 3); that->PG3 = 0; }
+		if (that->PG2) { disablePowerWellPG(that, 2); that->PG2 = 0; }
+		if (that->PG1) { disablePowerWellPG(that, 1); that->PG1 = 0; }
+	}
+
+	if (kexticl){
+		if (that->TC1 || that->TC2 || that->TC3 || that->TC4 || that->TC5 || that->TC6) {
+			tgl_tc_cold_request(display, true);
+		} else {
+			tgl_tc_cold_request(display, false);
+		}
+	}
+	if (!kexticl){
+		if (that->TC1 || that->TC2 || that->TC3 || that->TC4 || that->TC5 || that->TC6 ||
+			that->auxTC1 || that->auxTC2 || that->AUXTC3 || that->AUXTC4 || that->AUXTC5 || that->AUXTC6) {
+			tgl_tc_cold_request(display, true);
+		} else {
+			tgl_tc_cold_request(display, false);
+		}
+	}
+	if (that->powerwellalwaysON != '\0') {
+		overridePowerWellsState(that, true);
+	}
+}
+
+
+
+
+
+
+
+static int
+guc_mmio_reg_cmp(const void *a, const void *b)
+{
+	const struct guc_mmio_reg *ra = (const struct guc_mmio_reg *)a;
+	const struct guc_mmio_reg *rb = (const struct guc_mmio_reg *)b;
+
+	if (ra->offset > rb->offset)
+		return 1;
+	else if (ra->offset < rb->offset)
+		return -1;
+	
+	return 0;
+}
+
+static struct guc_mmio_reg *
+__mmio_reg_add(struct temp_regset *regset, struct guc_mmio_reg *reg)
+{
+	u32 pos = regset->storage_used;
+	struct guc_mmio_reg *slot;
+
+	if (pos >= regset->storage_max) {
+		size_t new_size  = ALIGN2((pos + 1) * sizeof(struct guc_mmio_reg), PAGE_SIZE);
+		size_t old_bytes = regset->storage_max * sizeof(*slot);
+
+		struct guc_mmio_reg *r =
+			(struct guc_mmio_reg *)IOMalloc(new_size);
+		if (!r)
+			return (struct guc_mmio_reg *)ERR_PTR(-ENOMEM);
+
+		if (regset->storage && regset->storage_used)
+			memcpy(r, regset->storage,
+				   regset->storage_used * sizeof(*slot));
+
+		if (!regset->registers)
+			regset->registers = r;
+		else
+			regset->registers = r + (regset->registers - regset->storage);
+
+		if (regset->storage)
+			IOFree(regset->storage, old_bytes);
+
+		regset->storage     = r;
+		regset->storage_max = new_size / sizeof(*slot);
+	}
+
+	slot = &regset->storage[pos];
+	regset->storage_used++;
+	*slot = *reg;
+
+	return slot;
+}
+
+static void *
+bsearch(const void *key, const void *base, size_t num, size_t size)
+{
+	const char *pivot;
+	int result;
+
+	while (num > 0) {
+		pivot = (const char *)base + (num >> 1) * size;
+		result = guc_mmio_reg_cmp(key, (const void *)pivot);
+
+		if (result == 0)
+			return (void *)pivot;
+
+		if (result > 0) {
+			base = pivot + size;
+			num--;
+		}
+		num >>= 1;
+	}
+
+	return NULL;
+}
+
+
+
+static long guc_mmio_reg_add(struct intel_gt *gt,
+					  struct temp_regset *regset,
+					  u32 offset, u32 flags)
+{
+	u32 count = regset->storage_used - (regset->registers - regset->storage);
+	struct guc_mmio_reg entry = {
+		.offset = offset,
+		.flags = flags,
+	};
+	struct guc_mmio_reg *slot;
+
+
+	if (bsearch(&entry, regset->registers, count, sizeof(entry)))
+		return 0;
+
+	slot = __mmio_reg_add(regset, &entry);
+	if (IS_ERR(slot))
+		return PTR_ERR(slot);
+
+	while (slot-- > regset->registers) {
+		//GEM_BUG_ON(slot[0].offset == slot[1].offset);
+		if (slot[1].offset > slot[0].offset)
+			break;
+
+		swap(slot[1], slot[0]);
+	}
+
+	return 0;
+}
+
+#define GUC_MMIO_REG_ADD(gt, regset, reg, masked) \
+	guc_mmio_reg_add(gt, \
+			 regset, \
+			 i915_mmio_reg_offset(reg), \
+			 (masked) ? GUC_REGSET_MASKED : 0)
+
+#define GUC_REGSET_STEERING(group, instance) ( \
+	FIELD_PREP(GUC_REGSET_STEERING_GROUP, (group)) | \
+	FIELD_PREP(GUC_REGSET_STEERING_INSTANCE, (instance)) | \
+	GUC_REGSET_NEEDS_STEERING \
+)
+
+static bool reg_needs_read_steering(struct intel_gt *gt,
+									u32 reg,
+					enum intel_steering_type type)
+{
+	u32 offset = i915_mmio_reg_offset(reg);
+	const struct intel_mmio_range *entry;
+
+	if ((!gt->steering_table[type]))
+		return false;
+
+	//if (IS_GSI_REG(offset))
+	//	offset += gt->uncore->gsi_offset;
+
+	for (entry = gt->steering_table[type]; entry->end; entry++) {
+		if (offset >= entry->start && offset <= entry->end)
+			return true;
+	}
+
+	return false;
+}
+
+static inline unsigned int
+intel_sseu_find_first_xehp_dss(const struct sseu_dev_info *sseu, int groupsize,
+				   int groupnum)
+{
+	return find_next_bit(sseu->subslice_mask.xehp,
+				 XEHP_BITMAP_BITS(sseu->subslice_mask),
+				 groupnum * groupsize);
+}
+
+static void get_nonterminated_steering(struct intel_gt *gt,
+					   enum intel_steering_type type,
+					   u8 *group, u8 *instance)
+{
+	u32 dss;
+
+	switch (type) {
+	case L3BANK:
+		*group = 0;		/* unused */
+		*instance = __ffs(gt->info.l3bank_mask);
+		break;
+	case MSLICE:
+		//GEM_WARN_ON(!HAS_MSLICE_STEERING(gt->i915));
+		*group = __ffs(gt->info.mslice_mask);
+		*instance = 0;	/* unused */
+		break;
+	case LNCF:
+
+		//GEM_WARN_ON(!HAS_MSLICE_STEERING(gt->i915));
+		*group = __ffs(gt->info.mslice_mask) << 1;
+		*instance = 0;	/* unused */
+		break;
+	case GAM:
+		*group = IS_DG2(gt->i915) ? 1 : 0;
+		*instance = 0;
+		break;
+	case DSS:
+		dss = intel_sseu_find_first_xehp_dss(&gt->info.sseu, 0, 0);
+		*group = dss / GEN_DSS_PER_GSLICE;
+		*instance = dss % GEN_DSS_PER_GSLICE;
+		break;
+	case INSTANCE0:
+		/*
+		 * There are a lot of MCR types for which instance (0, 0)
+		 * will always provide a non-terminated value.
+		 */
+		*group = 0;
+		*instance = 0;
+		break;
+	case OADDRM:
+		if ((VDBOX_MASK(gt) | VEBOX_MASK(gt) | gt->info.sfc_mask) & BIT(0))
+			*group = 0;
+		else
+			*group = 1;
+		*instance = 0;
+		break;
+	default:
+		*group = 0;
+		*instance = 0;
+	}
+}
+
+void intel_gt_mcr_get_nonterminated_steering(struct intel_gt *gt,
+						 u32 reg,
+						 u8 *group, u8 *instance)
+{
+	int type;
+
+	
+	for (type = 0; type < static_cast<int>(NUM_STEERING_TYPES); type++) {
+		if (reg_needs_read_steering(gt, reg, static_cast<enum intel_steering_type>(type))) {
+			get_nonterminated_steering(gt, static_cast<enum intel_steering_type>(type), group, instance);
+			return;
+		}
+	}
+
+	*group = gt->default_steering.groupid;
+	*instance = gt->default_steering.instanceid;
+}
+
+static long guc_mcr_reg_add(struct intel_gt *gt,
+				struct temp_regset *regset,
+							u32 reg, u32 flags)
+{
+	u8 group, inst;
+
+	intel_gt_mcr_get_nonterminated_steering(gt, reg, &group, &inst);
+	flags |= GUC_REGSET_STEERING(group, inst);
+
+	return guc_mmio_reg_add(gt, regset, i915_mmio_reg_offset(reg), flags);
+}
+
+#define GUC_MCR_REG_ADD(gt, regset, reg, masked) \
+	guc_mcr_reg_add(gt, \
+			 regset, \
+			 (reg), \
+			 (masked) ? GUC_REGSET_MASKED : 0)
+
+static int guc_mmio_regset_init(struct temp_regset *regset,
+				struct intel_engine_cs *engine)
+{
+	struct intel_gt *gt = engine->gt;
+	const u32 base = engine->mmio_base;
+	struct i915_wa_list *wal = &engine->wa_list;
+	struct i915_wa *wa;
+	unsigned int i;
+	int ret = 0;
+
+	regset->registers = regset->storage + regset->storage_used;
+
+	ret |= GUC_MMIO_REG_ADD(gt, regset, RING_MODE_GEN7(base), true);
+	ret |= GUC_MMIO_REG_ADD(gt, regset, RING_HWS_PGA(base), false);
+	ret |= GUC_MMIO_REG_ADD(gt, regset, RING_IMR(base), false);
+
+	if ((engine->flags & I915_ENGINE_FIRST_RENDER_COMPUTE) &&
+		CCS_MASK(engine->gt))
+		ret |= GUC_MMIO_REG_ADD(gt, regset, GEN12_RCU_MODE, true);
+
+
+	for (i = 0, wa = wal->list; i < wal->count; i++, wa++)
+		ret |= GUC_MCR_REG_ADD(gt, regset, wa->mcr_reg, wa->masked_reg);
+
+	for (i = 0; i < RING_MAX_NONPRIV_SLOTS; i++)
+		ret |= GUC_MMIO_REG_ADD(gt, regset,
+					RING_FORCE_TO_NONPRIV(base, i),
+					false);
+
+	for (i = 0; i < LNCFCMOCS_REG_COUNT; i++)
+		if (GRAPHICS_VER_FULL(engine->i915) >= IP_VER(12, 55))
+			ret |= GUC_MCR_REG_ADD(gt, regset, XEHP_LNCFCMOCS(i), false);
+		else
+			ret |= GUC_MMIO_REG_ADD(gt, regset, GEN9_LNCFCMOCS(i), false);
+
+
+	
+	if (GRAPHICS_VER(engine->i915) >= 12) {
+		ret |= GUC_MCR_REG_ADD(gt, regset, MCR_REG(i915_mmio_reg_offset(EU_PERF_CNTL0)), false);
+		ret |= GUC_MCR_REG_ADD(gt, regset, MCR_REG(i915_mmio_reg_offset(EU_PERF_CNTL1)), false);
+		ret |= GUC_MCR_REG_ADD(gt, regset, MCR_REG(i915_mmio_reg_offset(EU_PERF_CNTL2)), false);
+		ret |= GUC_MCR_REG_ADD(gt, regset, MCR_REG(i915_mmio_reg_offset(EU_PERF_CNTL3)), false);
+		ret |= GUC_MCR_REG_ADD(gt, regset, MCR_REG(i915_mmio_reg_offset(EU_PERF_CNTL4)), false);
+		ret |= GUC_MCR_REG_ADD(gt, regset, MCR_REG(i915_mmio_reg_offset(EU_PERF_CNTL5)), false);
+		ret |= GUC_MCR_REG_ADD(gt, regset, MCR_REG(i915_mmio_reg_offset(EU_PERF_CNTL6)), false);
+	}
+
+	return ret ? -1 : 0;
+}
+
+static long guc_mmio_reg_state_create(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc->gt;
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id2;
+	struct temp_regset temp_set = {};
+	long total = 0;
+	long ret;
+
+	for_each_engine(engine, gt, id2) {
+		u32 used = temp_set.storage_used;
+
+		ret = guc_mmio_regset_init(&temp_set, engine);
+		if (ret < 0)
+			goto fail_regset_init;
+
+		guc->ads_regset_count[id2] = temp_set.storage_used - used;
+		total += guc->ads_regset_count[id2];
+	}
+
+	guc->ads_regset = temp_set.storage;
+
+	return total * sizeof(struct guc_mmio_reg);
+
+fail_regset_init:
+	//kfree(temp_set.storage);
+	if (temp_set.storage)
+			IOFree(temp_set.storage, temp_set.storage_max * sizeof(struct guc_mmio_reg));
+	
+	return ret;
+}
+
+
+
+
+static inline void iosys_map_incr(struct iosys_map *map, size_t incr)
+{
+	if (map->is_iomem)
+		map->vaddr_iomem = static_cast<decltype(map->vaddr_iomem)>(static_cast<uint8_t*>(map->vaddr_iomem) + incr);
+	else
+		map->vaddr = static_cast<decltype(map->vaddr)>(static_cast<uint8_t*>(map->vaddr) + incr);
+}
+
+#define IOSYS_MAP_INIT_OFFSET(map_, offset_) ({				\
+	struct iosys_map copy_ = *map_;					\
+	iosys_map_incr(&copy_, offset_);				\
+	copy_;								\
+})
+
+static inline bool iosys_map_is_null(const struct iosys_map *map)
+{
+	if (map->is_iomem)
+		return !map->vaddr_iomem;
+	return !map->vaddr;
+}
+static inline void iosys_map_set_vaddr(struct iosys_map *map, void *vaddr)
+{
+	map->vaddr = vaddr;
+	map->is_iomem = false;
+}
+
+static u32 guc_ads_regset_size(struct intel_guc *guc)
+{
+	//GEM_BUG_ON(!guc->ads_regset_size);
+	return guc->ads_regset_size;
+}
+
+static u32 guc_ads_regset_offset(struct intel_guc *guc)
+{
+	return offsetof(struct __guc_ads_blob, regset);
+}
+
+static u32 guc_ads_golden_ctxt_offset(struct intel_guc *guc)
+{
+	u32 offset;
+
+	offset = guc_ads_regset_offset(guc) +
+		 guc_ads_regset_size(guc);
+
+	return PAGE_ALIGN(offset);
+}
+
+
+
+
+
+
+
+static void fill_engine_enable_masks(struct intel_gt *gt,
+					 struct iosys_map *info_map)
+{
+	info_map_write(info_map, engine_enabled_masks[GUC_RENDER_CLASS], RCS_MASK(gt));
+	info_map_write(info_map, engine_enabled_masks[GUC_COMPUTE_CLASS], CCS_MASK(gt));
+	info_map_write(info_map, engine_enabled_masks[GUC_BLITTER_CLASS], BCS_MASK(gt));
+	info_map_write(info_map, engine_enabled_masks[GUC_VIDEO_CLASS], VDBOX_MASK(gt));
+	info_map_write(info_map, engine_enabled_masks[GUC_VIDEOENHANCE_CLASS], VEBOX_MASK(gt));
+
+	if (gt->engine[GSC0])
+		info_map_write(info_map, engine_enabled_masks[GUC_GSC_OTHER_CLASS],
+				   BIT(gt->engine[GSC0]->instance));
+}
+
+static int guc_prep_golden_context(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc->gt;
+	u32 addr_ggtt, offset;
+	u32 total_size = 0, alloc_size, real_size;
+	u8 engine_class, guc_class;
+	struct guc_gt_system_info local_info;
+	struct iosys_map info_map;
+
+
+	if (!iosys_map_is_null(&guc->ads_map)) {
+		offset = guc_ads_golden_ctxt_offset(guc);
+		addr_ggtt = intel_guc_ggtt_offset(guc, guc->ads_vma) + offset;
+		info_map = IOSYS_MAP_INIT_OFFSET(&guc->ads_map,
+						 offsetof(struct __guc_ads_blob, system_info));
+	} else {
+		memset(&local_info, 0, sizeof(local_info));
+		iosys_map_set_vaddr(&info_map, &local_info);
+		fill_engine_enable_masks(gt, &info_map);
+	}
+
+	for (engine_class = 0; engine_class <= MAX_ENGINE_CLASS; ++engine_class) {
+		guc_class = engine_class_to_guc_class(engine_class);
+
+		if (!info_map_read(&info_map, engine_enabled_masks[guc_class]))
+			continue;
+
+		real_size = intel_engine_context_size(gt, engine_class);
+		alloc_size = PAGE_ALIGN(real_size);
+		total_size += alloc_size;
+
+		if (iosys_map_is_null(&guc->ads_map))
+			continue;
+
+
+		ads_blob_write(guc, ads.eng_state_size[guc_class],
+				   real_size - LRC_SKIP_SIZE(gt->i915));
+		ads_blob_write(guc, ads.golden_context_lrca[guc_class],
+				   addr_ggtt);
+
+		addr_ggtt += alloc_size;
+	}
+
+//	if (guc->ads_golden_ctxt_size)
+	//	GEM_BUG_ON(guc->ads_golden_ctxt_size != total_size);
+
+	return total_size;
+}
+
+static u32 guc_ads_golden_ctxt_size(struct intel_guc *guc)
+{
+	return PAGE_ALIGN(guc->ads_golden_ctxt_size);
+}
+
+static u32 guc_ads_waklv_size(struct intel_guc *guc)
+{
+	return PAGE_ALIGN(guc->ads_waklv_size);
+}
+
+static u32 guc_ads_capture_size(struct intel_guc *guc)
+{
+	return PAGE_ALIGN(guc->ads_capture_size);
+}
+
+static u32 guc_ads_private_data_size(struct intel_guc *guc)
+{
+	return PAGE_ALIGN(guc->fw.private_data_size);
+}
+
+
+static u32 guc_ads_waklv_offset(struct intel_guc *guc)
+{
+	u32 offset;
+
+	offset = guc_ads_golden_ctxt_offset(guc) +
+		 guc_ads_golden_ctxt_size(guc);
+
+	return PAGE_ALIGN(offset);
+}
+static u32 guc_ads_capture_offset(struct intel_guc *guc)
+{
+	u32 offset;
+
+	offset = guc_ads_waklv_offset(guc) +
+		 guc_ads_waklv_size(guc);
+
+	return PAGE_ALIGN(offset);
+}
+
+
+int
+intel_guc_capture_getnullheader(struct intel_guc *guc,
+				void **outptr, size_t *size)
+{
+	struct intel_guc_state_capture *gc = guc->capture;
+	int tmp = sizeof(u32) * 4;
+	void *null_header;
+
+	if (gc->ads_null_cache) {
+		*outptr = gc->ads_null_cache;
+		*size = tmp;
+		return 0;
+	}
+
+	null_header = IOMalloc(tmp);//kzalloc(tmp, GFP_KERNEL);
+	if (!null_header) {
+		return -ENOMEM;
+	}
+
+	gc->ads_null_cache = null_header;
+	*outptr = null_header;
+	*size = tmp;
+
+	return 0;
+}
+
+static inline void iosys_map_memcpy_to(struct iosys_map *dst, size_t dst_offset,
+					   const void *src, size_t len)
+{
+	//if (dst->is_iomem)
+	//	memcpy_toio(dst->vaddr_iomem + dst_offset, src, len);
+	//else
+		memcpy((u8*)dst->vaddr + dst_offset, src, len);
+}
+
+static u32 guc_get_capture_engine_mask(struct iosys_map *info_map, u32 capture_class)
+{
+	u32 mask;
+
+	switch (capture_class) {
+	case GUC_CAPTURE_LIST_CLASS_RENDER_COMPUTE:
+		mask = info_map_read(info_map, engine_enabled_masks[GUC_RENDER_CLASS]);
+		mask |= info_map_read(info_map, engine_enabled_masks[GUC_COMPUTE_CLASS]);
+		break;
+
+	case GUC_CAPTURE_LIST_CLASS_VIDEO:
+		mask = info_map_read(info_map, engine_enabled_masks[GUC_VIDEO_CLASS]);
+		break;
+
+	case GUC_CAPTURE_LIST_CLASS_VIDEOENHANCE:
+		mask = info_map_read(info_map, engine_enabled_masks[GUC_VIDEOENHANCE_CLASS]);
+		break;
+
+	case GUC_CAPTURE_LIST_CLASS_BLITTER:
+		mask = info_map_read(info_map, engine_enabled_masks[GUC_BLITTER_CLASS]);
+		break;
+
+	case GUC_CAPTURE_LIST_CLASS_GSC_OTHER:
+		mask = info_map_read(info_map, engine_enabled_masks[GUC_GSC_OTHER_CLASS]);
+		break;
+
+	default:
+		mask = 0;
+	}
+
+	return mask;
+}
+
+static const struct __guc_mmio_reg_descr_group *
+guc_capture_get_one_list(const struct __guc_mmio_reg_descr_group *reglists,
+			 u32 owner, u32 type, u32 id)
+{
+	int i;
+
+	if (!reglists)
+		return NULL;
+
+	for (i = 0; reglists[i].list; ++i) {
+		if (reglists[i].owner == owner && reglists[i].type == type &&
+			(reglists[i].engine == id || reglists[i].type == GUC_CAPTURE_LIST_TYPE_GLOBAL))
+			return &reglists[i];
+	}
+
+	return NULL;
+}
+
+static struct __guc_mmio_reg_descr_group *
+guc_capture_get_one_ext_list(struct __guc_mmio_reg_descr_group *reglists,
+				 u32 owner, u32 type, u32 id)
+{
+	int i;
+
+	if (!reglists)
+		return NULL;
+
+	for (i = 0; reglists[i].extlist; ++i) {
+		if (reglists[i].owner == owner && reglists[i].type == type &&
+			(reglists[i].engine == id || reglists[i].type == GUC_CAPTURE_LIST_TYPE_GLOBAL))
+			return &reglists[i];
+	}
+
+	return NULL;
+}
+
+static int
+guc_cap_list_num_regs(struct intel_guc_state_capture *gc, u32 owner, u32 type, u32 classid)
+{
+	const struct __guc_mmio_reg_descr_group *match;
+	struct __guc_mmio_reg_descr_group *matchext;
+	int num_regs;
+
+	match = guc_capture_get_one_list(gc->reglists, owner, type, classid);
+	if (!match)
+		return 0;
+
+	num_regs = match->num_regs;
+
+	matchext = guc_capture_get_one_ext_list(gc->extlists, owner, type, classid);
+	if (matchext)
+		num_regs += matchext->num_regs;
+
+	return num_regs;
+}
+
+static int
+guc_capture_getlistsize(struct intel_guc *guc, u32 owner, u32 type, u32 classid,
+			size_t *size, bool is_purpose_est)
+{
+	struct intel_guc_state_capture *gc = guc->capture;
+	struct __guc_capture_ads_cache *cache = &gc->ads_cache[owner][type][classid];
+	int num_regs;
+
+	if (!gc->reglists) {
+		return -ENODEV;
+	}
+
+	if (cache->is_valid) {
+		*size = cache->size;
+		return cache->status;
+	}
+
+	if (!is_purpose_est && owner == GUC_CAPTURE_LIST_INDEX_PF &&
+		!guc_capture_get_one_list(gc->reglists, owner, type, classid)) {
+
+		return -ENODATA;
+	}
+
+	num_regs = guc_cap_list_num_regs(gc, owner, type, classid);
+
+	if (!num_regs)
+		return -ENODATA;
+
+	if (size)
+		*size = PAGE_ALIGN((sizeof(struct guc_debug_capture_list)) +
+				   (num_regs * sizeof(struct guc_mmio_reg)));
+
+	return 0;
+}
+
+int
+intel_guc_capture_getlistsize(struct intel_guc *guc, u32 owner, u32 type, u32 classid,
+				  size_t *size)
+{
+	return guc_capture_getlistsize(guc, owner, type, classid, size, false);
+}
+
+static int
+guc_capture_list_init(struct intel_guc *guc, u32 owner, u32 type, u32 classid,
+			  struct guc_mmio_reg *ptr, u16 num_entries)
+{
+	u32 i = 0, j = 0;
+	const struct __guc_mmio_reg_descr_group *reglists = guc->capture->reglists;
+	struct __guc_mmio_reg_descr_group *extlists = guc->capture->extlists;
+	const struct __guc_mmio_reg_descr_group *match;
+	struct __guc_mmio_reg_descr_group *matchext;
+
+	if (!reglists)
+		return -ENODEV;
+
+	match = guc_capture_get_one_list(reglists, owner, type, classid);
+	if (!match)
+		return -ENODATA;
+
+	for (i = 0; i < num_entries && i < match->num_regs; ++i) {
+		ptr[i].offset = match->list[i].reg;
+		ptr[i].value = 0xDEADF00D;
+		ptr[i].flags = match->list[i].flags;
+		ptr[i].mask = match->list[i].mask;
+	}
+
+	matchext = guc_capture_get_one_ext_list(extlists, owner, type, classid);
+	if (matchext) {
+		for (i = match->num_regs, j = 0; i < num_entries &&
+			 i < (match->num_regs + matchext->num_regs) &&
+			j < matchext->num_regs; ++i, ++j) {
+			ptr[i].offset = matchext->extlist[j].reg;
+			ptr[i].value = 0xDEADF00D;
+			ptr[i].flags = matchext->extlist[j].flags;
+			ptr[i].mask = matchext->extlist[j].mask;
+		}
+	}
+
+
+	return 0;
+}
+
+static void
+guc_capture_init_node(struct intel_guc *guc, struct __guc_capture_parsed_output *node)
+{
+	struct guc_mmio_reg *tmp[GUC_CAPTURE_LIST_TYPE_MAX];
+	int i;
+
+	for (i = 0; i < GUC_CAPTURE_LIST_TYPE_MAX; ++i) {
+		tmp[i] = node->reginfo[i].regs;
+		memset(tmp[i], 0, sizeof(struct guc_mmio_reg) *
+			   guc->capture->max_mmio_per_node);
+	}
+	memset(node, 0, sizeof(*node));
+	for (i = 0; i < GUC_CAPTURE_LIST_TYPE_MAX; ++i)
+		node->reginfo[i].regs = tmp[i];
+
+	INIT_LIST_HEAD(&node->link);
+}
+
+static struct __guc_capture_parsed_output *
+guc_capture_alloc_one_node(struct intel_guc *guc)
+{
+	struct __guc_capture_parsed_output *new2;
+	int i;
+	size_t regs_size = sizeof(struct guc_mmio_reg) * guc->capture->max_mmio_per_node;
+
+	new2 = (struct __guc_capture_parsed_output *)IOMallocZero(sizeof(struct __guc_capture_parsed_output));
+	if (!new2)
+		return NULL;
+
+	for (i = 0; i < GUC_CAPTURE_LIST_TYPE_MAX; ++i) {
+		new2->reginfo[i].regs = (struct guc_mmio_reg *)IOMallocZero(regs_size);
+		if (!new2->reginfo[i].regs) {
+			while (i) {
+				IOFree(new2->reginfo[--i].regs, regs_size);
+			}
+			IOFree(new2, sizeof(*new2));
+			return NULL;
+		}
+	}
+	guc_capture_init_node(guc, new2);
+
+	return new2;
+}
+
+static void
+guc_capture_add_node_to_list(struct __guc_capture_parsed_output *node,
+				 struct list_head *list)
+{
+	list_add_tail(&node->link, list);
+}
+
+static void
+guc_capture_add_node_to_cachelist(struct intel_guc_state_capture *gc,
+				  struct __guc_capture_parsed_output *node)
+{
+	guc_capture_add_node_to_list(node, &gc->cachelist);
+}
+
+static void
+__guc_capture_create_prealloc_nodes(struct intel_guc *guc)
+{
+	struct __guc_capture_parsed_output *node = NULL;
+	int i;
+
+	for (i = 0; i < PREALLOC_NODES_MAX_COUNT; ++i) {
+		node = guc_capture_alloc_one_node(guc);
+		if (!node) {
+			/* dont free the priors, use what we got and cleanup at shutdown */
+			return;
+		}
+		guc_capture_add_node_to_cachelist(guc->capture, node);
+	}
+}
+
+static int
+guc_get_max_reglist_count(struct intel_guc *guc)
+{
+	int i, j, k, tmp, maxregcount = 0;
+
+	for (i = 0; i < GUC_CAPTURE_LIST_INDEX_MAX; ++i) {
+		for (j = 0; j < GUC_CAPTURE_LIST_TYPE_MAX; ++j) {
+			for (k = 0; k < GUC_MAX_ENGINE_CLASSES; ++k) {
+				if (j == GUC_CAPTURE_LIST_TYPE_GLOBAL && k > 0)
+					continue;
+
+				tmp = guc_cap_list_num_regs(guc->capture, i, j, k);
+				if (tmp > maxregcount)
+					maxregcount = tmp;
+			}
+		}
+	}
+	if (!maxregcount)
+		maxregcount = PREALLOC_NODES_DEFAULT_NUMREGS;
+
+	return maxregcount;
+}
+
+static void
+guc_capture_create_prealloc_nodes(struct intel_guc *guc)
+{
+	if (guc->capture->max_mmio_per_node)
+		return;
+
+	guc->capture->max_mmio_per_node = guc_get_max_reglist_count(guc);
+	__guc_capture_create_prealloc_nodes(guc);
+}
+
+int
+intel_guc_capture_getlist(struct intel_guc *guc, u32 owner, u32 type, u32 classid,
+			  void **outptr)
+{
+	struct intel_guc_state_capture *gc = guc->capture;
+	struct __guc_capture_ads_cache *cache = &gc->ads_cache[owner][type][classid];
+	struct guc_debug_capture_list *listnode;
+	int ret, num_regs;
+	u8 *caplist, *tmp;
+	size_t size = 0;
+
+	if (!gc->reglists)
+		return -ENODEV;
+
+	if (cache->is_valid) {
+		*outptr = cache->ptr;
+		return cache->status;
+	}
+
+	guc_capture_create_prealloc_nodes(guc);
+
+	ret = intel_guc_capture_getlistsize(guc, owner, type, classid, &size);
+	if (ret) {
+		cache->is_valid = true;
+		cache->ptr = NULL;
+		cache->size = 0;
+		cache->status = ret;
+		return ret;
+	}
+
+	caplist = (u8*)IOMalloc(size);
+	if (!caplist) {
+		return -ENOMEM;
+	}
+
+	/* populate capture list header */
+	tmp = caplist;
+	num_regs = guc_cap_list_num_regs(guc->capture, owner, type, classid);
+	listnode = (struct guc_debug_capture_list *)tmp;
+	listnode->header.info = FIELD_PREP(GUC_CAPTURELISTHDR_NUMDESCR, (u32)num_regs);
+
+	/* populate list of register descriptor */
+	tmp += sizeof(struct guc_debug_capture_list);
+	guc_capture_list_init(guc, owner, type, classid, (struct guc_mmio_reg *)tmp, num_regs);
+
+	/* cache this list */
+	cache->is_valid = true;
+	cache->ptr = caplist;
+	cache->size = size;
+	cache->status = 0;
+
+	*outptr = caplist;
+
+	return 0;
+}
+
+static int
+guc_capture_prep_lists(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc->gt;
+	u32 ads_ggtt, capture_offset, null_ggtt, total_size = 0;
+	struct guc_gt_system_info local_info;
+	struct iosys_map info_map;
+	bool ads_is_mapped;
+	size_t size = 0;
+	void *ptr;
+	int i, j;
+
+	ads_is_mapped = !iosys_map_is_null(&guc->ads_map);
+	if (ads_is_mapped) {
+		capture_offset = guc_ads_capture_offset(guc);
+		ads_ggtt = intel_guc_ggtt_offset(guc, guc->ads_vma);
+		info_map = IOSYS_MAP_INIT_OFFSET(&guc->ads_map,
+						 offsetof(struct __guc_ads_blob, system_info));
+	} else {
+		memset(&local_info, 0, sizeof(local_info));
+		iosys_map_set_vaddr(&info_map, &local_info);
+		fill_engine_enable_masks(gt, &info_map);
+	}
+
+	total_size = PAGE_SIZE;
+	if (ads_is_mapped) {
+		if (!intel_guc_capture_getnullheader(guc, &ptr, &size))
+			iosys_map_memcpy_to(&guc->ads_map, capture_offset, ptr, size);
+		null_ggtt = ads_ggtt + capture_offset;
+		capture_offset += PAGE_SIZE;
+	}
+
+	for (i = 0; i < GUC_CAPTURE_LIST_INDEX_MAX; i++) {
+		for (j = 0; j < GUC_MAX_ENGINE_CLASSES; j++) {
+			u32 engine_mask = guc_get_capture_engine_mask(&info_map, j);
+
+			if (!engine_mask) {
+				if (ads_is_mapped) {
+					ads_blob_write(guc, ads.capture_class[i][j], null_ggtt);
+					ads_blob_write(guc, ads.capture_instance[i][j], null_ggtt);
+				}
+				continue;
+			}
+			if (intel_guc_capture_getlistsize(guc, i,
+							  GUC_CAPTURE_LIST_TYPE_ENGINE_CLASS,
+							  j, &size)) {
+				if (ads_is_mapped)
+					ads_blob_write(guc, ads.capture_class[i][j], null_ggtt);
+				goto engine_instance_list;
+			}
+			total_size += size;
+			if (ads_is_mapped) {
+				if (total_size > guc->ads_capture_size ||
+					intel_guc_capture_getlist(guc, i,
+								  GUC_CAPTURE_LIST_TYPE_ENGINE_CLASS,
+								  j, &ptr)) {
+					ads_blob_write(guc, ads.capture_class[i][j], null_ggtt);
+					continue;
+				}
+				ads_blob_write(guc, ads.capture_class[i][j], ads_ggtt +
+						   capture_offset);
+				iosys_map_memcpy_to(&guc->ads_map, capture_offset, ptr, size);
+				capture_offset += size;
+			}
+engine_instance_list:
+			if (intel_guc_capture_getlistsize(guc, i,
+							  GUC_CAPTURE_LIST_TYPE_ENGINE_INSTANCE,
+							  j, &size)) {
+				if (ads_is_mapped)
+					ads_blob_write(guc, ads.capture_instance[i][j], null_ggtt);
+				continue;
+			}
+			total_size += size;
+			if (ads_is_mapped) {
+				if (total_size > guc->ads_capture_size ||
+					intel_guc_capture_getlist(guc, i,
+								  GUC_CAPTURE_LIST_TYPE_ENGINE_INSTANCE,
+								  j, &ptr)) {
+					ads_blob_write(guc, ads.capture_instance[i][j], null_ggtt);
+					continue;
+				}
+				ads_blob_write(guc, ads.capture_instance[i][j], ads_ggtt +
+						   capture_offset);
+				iosys_map_memcpy_to(&guc->ads_map, capture_offset, ptr, size);
+				capture_offset += size;
+			}
+		}
+		if (intel_guc_capture_getlistsize(guc, i, GUC_CAPTURE_LIST_TYPE_GLOBAL, 0, &size)) {
+			if (ads_is_mapped)
+				ads_blob_write(guc, ads.capture_global[i], null_ggtt);
+			continue;
+		}
+		total_size += size;
+		if (ads_is_mapped) {
+			if (total_size > guc->ads_capture_size ||
+				intel_guc_capture_getlist(guc, i, GUC_CAPTURE_LIST_TYPE_GLOBAL, 0,
+							  &ptr)) {
+				ads_blob_write(guc, ads.capture_global[i], null_ggtt);
+				continue;
+			}
+			ads_blob_write(guc, ads.capture_global[i], ads_ggtt + capture_offset);
+			iosys_map_memcpy_to(&guc->ads_map, capture_offset, ptr, size);
+			capture_offset += size;
+		}
+	}
+
+
+	return PAGE_ALIGN(total_size);
+}
+
+static int guc_prep_waklv(struct intel_guc *guc)
+{
+	return PAGE_SIZE;
+}
+
+static u32 guc_ads_private_data_offset(struct intel_guc *guc)
+{
+	u32 offset;
+
+	offset = guc_ads_capture_offset(guc) +
+		 guc_ads_capture_size(guc);
+
+	return PAGE_ALIGN(offset);
+}
+
+static u32 guc_ads_blob_size(struct intel_guc *guc)
+{
+	return guc_ads_private_data_offset(guc) +
+		   guc_ads_private_data_size(guc);
+}
+
+static void guc_policies_init(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc->gt;
+	struct drm_i915_private *i915 = gt->i915;
+	u32 global_flags = 0;
+
+	ads_blob_write(guc, policies.dpc_promote_time,
+			   GLOBAL_POLICY_DEFAULT_DPC_PROMOTE_TIME_US);
+	ads_blob_write(guc, policies.max_num_work_items,
+			   GLOBAL_POLICY_MAX_NUM_WI);
+
+	//if (i915->params.reset < 2) //2=engine reset [default])
+	//	global_flags |= GLOBAL_POLICY_DISABLE_ENGINE_RESET;
+
+	ads_blob_write(guc, policies.global_flags, global_flags);
+	ads_blob_write(guc, policies.is_valid, 1);
+}
+
+
+static void guc_mapping_table_init(struct intel_gt *gt,
+				   struct iosys_map *info_map)
+{
+	unsigned int i, j;
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id2;
+
+	for (i = 0; i < GUC_MAX_ENGINE_CLASSES; ++i)
+		for (j = 0; j < GUC_MAX_INSTANCES_PER_CLASS; ++j)
+			info_map_write(info_map, mapping_table[i][j],
+					   GUC_MAX_INSTANCES_PER_CLASS);
+
+	for_each_engine(engine, gt, id2) {
+		u8 guc_class = engine_class_to_guc_class(engine->classb);
+
+		info_map_write(info_map, mapping_table[guc_class][ilog2(engine->logical_mask)],
+				   engine->instance);
+	}
+}
+
+static void guc_mmio_reg_state_init(struct intel_guc *guc)
+{
+	struct intel_gt *gt = guc->gt;
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id2;
+	u32 addr_ggtt, offset;
+
+	offset = guc_ads_regset_offset(guc);
+	addr_ggtt = intel_guc_ggtt_offset(guc, guc->ads_vma) + offset;
+
+	iosys_map_memcpy_to(&guc->ads_map, offset, guc->ads_regset,
+				guc->ads_regset_size);
+
+	for_each_engine(engine, gt, id2) {
+		u32 count = guc->ads_regset_count[id2];
+		u8 guc_class;
+
+		//GEM_BUG_ON(engine->instance >= GUC_MAX_INSTANCES_PER_CLASS);
+
+		guc_class = engine_class_to_guc_class(engine->classb);
+
+		if (!count) {
+			ads_blob_write(guc,
+					   ads.reg_state_list[guc_class][engine->instance].address,
+					   0);
+			ads_blob_write(guc,
+					   ads.reg_state_list[guc_class][engine->instance].count,
+					   0);
+			continue;
+		}
+
+		ads_blob_write(guc,
+				   ads.reg_state_list[guc_class][engine->instance].address,
+				   addr_ggtt);
+		ads_blob_write(guc,
+				   ads.reg_state_list[guc_class][engine->instance].count,
+				   count);
+
+		addr_ggtt += count * sizeof(struct guc_mmio_reg);
+	}
+}
+
+
+static void __guc_ads_init(void *that)
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	struct intel_display *display=i915->display;
+	struct iosys_map info_map = IOSYS_MAP_INIT_OFFSET(&guc->ads_map,
+			offsetof(struct __guc_ads_blob, system_info));
+	u32 base;
+
+	guc_policies_init(guc);
+
+	fill_engine_enable_masks(gt, &info_map);
+
+	ads_blob_write(guc, system_info.generic_gt_sysinfo[GUC_GENERIC_GT_SYSINFO_SLICE_ENABLED],
+			   hweight8(gt->info.sseu.slice_mask));
+	ads_blob_write(guc, system_info.generic_gt_sysinfo[GUC_GENERIC_GT_SYSINFO_VDBOX_SFC_SUPPORT_MASK],
+			   gt->info.vdbox_sfc_access);
+
+
+	if (GRAPHICS_VER(i915) >= 12 && !IS_DGFX(i915)) {
+		u32 distdbreg = intel_de_read(display,
+						  GEN12_DIST_DBS_POPULATED);
+		ads_blob_write(guc,
+				   system_info.generic_gt_sysinfo[GUC_GENERIC_GT_SYSINFO_DOORBELL_COUNT_PER_SQIDI],
+				   ((distdbreg >> GEN12_DOORBELLS_PER_SQIDI_SHIFT)
+				& GEN12_DOORBELLS_PER_SQIDI) + 1);
+	}
+
+	guc_prep_golden_context(guc);
+
+	guc_mapping_table_init(guc->gt, &info_map);
+
+	base = intel_guc_ggtt_offset(guc, guc->ads_vma);
+
+	guc_capture_prep_lists(guc);
+
+	ads_blob_write(guc, ads.scheduler_policies, base +
+			   offsetof(struct __guc_ads_blob, policies));
+	ads_blob_write(guc, ads.gt_system_info, base +
+			   offsetof(struct __guc_ads_blob, system_info));
+
+	guc_mmio_reg_state_init(guc);
+
+	//guc_waklv_init(guc);
+
+	ads_blob_write(guc, ads.private_data, base +
+			   guc_ads_private_data_offset(guc));
+
+	//i915_gem_object_flush_map(guc->ads_vma->obj);
+}
+
+static void intel_gt_mcr_get_ss_steering(struct intel_gt *gt, unsigned int dss,
+				   unsigned int *group, unsigned int *instance)
+{
+	if (GRAPHICS_VER_FULL(gt->i915) >= IP_VER(12, 55)) {
+		*group = dss / GEN_DSS_PER_GSLICE;
+		*instance = dss % GEN_DSS_PER_GSLICE;
+	} else {
+		*group = dss / GEN_MAX_SS_PER_HSW_SLICE;
+		*instance = dss % GEN_MAX_SS_PER_HSW_SLICE;
+		return;
+	}
+}
+
+
+#define _HAS_SS(ss_, gt_, group_, instance_) ( \
+	GRAPHICS_VER_FULL(gt_->i915) >= IP_VER(12, 55) ? \
+		intel_sseu_has_subslice(&(gt_)->info.sseu, 0, ss_) : \
+		intel_sseu_has_subslice(&(gt_)->info.sseu, group_, instance_))
+
+#define for_each_ss_steering(ss_, gt_, group_, instance_) \
+	for (ss_ = 0, intel_gt_mcr_get_ss_steering(gt_, 0, &group_, &instance_); \
+		 ss_ < I915_MAX_SS_FUSE_BITS; \
+		 ss_++, intel_gt_mcr_get_ss_steering(gt_, ss_, &group_, &instance_)) \
+		for_each_if(_HAS_SS(ss_, gt_, group_, instance_))
+
+
+static int
+__alloc_ext_regs(struct __guc_mmio_reg_descr_group *newlist,
+		 const struct __guc_mmio_reg_descr_group *rootlist, int num_regs)
+{
+	struct __guc_mmio_reg_descr *list;
+
+	//list = kzalloc_objs(struct __guc_mmio_reg_descr, num_regs);
+	list = (struct __guc_mmio_reg_descr *)IOMalloc(num_regs*sizeof(struct __guc_mmio_reg_descr));
+	
+	if (!list)
+		return -ENOMEM;
+
+	newlist->extlist = list;
+	newlist->num_regs = num_regs;
+	newlist->owner = rootlist->owner;
+	newlist->engine = rootlist->engine;
+	newlist->type = rootlist->type;
+
+	return 0;
+}
+
+static void __fill_ext_reg(struct __guc_mmio_reg_descr *ext,
+			   const struct __ext_steer_reg *extlist,
+			   int slice_id, int subslice_id)
+{
+	ext->reg = _MMIO(i915_mmio_reg_offset(extlist->reg));
+	ext->flags = FIELD_PREP(GUC_REGSET_STEERING_GROUP, slice_id);
+	ext->flags |= FIELD_PREP(GUC_REGSET_STEERING_INSTANCE, subslice_id);
+	ext->regname = extlist->name;
+}
+
+static void
+guc_capture_alloc_steered_lists(struct intel_guc *guc,
+				const struct __guc_mmio_reg_descr_group *lists)
+{
+	struct intel_gt *gt = guc->gt;
+	int  iter, i, num_steer_regs, num_tot_regs = 0;
+	const struct __guc_mmio_reg_descr_group *list;
+	struct __guc_mmio_reg_descr_group *extlists;
+	struct __guc_mmio_reg_descr *extarray;
+	bool has_xehpg_extregs;
+	unsigned int slice,subslice;
+	
+	list = guc_capture_get_one_list(lists, GUC_CAPTURE_LIST_INDEX_PF,
+					GUC_CAPTURE_LIST_TYPE_ENGINE_CLASS,
+					GUC_CAPTURE_LIST_CLASS_RENDER_COMPUTE);
+
+	if (!list || guc->capture->extlists)
+		return;
+
+	has_xehpg_extregs = GRAPHICS_VER_FULL(gt->i915) >= IP_VER(12, 55);
+
+	num_steer_regs = ARRAY_SIZE(gen8_extregs);
+	if (has_xehpg_extregs)
+		num_steer_regs += ARRAY_SIZE(xehpg_extregs);
+
+	for_each_ss_steering(iter, gt, slice, subslice)
+		num_tot_regs += num_steer_regs;
+
+	if (!num_tot_regs)
+		return;
+
+	//extlists = kzalloc_objs(struct __guc_mmio_reg_descr_group, 2);
+	extlists = (struct __guc_mmio_reg_descr_group *)IOMalloc(2*sizeof(struct __guc_mmio_reg_descr_group));
+	if (!extlists)
+		return;
+
+	if (__alloc_ext_regs(&extlists[0], list, num_tot_regs)) {
+		//kfree(extlists);
+		IOFree(extlists, 2*sizeof(struct __guc_mmio_reg_descr_group));
+		return;
+	}
+
+	extarray = extlists[0].extlist;
+	for_each_ss_steering(iter, gt, slice, subslice) {
+		for (i = 0; i < ARRAY_SIZE(gen8_extregs); ++i) {
+			__fill_ext_reg(extarray, &gen8_extregs[i], slice, subslice);
+			++extarray;
+		}
+
+		if (has_xehpg_extregs) {
+			for (i = 0; i < ARRAY_SIZE(xehpg_extregs); ++i) {
+				__fill_ext_reg(extarray, &xehpg_extregs[i], slice, subslice);
+				++extarray;
+			}
+		}
+	}
+
+	guc->capture->extlists = extlists;
+}
+
+static const struct __guc_mmio_reg_descr_group *
+guc_capture_get_device_reglist(struct intel_guc *guc)
+{
+	struct drm_i915_private *i915 = guc->gt->i915;
+	const struct __guc_mmio_reg_descr_group *lists;
+
+	//if (GRAPHICS_VER(i915) >= 12)
+		lists = xe_lp_lists;
+
+	guc_capture_alloc_steered_lists(guc, lists);
+
+	return lists;
+}
+
+static int intel_guc_capture_init(struct intel_guc *guc)
+{
+	guc->capture = (struct intel_guc_state_capture*)IOMalloc(sizeof(struct intel_guc_state_capture));
+	if (!guc->capture)
+		return -ENOMEM;
+
+	guc->capture->reglists = guc_capture_get_device_reglist(guc);
+
+	INIT_LIST_HEAD(&guc->capture->outlist);
+	INIT_LIST_HEAD(&guc->capture->cachelist);
+
+	//check_guc_capture_size(guc);
+
+	return 0;
+}
+
+static inline void iosys_map_memset(struct iosys_map *dst, size_t offset,
+					int value, size_t len)
+{
+	/*if (dst->is_iomem)
+		memset_io(dst->vaddr_iomem + offset, value, len);
+	else*/
+		memset((u8*)dst->vaddr + offset, value, len);
+}
+
+static void guc_ads_private_data_reset(struct intel_guc *guc)
+{
+	u32 size;
+
+	size = guc_ads_private_data_size(guc);
+	if (!size)
+		return;
+
+	iosys_map_memset(&guc->ads_map, guc_ads_private_data_offset(guc),
+			 0, size);
+}
+static void intel_guc_ads_reset(struct intel_guc *guc)
+{
+	if (!guc->ads_vma)
+		return;
+
+	__guc_ads_init(guc);
+
+	 guc_ads_private_data_reset(guc);
+}
+
+
+static void uc_unpack_css_version(struct intel_uc_fw_ver *ver, u32 css_value)
+{
+	ver->major = FIELD_GET(CSS_SW_VERSION_UC_MAJOR, css_value);
+	ver->minor = FIELD_GET(CSS_SW_VERSION_UC_MINOR, css_value);
+	ver->patch = FIELD_GET(CSS_SW_VERSION_UC_PATCH, css_value);
+}
+
+static void gen8_ggtt_invalidate(struct intel_display *display)
+{
+
+	intel_de_write(display, GFX_FLSH_CNTL_GEN6, GFX_FLSH_CNTL_EN);
+}
+
+static void guc_ggtt_invalidate(struct intel_gt *gt, void *m_accelerator)
+{
+	struct drm_i915_private *i915=gt->i915;
+	struct intel_display *display = i915->display;
+	
+	//Gen11::callback->SafeForceWake(m_accelerator, true, 4);
+	gen8_ggtt_invalidate(display);
+
+	intel_de_write(display, GEN12_GUC_TLB_INV_CR,
+					  GEN12_GUC_TLB_INV_CR_INVALIDATE);
+	
+	//Gen11::callback->SafeForceWake(m_accelerator, false, 4);
+}
+
+static u32
+gen11_gt_engine_identity(struct intel_gt *gt,
+			 const unsigned int bank, const unsigned int bit)
+{
+	struct drm_i915_private *i915=gt->i915;
+	struct intel_display *display = i915->display;
+	u64 timeout_ts;
+	u32 ident;
+
+//	lockdep_assert_held(gt->irq_lock);
+
+
+	intel_de_write(display,  GEN11_IIR_REG_SELECTOR(bank), BIT(bit));
+
+	timeout_ts = mach_absolute_time() + 100000ULL;
+
+		do {
+			ident = intel_de_read(display, GEN11_INTR_IDENTITY_REG(bank));
+		} while (!(ident & GEN11_INTR_DATA_VALID) &&
+				 mach_absolute_time() < timeout_ts);
+	
+	if (unlikely(!(ident & GEN11_INTR_DATA_VALID))) {
+		return 0;
+	}
+
+	intel_de_write(display,  GEN11_INTR_IDENTITY_REG(bank),
+			  GEN11_INTR_DATA_VALID);
+
+	return ident;
+}
+
+static bool gen11_gt_reset_one_iir(struct intel_gt *gt,
+				const unsigned int bank, const unsigned int bit)
+{
+	struct drm_i915_private *i915=gt->i915;
+	struct intel_display *display = i915->display;
+	
+	//void __iomem * const regs = intel_uncore_regs(gt->uncore);
+	u32 dw;
+
+
+	//lockdep_assert_held(gt->irq_lock);
+
+	dw = intel_de_read(display, GEN11_GT_INTR_DW(bank));
+	if (dw & BIT(bit)) {
+
+		gen11_gt_engine_identity(gt, bank, bit);
+
+		intel_de_write(display, GEN11_GT_INTR_DW(bank), BIT(bit));
+
+		return true;
+	}
+
+	return false;
+}
+static bool gen11_reset_guc_interrupts(struct intel_gt *gt)
+{
+	u32 irq = gt->type == GT_MEDIA ? MTL_MGUC : GEN11_GUC;
+	//lockdep_assert_held(gt->irq_lock);
+	return gen11_gt_reset_one_iir(gt, 0, irq);
+}
+
+
+
+
+
+static void gen11_enable_guc_interrupts(struct intel_gt *gt)
+{
+
+	//spin_lock_irq(gt->irq_lock);
+	gen11_reset_guc_interrupts(gt);
+	//spin_unlock_irq(gt->irq_lock);
+
+	//guc->interrupts.enabled = true;
+}
+
+static void gen11_disable_guc_interrupts(struct intel_gt *gt)
+{
+
+	//guc->interrupts.enabled = false;
+	//intel_synchronize_irq(gt->i915);
+	gen11_reset_guc_interrupts(gt);
+}
+
+
+
+
+
+
+static void guc_policy_init(struct guc_policy0 *policy)
+{
+	policy->execution_quantum = POLICY_DEFAULT_EXECUTION_QUANTUM_US;
+	policy->preemption_time = POLICY_DEFAULT_PREEMPTION_TIME_US;
+	policy->fault_time = POLICY_DEFAULT_FAULT_TIME_US;
+	policy->policy_flags = 0;
+}
+
+static void guc_policies_init(struct guc_policies0 *policies)
+{
+	struct guc_policy0 *policy;
+	u32 p, i;
+
+	policies->dpc_promote_time = POLICY_DEFAULT_DPC_PROMOTE_TIME_US;
+	policies->max_num_work_items = POLICY_MAX_NUM_WI;
+
+	for (p = 0; p < GUC_CLIENT_PRIORITY_NUM; p++) {
+		for (i = 0; i < GUC_MAX_ENGINE_CLASSES; i++) {
+			policy = &policies->policy[p][i];
+
+			guc_policy_init(policy);
+		}
+	}
+
+	policies->is_valid = 1;
+}
+
+static void guc_ct_pool_entries_init(struct guc_ct_pool_entry *pool, u32 num)
+{
+	memset(pool, 0, num * sizeof(*pool));
+}
+
+static void __guc_ads_init0(void *that )
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	struct __guc_ads_blob0 *blob = (struct __guc_ads_blob0 *)guc->ads_vma->node.vadr;
+	const u32 skipped_size = LRC_PPHWSP_SZ * PAGE_SIZE + LR_HW_CONTEXT_SIZE;
+	u32 base;
+	u8 engine_class;
+
+	guc_policies_init(&blob->policies);
+	
+	for (engine_class = 0; engine_class <= MAX_ENGINE_CLASS; ++engine_class) {
+		if (engine_class == OTHER_CLASS)
+			continue;
+
+		blob->ads.golden_context_lrca[engine_class] = 0;
+		blob->ads.eng_state_size[engine_class] =
+			intel_engine_context_size(gt, engine_class) -
+			skipped_size;
+	}
+
+	/* System info */
+	blob->system_info.slice_enabled = hweight8(gt->info.sseu.slice_mask);
+	blob->system_info.rcs_enabled = 1;
+	blob->system_info.bcs_enabled = 1;
+
+	blob->system_info.vdbox_enable_mask = VDBOX_MASK(gt);
+	blob->system_info.vebox_enable_mask = VEBOX_MASK(gt);
+	blob->system_info.vdbox_sfc_support_mask = gt->info.vdbox_sfc_access;
+
+	base = intel_guc_ggtt_offset(guc, guc->ads_vma);
+	
+#define ptr_offset(ptr, member) offsetof(__typeof(*(ptr)), member)
+	/* Clients info  */
+	guc_ct_pool_entries_init(blob->ct_pool, ARRAY_SIZE(blob->ct_pool));
+
+	blob->clients_info.clients_num = 1;
+	blob->clients_info.ct_pool_addr = base + ptr_offset(blob, ct_pool);
+	blob->clients_info.ct_pool_count = ARRAY_SIZE(blob->ct_pool);
+	
+	/* ADS */
+	blob->ads.scheduler_policies = base + ptr_offset(blob, policies);
+	blob->ads.reg_state_buffer = base + ptr_offset(blob, reg_state_buffer);
+	blob->ads.reg_state_addr = base + ptr_offset(blob, reg_state);
+	blob->ads.gt_system_info = base + ptr_offset(blob, system_info);
+	blob->ads.clients_info = base + ptr_offset(blob, clients_info);
+
+	//i915_gem_object_flush_map(guc->ads_vma->obj);
+}
+
+
+
+static void tgl_setup_private_ppat(struct intel_display *display)
+{
+	/* TGL doesn't support LLC or AGE settings */
+	intel_de_write(display, GEN12_PAT_INDEX(0), GEN8_PPAT_WB);
+	intel_de_write(display, GEN12_PAT_INDEX(1), GEN8_PPAT_WC);
+	intel_de_write(display, GEN12_PAT_INDEX(2), GEN8_PPAT_WT);
+	intel_de_write(display, GEN12_PAT_INDEX(3), GEN8_PPAT_UC);
+	intel_de_write(display, GEN12_PAT_INDEX(4), GEN8_PPAT_WB);
+	intel_de_write(display, GEN12_PAT_INDEX(5), GEN8_PPAT_WB);
+	intel_de_write(display, GEN12_PAT_INDEX(6), GEN8_PPAT_WB);
+	intel_de_write(display, GEN12_PAT_INDEX(7), GEN8_PPAT_WB);
+}
+
+unsigned long Gen11::loadGuCBinary(void *that)
+{
+	if (gucp!=nullptr) return 1;
+	
+	struct drm_i915_private *i915=NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_display *display = i915->display;
+	struct intel_guc *guc = gt_to_guc(gt);
+	
+	void *m_accelerator = getMember<void *>(that, 0x38);
+	
+	if (!display || !m_accelerator) return 0;
+	
+	u32 dst_offset;
+	struct Firmware fw = {};
+	struct uc_css_header *header = nullptr;
+	uint32_t ucode_size = 0;
+	uint32_t rsa_size = 0;
+	size_t min_expected_size = 0;
+	void *igtask = nullptr;
+	void* fwBuffer = nullptr;
+	void* vaddr = nullptr;
+	u32 dma_flags;
+	uint64_t gpuAddr = 0;
+	u32 rsa_offset = 0;
+	u32 i = 0;
+	int dmaRetry = 0;
+	uint32_t auth;
+	bool success = false;
+	bool done = false;
+	int retryCount = 0;
+	int count = 0;
+	int innerTimeout = 0;
+	uint32_t status = 0;
+	uint32_t bootrom = 0;
+	uint32_t ukernel = 0;
+	uint8_t* rsa_bytes;
+	uint32_t* rsa_words;
+	uint32_t rsa_val;
+	
+	gucp=that;
+	fw = getFWByName("tgl_guc_35.2.0.bin");
+	//fw = getFWByName("tgl_guc_69.0.3.bin");
+	//fw = getFWByName("tgl_guc_70.1.1.bin");
+	
+	if (display->platform.alderlake_p) {
+		fw = getFWByName("adlp_guc_62.0.3.bin");
+	} else if (display->platform.alderlake_s) {
+		fw = getFWByName("adlp_guc_62.0.3.bin");
+	} else if (display->platform.rocketlake) {
+		
+	} else if (display->platform.tigerlake) {
+		
+	}
+	
+	if (!fw.data || fw.size == 0) return 0;
+	if (fw.size < sizeof(uc_css_header)) return 0;
+	
+	header = (struct uc_css_header *)fw.data;
+	
+	guc->fw.private_data_size=header->private_data_size;
+	guc->fw.ucode_size = (header->size_dw - header->header_size_dw) * sizeof(u32);
+	guc->fw.rsa_size = header->key_size_dw * sizeof(u32);
+	ucode_size =guc->fw.ucode_size;
+	rsa_size = guc->fw.rsa_size;
+	
+	uc_unpack_css_version(&guc->fw.file_selected.ver, header->sw_version);
+	
+	if (guc->fw.file_selected.ver.major >= 70) {
+		if (guc->fw.file_selected.ver.minor >= 6) {
+			//uc_unpack_css_version(&guc->submission_version, css->vf_version);
+		} else if (guc->fw.file_selected.ver.minor >= 3) {
+			/* v70.3.0 introduced v1.1.0 */
+			guc->submission_version.major = 1;
+			guc->submission_version.minor = 1;
+			guc->submission_version.patch = 0;
+		} else {
+			/* v70.0.0 introduced v1.0.0 */
+			guc->submission_version.major = 1;
+			guc->submission_version.minor = 0;
+			guc->submission_version.patch = 0;
+		}
+	} else if (guc->fw.file_selected.ver.major >= 69) {
+		/* v69.0.0 introduced v0.10.0 */
+		guc->submission_version.major = 0;
+		guc->submission_version.minor = 10;
+		guc->submission_version.patch = 0;
+	} else {
+		/* Prior versions were v0.1.0 */
+		guc->submission_version.major = 0;
+		guc->submission_version.minor = 1;
+		guc->submission_version.patch = 0;
+	}
+	
+	
+	if (rsa_size > 256) rsa_size = 256;
+	
+	min_expected_size = sizeof(struct uc_css_header) + ucode_size + rsa_size;
+	if (fw.size < min_expected_size) return 0;
+	
+	
+	igtask = getMember<void*>(m_accelerator, 0x150);
+	fwBuffer = IGSharedMappedBufferwithOptions(igtask, round_up(fw.size, PAGE_SIZE), 2, 0);
+	if (!fwBuffer) return 0;
+	
+	vaddr = (void*)fgetVirtualAddress(fwBuffer);
+	if (!vaddr) {
+		IGSharedMappedBufferfree(fwBuffer);
+		return 0;
+	}
+	
+	memcpy(vaddr, fw.data , min_expected_size-rsa_size);
+	
+	gpuAddr = fgetGPUVirtualAddress(fwBuffer);
+	if (gpuAddr == 0) {
+		IGSharedMappedBufferfree(fwBuffer);
+		return 0;
+	}
+	
+	if (kexticl)
+	{
+		if (!initSchedControl0(that)) return 0;
+	}
+	else
+	{
+		if (!initSchedControl(that)) return 0;//apple guc_init_params
+	}
+	SafeForceWake(m_accelerator, true, 7);
+	
+	enum intel_engine_id id2;
+	struct intel_engine_cs *engine;
+	
+	for_each_engine(engine, gt, id2) {
+		
+		intel_engine_apply_workarounds(engine);
+		intel_engine_apply_whitelist(engine);
+		//intel_engine_emit_ctx_wa
+		wa_list_apply(&engine->ctx_wa_list); //???
+	}
+	
+	
+	intel_wopcm_init(gt, sizeof(struct uc_css_header) + guc->fw.ucode_size);
+	
+	tgl_setup_private_ppat(display);
+	
+	gen11_disable_guc_interrupts(gt);
+	//__reset_guc(gt);
+	
+	_guc_log_init_sizes(&guc->log);
+	void *t=getMember<void*>(that, 0x60);
+	guc->log.buf_addr=(void*)fgetVirtualAddress(t);
+	
+	guc->log.vma->obj=t;
+	guc->log.vma->node.vadr=fgetVirtualAddress(guc->log.vma->obj);
+	guc->log.vma->node.start=fgetGPUVirtualAddress(guc->log.vma->obj);
+	
+	if (guc->fw.file_selected.ver.major<69) {
+		t=getMember<void*>(that, 0x68);
+		guc->stage_desc_pool->obj=t; //35.2
+		guc->stage_desc_pool->node.vadr=fgetVirtualAddress(guc->stage_desc_pool->obj);
+		guc->stage_desc_pool->node.start=fgetGPUVirtualAddress(guc->stage_desc_pool->obj);
+		guc->stage_desc_pool_vaddr=(void *)guc->stage_desc_pool->node.vadr;
+	}
+	t=getMember<void *>(that, kexticl ? 0x930: 0x9e8);
+	guc->ads_vma->obj=t;
+	guc->ads_vma->node.vadr=fgetVirtualAddress(guc->ads_vma->obj);
+	guc->ads_vma->node.start=fgetGPUVirtualAddress(guc->ads_vma->obj);
+	
+	guc->ads_map.vaddr = (void*)guc->ads_vma->node.vadr;
+	guc->ads_map.is_iomem = false;
+	
+	//if (guc->fw.file_selected.ver.major < 69) guc_init_params0(guc); //35.2
+	
+	
+	 if (guc->fw.file_selected.ver.major < 69)
+	 for ( i = 0; i < 6; i++)
+	 guc->params[i]=getMember<u32[6]>(that, 0x8c)[i];
+	 
+	
+	if (guc->fw.file_selected.ver.major >= 69)	guc_init_params(guc);
+	
+	if (guc->fw.file_selected.ver.major >= 69)
+	for ( i = 0; i < 6; i++)
+		getMember<u32[6]>(that, 0x8c)[i]=guc->params[i];
+	
+	guc_ggtt_invalidate(gt,m_accelerator);
+	//if (guc->fw.file_selected.ver.major > 69) intel_guc_ads_reset(guc);
+	//if (guc->fw.file_selected.ver.major < 69) __guc_ads_init0();
+	
+	intel_guc_write_params(guc,m_accelerator);
+	
+	if (guc->fw.file_selected.ver.major < 69)
+		guc_prepare_xfer0(gt);
+	else guc_prepare_xfer(gt);
+	
+	//guc_xfer_rsa_mmio(guc_fw, uncore);
+	rsa_offset = sizeof(struct uc_css_header) + ucode_size;
+	rsa_bytes = reinterpret_cast<uint8_t*>(fw.data) + rsa_offset;
+	rsa_words = reinterpret_cast<uint32_t*>(rsa_bytes);
+	for ( i = 0; i < UOS_RSA_SCRATCH_COUNT; i++) {
+		rsa_val = rsa_words[i];
+		intel_de_write(display, UOS_RSA_SCRATCH(i), rsa_val);
+	}
+	
+	
+	//uc_fw_xfer()
+	dma_flags = UOS_MOVE;
+	dst_offset=0x2000;
+	intel_de_write(display, DMA_ADDR_0_LOW,lower_32_bits(gpuAddr));
+	intel_de_write(display, DMA_ADDR_0_HIGH,upper_32_bits(gpuAddr));
+	intel_de_write(display, DMA_ADDR_1_LOW, dst_offset);
+	intel_de_write(display, DMA_ADDR_1_HIGH,DMA_ADDRESS_SPACE_WOPCM);
+	intel_de_write(display, DMA_COPY_SIZE,sizeof(struct uc_css_header) + ucode_size);
+	intel_de_write(display, DMA_CTRL,REG_MASKED_FIELD_ENABLE(dma_flags | START_DMA));
+	
+	dmaRetry = 1000;
+	while (intel_de_read(display, DMA_CTRL) & START_DMA) {
+		IODelay(100);
+		if (--dmaRetry <= 0)
+			goto fail;
+	}
+	intel_de_write(display, DMA_CTRL,
+				   REG_MASKED_FIELD_DISABLE(dma_flags));
+	
+	
+	retryCount = 3;
+	for (count = 0; count < retryCount; count++) {
+		success = false;
+		done    = false;
+		
+		innerTimeout = 1000;
+		while (innerTimeout > 0) {
+			
+			guc_load_done(&status,&success);
+			bootrom = REG_FIELD_GET(GS_BOOTROM_MASK, status);
+			ukernel = REG_FIELD_GET(GS_UKERNEL_MASK, status);
+			
+			if (success) {
+				done = true;
+				break;
+			}
+			
+			IODelay(1000);
+			innerTimeout--;
+		}
+		
+		if (done)
+			break;
+	}
+	
+	
+	SafeForceWake(m_accelerator, false, 7);
+	IGSharedMappedBufferfree(fwBuffer);
+	//IGSharedMappedBufferfree(getMember<void *>(that, 0x9e8));
+	
+	auth = status & GS_AUTH_STATUS_MASK;
+	if (!success)
+		panic("auth %x bootrom %x ukernel %x guc_wopcm_base %x guc_wopcm_size %x",auth,bootrom,ukernel,gt->wopcm.guc.base,gt->wopcm.guc.size);
+	
+	
+	return success ? 1 : 0;
+
+fail:
+	SafeForceWake(m_accelerator, false, 7);
+	IGSharedMappedBufferfree(fwBuffer);
+	return 0;
+}
+
+char  Gen11::loadGuCBinary0(void *that)
+{
+	loadGuCBinary(that);
+	return '1';
+}
+
+static void guc_ct_buffer_desc_init(struct guc_ct_buffer_desc *desc)
+{
+	memset(desc, 0, sizeof(*desc));
+}
+
+static void guc_ct_buffer_reset(struct intel_guc_ct_buffer *ctb)
+{
+	u32 space;
+
+	ctb->broken = false;
+	ctb->tail = 0;
+	ctb->head = 0;
+	space = CIRC_SPACE(ctb->tail, ctb->head, ctb->size) - ctb->resv_space;
+	atomic_set(&ctb->space, space);
+	guc_ct_buffer_desc_init(ctb->desc);
+}
+
+static void guc_ct_buffer_init(struct intel_guc_ct_buffer *ctb,
+				   struct guc_ct_buffer_desc *desc,
+				   u32 *cmds, u32 size_in_bytes, u32 resv_space)
+{
+	//GEM_BUG_ON(size_in_bytes % 4);
+
+	ctb->desc = desc;
+	ctb->cmds = cmds;
+	ctb->size = size_in_bytes / 4;
+	ctb->resv_space = resv_space / 4;
+
+	guc_ct_buffer_reset(ctb);
+}
+
+static void intel_guc_ct_init(void *that)
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	
+	struct intel_guc_ct *ct=&guc->ct;
+	struct guc_ct_buffer_desc *desc;
+	u32 blob_size;
+	u32 cmds_size;
+	u32 resv_space;
+	void *blob;
+	u32 *cmds;
+	
+	void *acel=getMember<void *>(that, 0x38);
+	void *field_0x150=getMember<void *>(acel, 0x150);
+	
+	
+	//intel_guc_ct_init
+	blob_size = 2 * CTB_DESC_SIZE + CTB_H2G_BUFFER_SIZE + CTB_G2H_BUFFER_SIZE;
+	//err = intel_guc_allocate_and_map_vma(guc, blob_size, &ct->vma, &blob);
+	blob = Gen11::callback->IGSharedMappedBufferwithOptions(field_0x150, round_up(blob_size, PAGE_SIZE), 2, 0);
+	
+	getMember<void *>(that, 0x50)= blob;
+	
+	ct->vma->obj=blob;
+	ct->vma->node.vadr=Gen11::callback->fgetVirtualAddress(ct->vma->obj);
+	ct->vma->node.start=Gen11::callback->fgetGPUVirtualAddress(ct->vma->obj);
+	
+	desc = (struct guc_ct_buffer_desc *)blob;
+	cmds = (u32*)((u8*)blob + 2 * CTB_DESC_SIZE);
+	cmds_size = CTB_H2G_BUFFER_SIZE;
+	resv_space = 0;
+	guc_ct_buffer_init(&ct->ctbs.send, desc, cmds, cmds_size, resv_space);
+
+	desc = (struct guc_ct_buffer_desc *)((u8*)blob + CTB_DESC_SIZE);
+	cmds = (u32*)((u8*)blob + 2 * CTB_DESC_SIZE + CTB_H2G_BUFFER_SIZE);
+	cmds_size = CTB_G2H_BUFFER_SIZE;
+	resv_space = G2H_ROOM_BUFFER_SIZE;
+	guc_ct_buffer_init(&ct->ctbs.recv, desc, cmds, cmds_size, resv_space);
+
+}
+
+
+
+static u32 gpm_timestamp_shift(struct intel_gt *gt)
+{
+	struct drm_i915_private *i915= gt->i915;
+	struct intel_display *display = i915->display;
+	u32 reg;
+
+	//with_intel_runtime_pm(gt->uncore->rpm, wakeref)
+		reg = intel_de_read(display, RPM_CONFIG0);
+
+	return 3 - REG_FIELD_GET(GEN10_RPM_CONFIG0_CTC_SHIFT_PARAMETER_MASK, reg);
+}
+
+static u32 read_reference_ts_freq(struct drm_i915_private *i915)
+{
+	struct intel_display *display = i915->display;
+	u32 ts_override = intel_de_read(display, GEN9_TIMESTAMP_OVERRIDE);
+	u32 base_freq, frac_freq;
+
+	base_freq = ((ts_override & GEN9_TIMESTAMP_OVERRIDE_US_COUNTER_DIVIDER_MASK) >>
+			 GEN9_TIMESTAMP_OVERRIDE_US_COUNTER_DIVIDER_SHIFT) + 1;
+	base_freq *= 1000000;
+
+	frac_freq = ((ts_override &
+			  GEN9_TIMESTAMP_OVERRIDE_US_COUNTER_DENOMINATOR_MASK) >>
+			 GEN9_TIMESTAMP_OVERRIDE_US_COUNTER_DENOMINATOR_SHIFT);
+	frac_freq = 1000000 / (frac_freq + 1);
+
+	return base_freq + frac_freq;
+}
+
+static u32 gen11_get_crystal_clock_freq(struct drm_i915_private *i915,
+					u32 rpm_config_reg)
+{
+	u32 f19_2_mhz = 19200000;
+	u32 f24_mhz = 24000000;
+	u32 f25_mhz = 25000000;
+	u32 f38_4_mhz = 38400000;
+	u32 crystal_clock = rpm_config_reg & GEN11_RPM_CONFIG0_CRYSTAL_CLOCK_FREQ_MASK;
+
+	switch (crystal_clock) {
+	case GEN11_RPM_CONFIG0_CRYSTAL_CLOCK_FREQ_24_MHZ:
+		return f24_mhz;
+	case GEN11_RPM_CONFIG0_CRYSTAL_CLOCK_FREQ_19_2_MHZ:
+		return f19_2_mhz;
+	case GEN11_RPM_CONFIG0_CRYSTAL_CLOCK_FREQ_38_4_MHZ:
+		return f38_4_mhz;
+	case GEN11_RPM_CONFIG0_CRYSTAL_CLOCK_FREQ_25_MHZ:
+		return f25_mhz;
+	default:
+		return 0;
+	}
+}
+static u32 gen11_read_clock_frequency()
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_display *display = i915->display;
+	
+	u32 ctc_reg = intel_de_read(display, CTC_MODE);
+	u32 freq = 0;
+
+
+	if ((ctc_reg & CTC_SOURCE_PARAMETER_MASK) == CTC_SOURCE_DIVIDE_LOGIC) {
+		freq = read_reference_ts_freq(i915);
+	} else {
+		u32 c0 = intel_de_read(display, RPM_CONFIG0);
+
+		freq = gen11_get_crystal_clock_freq(i915, c0);
+
+		freq >>= 3 - REG_FIELD_GET(GEN10_RPM_CONFIG0_CTC_SHIFT_PARAMETER_MASK, c0);
+	}
+
+	return freq;
+}
+
+static int guc_lrc_desc_pool_create_v69(struct intel_guc *guc,void *that)
+{
+	u32 size;
+	int ret;
+
+	size = PAGE_ALIGN(sizeof(struct guc_lrc_desc_v69) *
+			  GUC_MAX_CONTEXT_ID);
+	//ret = intel_guc_allocate_and_map_vma(guc, size, &guc->lrc_desc_pool_v69,
+	//					 (void **)&guc->lrc_desc_pool_vaddr_v69);
+	
+	void *acel=getMember<void *>(that, 0x38);
+	void *field_0x150=getMember<void *>(acel, 0x150);
+	
+	void* t = Gen11::callback->IGSharedMappedBufferwithOptions(field_0x150, size, 2, 0);
+	
+	
+	getMember<void *>(that, 0x68)=t;
+	
+	guc->lrc_desc_pool_v69->obj=t;
+	guc->lrc_desc_pool_v69->node.vadr=Gen11::callback->fgetVirtualAddress(guc->lrc_desc_pool_v69->obj);
+	guc->lrc_desc_pool_v69->node.start=Gen11::callback->fgetGPUVirtualAddress(guc->lrc_desc_pool_v69->obj);
+	guc->lrc_desc_pool_vaddr_v69=(void*)guc->lrc_desc_pool_v69->node.vadr;
+	return 0;
+}
+
+static int intel_guc_submission_init(void *that)
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	int ret;
+
+	if (guc->submission_initialized)
+		return 0;
+
+	
+	if (GUC_SUBMIT_VER(guc) < MAKE_GUC_VER(1, 0, 0)) {
+		ret = guc_lrc_desc_pool_create_v69(guc,that);
+		if (ret)
+			return ret;
+	}
+
+/*	ret = init_tlb_lookup(guc);
+	if (ret)
+		goto destroy_pool;
+*/
+	guc->submission_state.guc_ids_bitmap =
+		bitmap_zalloc(NUMBER_MULTI_LRC_GUC_ID(guc));
+	if (!guc->submission_state.guc_ids_bitmap) {
+		ret = -ENOMEM;
+		goto destroy_tlb;
+	}
+
+	gt->clock_frequency=gen11_read_clock_frequency();
+	guc->timestamp.ping_delay = (POLL_TIME_CLKS / gt->clock_frequency + 1) * 1000;
+	guc->timestamp.shift = gpm_timestamp_shift(gt);
+	guc->submission_initialized = true;
+
+	return 0;
+
+destroy_tlb:
+	//fini_tlb_lookup(guc);
+destroy_pool:
+	//guc_lrc_desc_pool_destroy_v69(guc);
+	return ret;
+}
+
+
+
+
+static int guc_workqueue_create(struct intel_guc *guc, void *that)
+{
+	void *acel=getMember<void *>(that, 0x38);
+	void *field_0x150=getMember<void *>(acel, 0x150);
+	
+	void *blob = Gen11::callback->IGSharedMappedBufferwithOptions(field_0x150,   PAGE_SIZE, 2, 0);
+	guc->workqueue->obj=blob;
+	guc->workqueue->node.vadr=Gen11::callback->fgetVirtualAddress(guc->workqueue->obj);
+	guc->workqueue->node.start=Gen11::callback->fgetGPUVirtualAddress(guc->workqueue->obj);
+	guc->workqueue_vaddr=(void*)guc->workqueue->node.vadr;
+	
+	u32 c= Gen11::callback->allocContextId(that,0,true);
+	Gen11::callback->IGHardwareGuCWorkQueuewithOptions(acel,c,guc->workqueue->obj);
+	
+	//void *blob = Gen11::callback->IGSharedMappedBufferwithOptions(field_0x150, (PAGE_SIZE * 2), 2, 0);
+	
+	
+	
+	return 0;
+}
+
+
+static int guc_proc_desc_create(struct intel_guc *guc, void *that)
+{
+	const u32 size = PAGE_ALIGN(sizeof(struct guc_process_desc));
+
+	void *acel=getMember<void *>(that, 0x38);
+	void *field_0x150=getMember<void *>(acel, 0x150);
+	
+	void *blob = Gen11::callback->IGSharedMappedBufferwithOptions(field_0x150,  size, 2, 0);
+	
+	guc->proc_desc->obj=blob;
+	guc->proc_desc->node.vadr=Gen11::callback->fgetVirtualAddress(guc->proc_desc->obj);
+	guc->proc_desc->node.start=Gen11::callback->fgetGPUVirtualAddress(guc->proc_desc->obj);
+	guc->proc_desc_vaddr=(void*)guc->proc_desc->node.vadr;
+	
+	return 0;
+}
+
+static int intel_guc_submission_init0(void *that)
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	
+	int ret;
+
+	if (guc->stage_desc_pool)
+		return 0;
+
+	u32 size = PAGE_ALIGN(sizeof(struct guc_stage_desc) *GUC_MAX_STAGE_DESCRIPTORS);
+	
+
+	void *acel=getMember<void *>(that, 0x38);
+	void *field_0x150=getMember<void *>(acel, 0x150);
+	
+	void *blob = Gen11::callback->IGSharedMappedBufferwithOptions(field_0x150,  size, 2, 0);
+
+	getMember<void *>(that, 0x68)=blob;
+	
+	guc->stage_desc_pool->obj=blob;
+	guc->stage_desc_pool->node.vadr=Gen11::callback->fgetVirtualAddress(guc->stage_desc_pool->obj);
+	guc->stage_desc_pool->node.start=Gen11::callback->fgetGPUVirtualAddress(guc->stage_desc_pool->obj);
+	guc->stage_desc_pool_vaddr=(void*)guc->stage_desc_pool->node.vadr;
+
+	//ret = guc_proc_desc_create(guc,that);
+	//ret = guc_workqueue_create(guc,that);
+	
+
+	return 0;
+
+}
+
+static int intel_guc_ct_init0(void *that)
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	struct intel_guc_ct0 *ct=&guc->ct0;
+	void *blob;
+	int err;
+	int i;
+
+	void *acel=getMember<void *>(that, 0x38);
+	void *field_0x150=getMember<void *>(acel, 0x150);
+	
+	
+	blob = Gen11::callback->IGSharedMappedBufferwithOptions(field_0x150, PAGE_SIZE, 2, 0);
+	getMember<void *>(that, 0x50)= blob;
+	
+	ct->vma->obj=blob;
+	ct->vma->node.vadr=Gen11::callback->fgetVirtualAddress(ct->vma->obj);
+	ct->vma->node.start=Gen11::callback->fgetGPUVirtualAddress(ct->vma->obj);
+	
+
+	for (i = 0; i < ARRAY_SIZE(ct->ctbs); i++) {
+		ct->ctbs[i].desc = (struct guc_ct_buffer_desc0 *)((u8*)blob + PAGE_SIZE/4 * i);
+		ct->ctbs[i].cmds = (u32*)((u8*)blob + PAGE_SIZE/4 * i + PAGE_SIZE/2);
+	}
+
+	return 0;
+}
+
+static int intel_guc_ads_create0(void *that)
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	int ret;
+	u32 size = PAGE_ALIGN(sizeof(struct __guc_ads_blob0));
+	
+	void *acel=getMember<void *>(that, 0x38);
+	void *field_0x150=getMember<void *>(acel, 0x150);
+	
+	
+	void* t = Gen11::callback->IGSharedMappedBufferwithOptions(field_0x150, size, 2, 0);
+	getMember<void *>(that, kexticl ? 0x930 : 0x9e8)= t;
+	
+	guc->ads_vma->obj=t;
+	guc->ads_vma->node.vadr=Gen11::callback->fgetVirtualAddress(guc->ads_vma->obj);
+	guc->ads_vma->node.start=Gen11::callback->fgetGPUVirtualAddress(guc->ads_vma->obj);
+	
+	guc->ads_map.vaddr = (void *)guc->ads_vma->node.vadr;
+	guc->ads_map.is_iomem = false;
+	
+	u32 ads_param_val = ((u32)(guc->ads_vma->node.start >> PAGE_SHIFT) << GUC_ADS_ADDR_SHIFT);
+	u32 a0=getMember<u32>(that, 0xa0);
+	getMember<u32>(that, 0xa0) = (a0 & 0xFFC00001) | ads_param_val;
+	
+	__guc_ads_init0(that);
+	
+	intel_guc_ct_init0(that);
+
+	if (intel_guc_submission_is_used(guc)) {
+			intel_guc_submission_init0(that);
+
+	}
+	
+	return 1;
+}
+
+static int intel_guc_ads_create(void *that)
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	int ret;
+	u32 size;
+	
+	intel_guc_capture_init(guc);
+	
+	ret = guc_mmio_reg_state_create(guc);
+	if (ret < 0)
+		return ret;
+	guc->ads_regset_size = ret;
+
+	ret = guc_prep_golden_context(guc);
+	if (ret < 0)
+		return ret;
+	guc->ads_golden_ctxt_size = ret;
+	
+	if (guc->fw.file_selected.ver.major >= 70) {
+		ret = guc_capture_prep_lists(guc);
+		if (ret < 0)
+			return ret;
+		guc->ads_capture_size = ret;
+		
+		ret = guc_prep_waklv(guc);
+		if (ret < 0)
+			return ret;
+		guc->ads_waklv_size = ret;
+	}
+	
+	size = guc_ads_blob_size(guc);
+	
+	
+	void *acel=getMember<void *>(that, 0x38);
+	void *field_0x150=getMember<void *>(acel, 0x150);
+	
+	
+	void* t = Gen11::callback->IGSharedMappedBufferwithOptions(field_0x150, round_up(size, PAGE_SIZE), 2, 0);
+	getMember<void *>(that, kexticl ? 0x930 : 0x9e8)= t;
+	
+	guc->ads_vma->obj=t;
+	guc->ads_vma->node.vadr=Gen11::callback->fgetVirtualAddress(guc->ads_vma->obj);
+	guc->ads_vma->node.start=Gen11::callback->fgetGPUVirtualAddress(guc->ads_vma->obj);
+	
+	guc->ads_map.vaddr = (void *)guc->ads_vma->node.vadr;
+	guc->ads_map.is_iomem = false;
+	
+	u32 ads_param_val = ((u32)(guc->ads_vma->node.start >> PAGE_SHIFT) << GUC_ADS_ADDR_SHIFT);
+	u32 a0=getMember<u32>(that, 0xa0);
+	getMember<u32>(that, 0xa0) = (a0 & 0xFFC00001) | ads_param_val;
+	
+	__guc_ads_init(that);
+	
+	/*intel_guc_ct_init(that);
+
+	if (intel_guc_submission_is_used(guc)) {
+			intel_guc_submission_init(that);
+
+	}*/
+	
+	return 1;
+}
+
+bool Gen11::setupAdditionalDataStructs0(void *that)
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	
+	if (guc->fw.file_selected.ver.major < 69) intel_guc_ads_create0(that);
+		//return FunctionCast(setupAdditionalDataStructs0, callback->osetupAdditionalDataStructs0)(that );
+		
+	if (guc->fw.file_selected.ver.major >= 69)	intel_guc_ads_create(that);
+	
+	return true;
+}
+
+uint64_t Gen11::setupAdditionalDataStructs(void *that) {
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	
+	if (guc->fw.file_selected.ver.major < 69) intel_guc_ads_create0(that);
+		//return FunctionCast(setupAdditionalDataStructs, callback->osetupAdditionalDataStructs)(that );
+		
+	if (guc->fw.file_selected.ver.major >= 69)	intel_guc_ads_create(that);
+	
+	return 1;
+}
+
+bool Gen11::setupContextPool0(void *that,int param_1)
+{
+	
+	param_1=0x100;
+	FunctionCast(setupContextPool0, callback->osetupContextPool0)(that,param_1 );
+	
+	return true;
+	
+}
+
+uint Gen11::validateTransaction(void *that,void *param_1)
+{
+	
+	auto ret=FunctionCast(validateTransaction, callback->ovalidateTransaction)(that,param_1 );
+	
+	return ret;
+	
+}
+
+
+uint64_t Gen11::setupContextPool(void *that,int param_1)
+{
+	
+	param_1=0x100;
+	FunctionCast(setupContextPool, callback->osetupContextPool)(that,param_1 );
+	
+	return 1;
+	
+}
+
+static ptrdiff_t ptrdiff(const void *a, const void *b)
+{
+	return (u8*)a - (u8*)b;
+}
+
+static inline u32 guc_send_reg(struct intel_guc *guc, u32 i)
+{
+	/*GEM_BUG_ON(!guc->send_regs.base);
+	GEM_BUG_ON(!guc->send_regs.count);
+	GEM_BUG_ON(i >= guc->send_regs.count);
+*/
+	return _MMIO(guc->send_regs.base + 4 * i);
+}
+
+void intel_guc_notify(struct intel_guc *guc)
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_display *display = i915->display;
+	struct intel_gt *gt=to_gt(i915);
+
+
+	intel_de_write(display,  guc->notify_reg, GUC_SEND_TRIGGER);
+}
+
+int intel_guc_send_mmio(struct intel_guc *guc, const u32 *request, u32 len,
+			u32 *response_buf, u32 response_buf_size)
+{
+	
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_display *display = i915->display;
+	struct intel_gt *gt=to_gt(i915);
+	
+	u32 header;
+	int i;
+	int ret;
+
+/*	GEM_BUG_ON(!len);
+	GEM_BUG_ON(len > guc->send_regs.count);
+
+	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, request[0]) != GUC_HXG_ORIGIN_HOST);
+	GEM_BUG_ON(FIELD_GET(GUC_HXG_MSG_0_TYPE, request[0]) != GUC_HXG_TYPE_REQUEST);
+*/
+	//mutex_lock(&guc->send_mutex);
+	//intel_uncore_forcewake_get(uncore, guc->send_regs.fw_domains);
+
+retry:
+	for (i = 0; i < len; i++)
+		intel_de_write(display, guc_send_reg(guc, i), request[i]);
+
+	intel_de_posting_read(display, guc_send_reg(guc, i - 1));
+
+	intel_guc_notify(guc);
+
+	ret = intel_de_wait_for_register(display,
+					   guc_send_reg(guc, 0),
+					   GUC_HXG_MSG_0_ORIGIN,
+					   FIELD_PREP(GUC_HXG_MSG_0_ORIGIN,
+							  GUC_HXG_ORIGIN_GUC),
+					   10, 10*1000, &header,false);
+	if (unlikely(ret)) {
+timeout:
+
+		goto out;
+	}
+
+	
+	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) == GUC_HXG_TYPE_NO_RESPONSE_BUSY) {
+		uint64_t start = mach_absolute_time();
+		uint64_t timeout_ns = 1000ULL * 1000000; // wait_for timeout is 1000ms
+
+		while (true) {
+			header = intel_de_read(display, guc_send_reg(guc, 0));
+			
+			if (FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) != GUC_HXG_ORIGIN_GUC ||
+				FIELD_GET(GUC_HXG_MSG_0_TYPE, header) != GUC_HXG_TYPE_NO_RESPONSE_BUSY)
+				break;
+
+			if (mach_absolute_time() - start >= timeout_ns) {
+				ret = -ETIME; // wait_for returns -ETIMEDOUT
+				goto timeout;
+			}
+			IOSleep(1);
+		}
+
+		if (unlikely(FIELD_GET(GUC_HXG_MSG_0_ORIGIN, header) !=
+					   GUC_HXG_ORIGIN_GUC))
+			goto proto;
+	}
+	
+	
+
+	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) == GUC_HXG_TYPE_NO_RESPONSE_RETRY) {
+		u32 reason = FIELD_GET(GUC_HXG_RETRY_MSG_0_REASON, header);
+
+		goto retry;
+	}
+
+	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) == GUC_HXG_TYPE_RESPONSE_FAILURE) {
+		u32 hint = FIELD_GET(GUC_HXG_FAILURE_MSG_0_HINT, header);
+		u32 error = FIELD_GET(GUC_HXG_FAILURE_MSG_0_ERROR, header);
+
+
+		ret = -ENXIO;
+		goto out;
+	}
+
+	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) != GUC_HXG_TYPE_RESPONSE_SUCCESS) {
+proto:
+
+		ret = -EPROTO;
+		goto out;
+	}
+
+	if (response_buf) {
+		int count = min(response_buf_size, guc->send_regs.count);
+
+		//GEM_BUG_ON(!count);
+
+		response_buf[0] = header;
+
+		for (i = 1; i < count; i++)
+			response_buf[i] = intel_de_read(display,
+								guc_send_reg(guc, i));
+
+		ret = count;
+	} else {
+		ret = FIELD_GET(GUC_HXG_RESPONSE_MSG_0_DATA0, header);
+	}
+
+out:
+	//intel_uncore_forcewake_put(uncore, guc->send_regs.fw_domains);
+	//mutex_unlock(&guc->send_mutex);
+
+	return ret;
+}
+
+static int __guc_action_self_cfg(struct intel_guc *guc, u16 key, u16 len, u64 value)
+{
+	u32 request[HOST2GUC_SELF_CFG_REQUEST_MSG_LEN] = {
+		FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
+		FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
+		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, GUC_ACTION_HOST2GUC_SELF_CFG),
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_1_KLV_KEY, key) |
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_1_KLV_LEN, len),
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_2_VALUE32, lower_32_bits(value)),
+		FIELD_PREP(HOST2GUC_SELF_CFG_REQUEST_MSG_3_VALUE64, upper_32_bits(value)),
+	};
+	int ret;
+
+	//GEM_BUG_ON(len > 2);
+	//GEM_BUG_ON(len == 1 && upper_32_bits(value));
+
+	/* Self config must go over MMIO */
+	ret = intel_guc_send_mmio(guc, request, ARRAY_SIZE(request), NULL, 0);
+
+	if (unlikely(ret < 0))
+		return ret;
+	if (unlikely(ret > 1))
+		return -EPROTO;
+	if (unlikely(!ret))
+		return -ENOKEY;
+	
+	return 0;
+}
+static int __guc_self_cfg(struct intel_guc *guc, u16 key, u16 len, u64 value)
+{
+	int err = __guc_action_self_cfg(guc, key, len, value);
+
+	return err;
+}
+int intel_guc_self_cfg32(struct intel_guc *guc, u16 key, u32 value)
+{
+	return __guc_self_cfg(guc, key, 1, value);
+	return 0;
+}
+
+int intel_guc_self_cfg64(struct intel_guc *guc, u16 key, u64 value)
+{
+	return __guc_self_cfg(guc, key, 2, value);
+	return 0;
+}
+
+static int ct_register_buffer(struct intel_guc_ct *ct, bool send,
+				  u32 desc_addr, u32 buff_addr, u32 size)
+{
+	int err;
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_display *display = i915->display;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	
+	err = intel_guc_self_cfg64(guc, send ?
+				   GUC_KLV_SELF_CFG_H2G_CTB_DESCRIPTOR_ADDR_KEY :
+				   GUC_KLV_SELF_CFG_G2H_CTB_DESCRIPTOR_ADDR_KEY,
+				   desc_addr);
+	if (unlikely(err))
+		goto failed;
+
+	err = intel_guc_self_cfg64(guc, send ?
+				   GUC_KLV_SELF_CFG_H2G_CTB_ADDR_KEY :
+				   GUC_KLV_SELF_CFG_G2H_CTB_ADDR_KEY,
+				   buff_addr);
+	if (unlikely(err))
+		goto failed;
+
+	err = intel_guc_self_cfg32(guc, send ?
+				   GUC_KLV_SELF_CFG_H2G_CTB_SIZE_KEY :
+				   GUC_KLV_SELF_CFG_G2H_CTB_SIZE_KEY,
+				   size);
+
+failed:
+
+
+	return err;
+}
+
+static int guc_action_control_ctb(struct intel_guc *guc, u32 control)
+{
+	u32 request[HOST2GUC_CONTROL_CTB_REQUEST_MSG_LEN] = {
+		FIELD_PREP(GUC_HXG_MSG_0_ORIGIN, GUC_HXG_ORIGIN_HOST) |
+		FIELD_PREP(GUC_HXG_MSG_0_TYPE, GUC_HXG_TYPE_REQUEST) |
+		FIELD_PREP(GUC_HXG_REQUEST_MSG_0_ACTION, GUC_ACTION_HOST2GUC_CONTROL_CTB),
+		FIELD_PREP(HOST2GUC_CONTROL_CTB_REQUEST_MSG_1_CONTROL, control),
+	};
+	int ret;
+
+	//GEM_BUG_ON(control != GUC_CTB_CONTROL_DISABLE && control != GUC_CTB_CONTROL_ENABLE);
+
+	/* CT control must go over MMIO */
+	ret = intel_guc_send_mmio(guc, request, ARRAY_SIZE(request), NULL, 0);
+
+	return ret > 0 ? -EPROTO : ret;
+}
+
+static int ct_control_enable(struct intel_guc *guc, bool enable)
+{
+	int err;
+	err = guc_action_control_ctb(guc, enable ?
+					 GUC_CTB_CONTROL_ENABLE : GUC_CTB_CONTROL_DISABLE);
+
+
+	return err;
+}
+
+static int guc_action_control_gucrc(struct intel_guc *guc, bool enable)
+{
+	u32 rc_mode = enable ? INTEL_GUCRC_FIRMWARE_CONTROL :
+				INTEL_GUCRC_HOST_CONTROL;
+	u32 action[] = {
+		INTEL_GUC_ACTION_SETUP_PC_GUCRC,
+		rc_mode
+	};
+	int ret;
+
+	//ret = intel_guc_send(guc, action, ARRAY_SIZE(action));
+	ret =intel_guc_send_mmio(guc, action, ARRAY_SIZE(action), NULL, 0);
+	ret = 1;//ret > 0 ? -EPROTO : ret;
+
+	return ret;
+}
+
+static void gen11_rc6_enable(void *that)
+{
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_display *display=i915->display;
+	struct intel_guc *guc = gt_to_guc(gt);
+	struct intel_engine_cs *engine;
+	
+	enum intel_engine_id id2;
+	u32 pg_enable;
+	int i;
+
+	//intel_uncore_forcewake_get(uncore, FORCEWAKE_ALL);
+	//Gen11::callback->SafeForceWake(that, true, 7);
+	
+	if (!guc->submission_supported) {
+
+		intel_de_write(display, GEN6_RC6_WAKE_RATE_LIMIT, 54 << 16 | 85);
+		intel_de_write(display, GEN10_MEDIA_WAKE_RATE_LIMIT, 150);
+
+		intel_de_write(display, GEN6_RC_EVALUATION_INTERVAL, 125000);
+		intel_de_write(display, GEN6_RC_IDLE_HYSTERSIS, 25);
+		for_each_engine(engine, gt, id2)
+		intel_de_write(display, RING_MAX_IDLE(engine->mmio_base), 10);
+
+		intel_de_write(display, GUC_MAX_IDLE_COUNT, 0xA);
+
+		intel_de_write(display, GEN6_RC_SLEEP, 0);
+
+		intel_de_write(display, GEN6_RC6_THRESHOLD, 50000);
+	}
+
+
+	intel_de_write(display, GEN9_MEDIA_PG_IDLE_HYSTERESIS, 60);
+	intel_de_write(display, GEN9_RENDER_PG_IDLE_HYSTERESIS, 60);
+
+	u32 ctl_enable;
+	if (!guc_action_control_gucrc(guc,true))
+		ctl_enable = GEN6_RC_CTL_RC6_ENABLE;
+	else
+		ctl_enable =
+			GEN6_RC_CTL_HW_ENABLE |
+			GEN6_RC_CTL_RC6_ENABLE |
+			GEN6_RC_CTL_EI_MODE(1);
+
+	pg_enable =
+		GEN9_RENDER_PG_ENABLE |
+		GEN9_MEDIA_PG_ENABLE |
+		GEN11_MEDIA_SAMPLER_PG_ENABLE;
+
+	if (GRAPHICS_VER(gt->i915) >= 12 && !IS_DG1(gt->i915)) {
+		for (i = 0; i < I915_MAX_VCS; i++)
+			if (HAS_ENGINE(gt, _VCS(i)))
+				pg_enable |= (VDN_HCP_POWERGATE_ENABLE(i) |
+						  VDN_MFX_POWERGATE_ENABLE(i));
+	}
+
+	intel_de_write(display, GEN9_PG_ENABLE, pg_enable);
+	
+	//Gen11::callback->SafeForceWake(that, false, 7);
+}
+
+
+static int intel_guc_resume0(void *that, struct intel_guc *guc)
+{
+#define GUC_POWER_D0		1
+	
+	u32 action[] = {
+		INTEL_GUC_ACTION_EXIT_S_STATE,
+		GUC_POWER_D0,
+	};
+
+	//if (!intel_guc_submission_is_used(guc) || !intel_guc_is_ready(guc))
+	//	return 0;
+
+	//Gen11::callback->hostToGuCAction(that,action + 1,1,0xf,action);
+	return intel_guc_send_mmio(guc, action, ARRAY_SIZE(action), NULL, 0);
+	//return intel_guc_send(guc, action, ARRAY_SIZE(action));
+	return 1;
+}
+
+static int intel_guc_sample_forcewake(void *that, struct intel_guc *guc)
+{
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	u32 action[2];
+	
+#define GUC_FORCEWAKE_RENDER	(1 << 0)
+#define GUC_FORCEWAKE_MEDIA	(1 << 1)
+
+	action[0] = INTEL_GUC_ACTION_SAMPLE_FORCEWAKE;
+	
+	if (!HAS_RC6(i915))
+			action[1] = 0;
+		else
+			/* bit 0 and 1 are for Render and Media domain separately */
+			action[1] = GUC_FORCEWAKE_RENDER | GUC_FORCEWAKE_MEDIA;
+	
+	
+
+	//Gen11::callback->hostToGuCAction(that,action + 1,1,0xf,action);
+	return intel_guc_send_mmio(guc, action, ARRAY_SIZE(action), NULL, 0);
+	//return intel_guc_send(guc, action, ARRAY_SIZE(action));
+	return 1;
+}
+
+int intel_guc_ct_enable(struct intel_guc *guc)
+{
+	struct intel_guc_ct *ct = &guc->ct;
+	u32 base, desc, cmds, size;
+	void *blob;
+	int err;
+
+	//GEM_BUG_ON(ct->enabled);
+
+	//GEM_BUG_ON(!ct->vma);
+	//GEM_BUG_ON(!i915_gem_object_has_pinned_pages(ct->vma->obj));
+	base = intel_guc_ggtt_offset(guc, ct->vma);
+
+	//blob = __px_vaddr(ct->vma->obj);
+	blob =(void *)ct->vma->node.vadr;
+	//GEM_BUG_ON(blob != ct->ctbs.send.desc);
+
+	guc_ct_buffer_reset(&ct->ctbs.send);
+	guc_ct_buffer_reset(&ct->ctbs.recv);
+
+
+	desc = base + ptrdiff(ct->ctbs.recv.desc, blob);
+	cmds = base + ptrdiff(ct->ctbs.recv.cmds, blob);
+	size = ct->ctbs.recv.size * 4;
+	err = ct_register_buffer(ct, false, desc, cmds, size);
+	if (unlikely(err))
+		goto err_out;
+
+	desc = base + ptrdiff(ct->ctbs.send.desc, blob);
+	cmds = base + ptrdiff(ct->ctbs.send.cmds, blob);
+	size = ct->ctbs.send.size * 4;
+	err = ct_register_buffer(ct, true, desc, cmds, size);
+	if (unlikely(err))
+		goto err_out;
+
+	err = ct_control_enable(guc, true);
+	if (unlikely(err))
+		goto err_out;
+
+	ct->enabled = true;
+	ct->stall_time = KTIME_MAX;
+
+	return 0;
+
+err_out:
+	//CT_PROBE_ERROR(ct, "Failed to enable CTB (%pe)\n", ERR_PTR(err));
+	//CT_DEAD(ct, SETUP);
+	return err;
+}
+
+uint64_t Gen11::registerCommandTransportBuffers(void *that)
+{
+	
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	
+	//intel_guc_ct_enable(guc);
+	
+	
+
+return 1;
+
+}
+
+
+void intel_guc_ct_disable(struct intel_guc *guc)
+{
+	struct intel_guc_ct *ct=&guc->ct;
+	//GEM_BUG_ON(!ct->enabled);
+
+	ct->enabled = false;
+
+	//if (intel_guc_is_fw_running(guc)) {
+		ct_control_enable(guc, false);
+	//}
+}
+
+void Gen11::deregisterCommandTransportBuffers(void *that)
+{
+	struct drm_i915_private *i915= NBlue::callback->i915b;
+	struct intel_gt *gt=to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	
+	intel_guc_ct_disable(guc);
+}
+
+static struct intel_engine_cs *find_engine_state(struct intel_gt *gt, u8 engine_class)
+{
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id;
+
+	for_each_engine(engine, gt, id) {
+		if (engine->classb != engine_class)
+			continue;
+
+		if (!engine->default_state)
+			continue;
+
+		return engine;
+	}
+
+	return NULL;
+}
+
+
+
+unsigned long  Gen11::startGraphicsEngine(void *that)
+{
+
+	uint uVar1;
+	unsigned long capabilities=getMember<unsigned long >(that, 0x1190);
+	uVar1 = (uint)capabilities >> 0x17 & 7;
+	
+	if (uVar1==3 || uVar1==4) isguc=true;
+	
+	if (!seng)
+	{
+		seng=true;
+		engines(that);
+	}
+	
+	auto ret= FunctionCast(startGraphicsEngine, callback->ostartGraphicsEngine)( that);
+	if (!ret) panic ("startGraphicsEngine");
+	return ret;
+}
+
+uint64_t Gen11::allocContextId(void *that, uint64_t res, bool clearContext)
+{
+
+	return FunctionCast(allocContextId, callback->oallocContextId)( that,res,clearContext);
+}
+
+
+
+
+static u32 __get_parent_scratch_offset(struct intel_context *ce)
+{
+	//GEM_BUG_ON(!ce->parallel.guc.parent_page);
+
+	return ce->parallel.guc.parent_page * PAGE_SIZE;
+}
+
+static u32 __get_wq_offset(struct intel_context *ce)
+{
+	//BUILD_BUG_ON(offsetof(struct parent_scratch, wq) != WQ_OFFSET);
+
+	return __get_parent_scratch_offset(ce) + WQ_OFFSET;
+}
+
+
+static u32 map_guc_prio_to_lrc_desc_prio(u8 prio)
+{
+
+	switch (prio) {
+	default:
+	case GUC_CLIENT_PRIORITY_KMD_NORMAL:
+		return GEN12_CTX_PRIORITY_NORMAL;
+	case GUC_CLIENT_PRIORITY_NORMAL:
+		return GEN12_CTX_PRIORITY_LOW;
+	case GUC_CLIENT_PRIORITY_HIGH:
+	case GUC_CLIENT_PRIORITY_KMD_HIGH:
+		return GEN12_CTX_PRIORITY_HIGH;
+	}
+}
+
+static inline bool intel_context_is_parent(struct intel_context *ce)
+{
+	return !!ce->parallel.number_children;
+}
+
+static struct parent_scratch *
+__get_parent_scratch(struct intel_context *ce)
+{
+	//BUILD_BUG_ON(sizeof(struct parent_scratch) != PARENT_SCRATCH_SIZE);
+	//BUILD_BUG_ON(sizeof(struct sync_semaphore) != CACHELINE_BYTES);
+
+
+	return (struct parent_scratch *)
+		(ce->lrc_reg_state +
+		 ((__get_parent_scratch_offset(ce) -
+		   LRC_STATE_OFFSET) / sizeof(u32)));
+}
+
+static struct guc_sched_wq_desc *
+__get_wq_desc_v70(struct intel_context *ce)
+{
+	struct parent_scratch *ps = __get_parent_scratch(ce);
+
+	return &ps->descs.wq_desc;
+}
+
+static inline void clear_children_join_go_memory(struct intel_context *ce)
+{
+	struct parent_scratch *ps = __get_parent_scratch(ce);
+	int i;
+
+	ps->go.semaphore = 0;
+	for (i = 0; i < ce->parallel.number_children + 1; ++i)
+		ps->join[i].semaphore = 0;
+}
+
+static void prepare_context_registration_info_v70(struct intel_context *ce,
+						  struct guc_ctxt_registration_info *info)
+{
+	struct intel_engine_cs *engine = ce->engine;
+	struct intel_guc *guc = gt_to_guc(engine->gt);
+	u32 ctx_id = ce->guc_id.id2;
+
+	//GEM_BUG_ON(!engine->mask);
+
+
+	//GEM_BUG_ON(i915_gem_object_is_lmem(guc->ct.vma->obj) !=
+	//	   i915_gem_object_is_lmem(ce->ring->vma->obj));
+
+	memset(info, 0, sizeof(*info));
+	info->context_idx = ctx_id;
+	info->engine_class = engine_class_to_guc_class(engine->classb);
+	info->engine_submit_mask = engine->logical_mask;
+
+	info->hwlrca_lo = lower_32_bits(ce->lrc.lrca);
+	info->hwlrca_hi = upper_32_bits(ce->lrc.lrca);
+	if (engine->flags & I915_ENGINE_HAS_EU_PRIORITY)
+		info->hwlrca_lo |= map_guc_prio_to_lrc_desc_prio(ce->guc_state.prio);
+	info->flags = CONTEXT_REGISTRATION_FLAG_KMD;
+
+	if (intel_context_is_parent(ce)) {
+		struct guc_sched_wq_desc *wq_desc;
+		u64 wq_desc_offset, wq_base_offset;
+
+		ce->parallel.guc.wqi_tail = 0;
+		ce->parallel.guc.wqi_head = 0;
+
+		wq_desc_offset = (u64)i915_ggtt_offset(ce->state) +
+				 __get_parent_scratch_offset(ce);
+		wq_base_offset = (u64)i915_ggtt_offset(ce->state) +
+				 __get_wq_offset(ce);
+		info->wq_desc_lo = lower_32_bits(wq_desc_offset);
+		info->wq_desc_hi = upper_32_bits(wq_desc_offset);
+		info->wq_base_lo = lower_32_bits(wq_base_offset);
+		info->wq_base_hi = upper_32_bits(wq_base_offset);
+		info->wq_size = WQ_SIZE;
+
+		wq_desc = __get_wq_desc_v70(ce);
+		memset(wq_desc, 0, sizeof(*wq_desc));
+		wq_desc->wq_status = WQ_STATUS_ACTIVE;
+
+		ce->parallel.guc.wq_head = &wq_desc->head;
+		ce->parallel.guc.wq_tail = &wq_desc->tail;
+		ce->parallel.guc.wq_status = &wq_desc->wq_status;
+
+		clear_children_join_go_memory(ce);
+	}
+}
+
+
+
+
+static int __guc_action_register_multi_lrc_v70(struct intel_guc *guc,
+						   struct intel_context *ce,
+						   struct guc_ctxt_registration_info *info,
+						   bool loop)
+{
+	struct intel_context *child;
+	u32 action[13 + (MAX_ENGINE_INSTANCE * 2)];
+	int len = 0;
+	u32 next_id;
+
+	//GEM_BUG_ON(ce->parallel.number_children > MAX_ENGINE_INSTANCE);
+
+	action[len++] = INTEL_GUC_ACTION_REGISTER_CONTEXT_MULTI_LRC;
+	action[len++] = info->flags;
+	action[len++] = info->context_idx;
+	action[len++] = info->engine_class;
+	action[len++] = info->engine_submit_mask;
+	action[len++] = info->wq_desc_lo;
+	action[len++] = info->wq_desc_hi;
+	action[len++] = info->wq_base_lo;
+	action[len++] = info->wq_base_hi;
+	action[len++] = info->wq_size;
+	action[len++] = ce->parallel.number_children + 1;
+	action[len++] = info->hwlrca_lo;
+	action[len++] = info->hwlrca_hi;
+
+	next_id = info->context_idx + 1;
+	for_each_child(ce, child) {
+		//GEM_BUG_ON(next_id++ != child->guc_id.id);
+
+		action[len++] = lower_32_bits(child->lrc.lrca);
+		action[len++] = upper_32_bits(child->lrc.lrca);
+	}
+
+	//GEM_BUG_ON(len > ARRAY_SIZE(action));
+	return intel_guc_send_mmio(guc, action,len, NULL, 0);
+	//return guc_submission_send_busy_loop(guc, action, len, 0, loop);
+}
+
+static int __guc_action_register_context_v70(struct intel_guc *guc,
+						 struct guc_ctxt_registration_info *info,
+						 bool loop)
+{
+	u32 action[] = {
+		INTEL_GUC_ACTION_REGISTER_CONTEXT,
+		info->flags,
+		info->context_idx,
+		info->engine_class,
+		info->engine_submit_mask,
+		info->wq_desc_lo,
+		info->wq_desc_hi,
+		info->wq_base_lo,
+		info->wq_base_hi,
+		info->wq_size,
+		info->hwlrca_lo,
+		info->hwlrca_hi,
+	};
+	return intel_guc_send_mmio(guc, action, ARRAY_SIZE(action), NULL, 0);
+	//return guc_submission_send_busy_loop(guc, action, ARRAY_SIZE(action),0, loop);
+}
+
+static int
+register_context_v70(struct intel_guc *guc, struct intel_context *ce, bool loop)
+{
+	struct guc_ctxt_registration_info info;
+
+	prepare_context_registration_info_v70(ce, &info);
+
+	if (intel_context_is_parent(ce))
+		return __guc_action_register_multi_lrc_v70(guc, ce, &info, loop);
+	else
+		return __guc_action_register_context_v70(guc, &info, loop);
+}
+
+static inline void set_context_registered(struct intel_context *ce)
+{
+	//lockdep_assert_held(&ce->guc_state.lock);
+	ce->guc_state.sched_state |= SCHED_STATE_REGISTERED;
+}
+
+enum  {
+	GUC_CONTEXT_POLICIES_KLV_ID_EXECUTION_QUANTUM			= 0x2001,
+	GUC_CONTEXT_POLICIES_KLV_ID_PREEMPTION_TIMEOUT			= 0x2002,
+	GUC_CONTEXT_POLICIES_KLV_ID_SCHEDULING_PRIORITY			= 0x2003,
+	GUC_CONTEXT_POLICIES_KLV_ID_PREEMPT_TO_IDLE_ON_QUANTUM_EXPIRY	= 0x2004,
+	GUC_CONTEXT_POLICIES_KLV_ID_SLPM_GT_FREQUENCY			= 0x2005,
+
+	GUC_CONTEXT_POLICIES_KLV_NUM_IDS = 5,
+};
+
+struct guc_klv_generic_dw_t {
+	u32 kl;
+	u32 value;
+} __packed;
+struct guc_update_context_policy_header {
+	u32 action;
+	u32 ctx_id;
+} __packed;
+struct guc_update_context_policy {
+	struct guc_update_context_policy_header header;
+	struct guc_klv_generic_dw_t klv[GUC_CONTEXT_POLICIES_KLV_NUM_IDS];
+} __packed;
+
+struct context_policy {
+	u32 count;
+	struct guc_update_context_policy h2g;
+};
+
+static u32 __guc_context_policy_action_size(struct context_policy *policy)
+{
+	size_t bytes = sizeof(policy->h2g.header) +
+			   (sizeof(policy->h2g.klv[0]) * policy->count);
+
+	return bytes / sizeof(u32);
+}
+
+static void __guc_context_policy_start_klv(struct context_policy *policy, u16 guc_id)
+{
+	policy->h2g.header.action = 0x100B;
+	policy->h2g.header.ctx_id = guc_id;
+	policy->count = 0;
+}
+
+
+
+#define MAKE_CONTEXT_POLICY_ADD(func, id) \
+static void __guc_context_policy_add_##func(struct context_policy *policy, u32 data) \
+{ \
+	policy->h2g.klv[policy->count].kl = \
+		FIELD_PREP(GUC_KLV_0_KEY, GUC_CONTEXT_POLICIES_KLV_ID_##id) | \
+		FIELD_PREP(GUC_KLV_0_LEN, 1); \
+	policy->h2g.klv[policy->count].value = data; \
+	policy->count++; \
+}
+
+MAKE_CONTEXT_POLICY_ADD(execution_quantum, EXECUTION_QUANTUM)
+MAKE_CONTEXT_POLICY_ADD(preemption_timeout, PREEMPTION_TIMEOUT)
+MAKE_CONTEXT_POLICY_ADD(priority, SCHEDULING_PRIORITY)
+MAKE_CONTEXT_POLICY_ADD(preempt_to_idle, PREEMPT_TO_IDLE_ON_QUANTUM_EXPIRY)
+MAKE_CONTEXT_POLICY_ADD(slpc_ctx_freq_req, SLPM_GT_FREQUENCY)
+#undef MAKE_CONTEXT_POLICY_ADD
+
+static int __guc_context_set_context_policies(struct intel_guc *guc,
+						  struct context_policy *policy,
+						  bool loop)
+{
+	return intel_guc_send_mmio(guc, (u32 *)&policy->h2g, __guc_context_policy_action_size(policy), NULL, 0);
+	
+	//return guc_submission_send_busy_loop(guc, (u32 *)&policy->h2g,__guc_context_policy_action_size(policy),0, loop);
+}
+
+static inline void set_context_policy_required(struct intel_context *ce)
+{
+	//lockdep_assert_held(&ce->guc_state.lock);
+	ce->guc_state.sched_state |= SCHED_STATE_POLICY_REQUIRED;
+}
+
+static inline void clr_context_policy_required(struct intel_context *ce)
+{
+	//lockdep_assert_held(&ce->guc_state.lock);
+	ce->guc_state.sched_state &= ~SCHED_STATE_POLICY_REQUIRED;
+}
+
+static int guc_context_policy_init_v70(struct intel_context *ce, bool loop)
+{
+	struct intel_engine_cs *engine = ce->engine;
+	struct intel_guc *guc = gt_to_guc(engine->gt);
+	struct context_policy policy;
+	u32 execution_quantum;
+	u32 preemption_timeout;
+	u32 slpc_ctx_freq_req = 0;
+	unsigned long flags;
+	int ret;
+
+	/*GEM_BUG_ON(overflows_type(engine->props.timeslice_duration_ms * 1000,
+				  execution_quantum));
+	GEM_BUG_ON(overflows_type(engine->props.preempt_timeout_ms * 1000,
+				  preemption_timeout));*/
+	execution_quantum = engine->props.timeslice_duration_ms * 1000;
+	preemption_timeout = engine->props.preempt_timeout_ms * 1000;
+
+	if (ce->flags & BIT(CONTEXT_LOW_LATENCY))
+		slpc_ctx_freq_req |= SLPC_CTX_FREQ_REQ_IS_COMPUTE;
+
+	__guc_context_policy_start_klv(&policy, ce->guc_id.id2);
+
+	__guc_context_policy_add_priority(&policy, ce->guc_state.prio);
+	__guc_context_policy_add_execution_quantum(&policy, execution_quantum);
+	__guc_context_policy_add_preemption_timeout(&policy, preemption_timeout);
+	__guc_context_policy_add_slpc_ctx_freq_req(&policy, slpc_ctx_freq_req);
+
+	if (engine->flags & I915_ENGINE_WANT_FORCED_PREEMPTION)
+		__guc_context_policy_add_preempt_to_idle(&policy, 1);
+
+	ret = __guc_context_set_context_policies(guc, &policy, loop);
+
+	//spin_lock_irqsave(&ce->guc_state.lock, flags);
+	if (ret != 0)
+		set_context_policy_required(ce);
+	else
+		clr_context_policy_required(ce);
+	//spin_unlock_irqrestore(&ce->guc_state.lock, flags);
+
+	return ret;
+}
+
+static int register_context(struct intel_context *ce, bool loop)
+{
+	struct intel_guc *guc = gt_to_guc(ce->engine->gt);
+	int ret;
+
+//	GEM_BUG_ON(intel_context_is_child(ce));
+	//trace_intel_context_register(ce);
+
+	if (GUC_SUBMIT_VER(guc) >= MAKE_GUC_VER(1, 0, 0))
+		ret = register_context_v70(guc, ce, loop);
+	//else
+	//	ret = register_context_v69(guc, ce, loop);
+
+	if ((!ret)) {
+		unsigned long flags;
+
+		//spin_lock_irqsave(&ce->guc_state.lock, flags);
+		set_context_registered(ce);
+		//spin_unlock_irqrestore(&ce->guc_state.lock, flags);
+
+		if (GUC_SUBMIT_VER(guc) >= MAKE_GUC_VER(1, 0, 0))
+			guc_context_policy_init_v70(ce, loop);
+	}
+
+	return ret;
+}
+
+static int __guc_action_deregister_context(struct intel_guc *guc,
+					   u32 guc_id)
+{
+	u32 action[] = {
+		INTEL_GUC_ACTION_DEREGISTER_CONTEXT,
+		guc_id,
+	};
+
+	return intel_guc_send_mmio(guc, action, ARRAY_SIZE(action), NULL, 0);
+	//return guc_submission_send_busy_loop(guc, action, ARRAY_SIZE(action), G2H_LEN_DW_DEREGISTER_CONTEXT,	 true);
+}
+
+static int deregister_context(struct intel_guc *guc, u32 guc_id)
+{
+
+	//GEM_BUG_ON(intel_context_is_child(ce));
+	//trace_intel_context_deregister(ce);
+
+	return __guc_action_deregister_context(guc, guc_id);
+}
+
+uint64_t Gen11::AttachContextDescToGucContext(void *that, void *desc)
+{
+
+	uint64_t apple_result = FunctionCast(AttachContextDescToGucContext, callback->oAttachContextDescToGucContext)(that,desc );
+	if (apple_result == 0) return 0;
+
+	IOLock* contextLock= (IOLock*)getMember<void*>(that, 0x40);
+
+	void* hashTable = getMember<void*>(that, 0xA30);
+	if (hashTable == nullptr) {
+		return apple_result;
+	}
+		uint32_t gpu_address = *(uint32_t*)desc;
+		uint32_t hashKey = gpu_address >> 0xC;
+		
+		uint32_t* queueDw1Ptr = nullptr;
+		if (IGHashTablecontains(hashTable, &hashKey)) {
+			queueDw1Ptr = (uint32_t*)IGHashTableoperator(hashTable, &hashKey);
+		}
+		
+		if (queueDw1Ptr == nullptr) {
+			return apple_result;
+		}
+	
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	struct intel_gt *gt = to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	struct intel_guc_ct *ct = &guc->ct;
+	struct intel_guc_ct_buffer *send_ctb = &ct->ctbs.send;
+
+	uint8_t* poolBase = (uint8_t*)fgetVirtualAddress(getMember<void*>(that, 0x68));
+	uint32_t poolGpuBase = fgetGPUVirtualAddress(getMember<void*>(that, 0x68));
+	
+	uint64_t offset = (uint8_t*)queueDw1Ptr - poolBase;
+	uint32_t contextId = (uint32_t)(offset / GUCCtx_ENTRY_STRIDE);
+	uint64_t lrca_gpu_addr = (uint64_t)poolGpuBase + offset;
+	uint8_t* contextBase = poolBase + offset;
+
+	uint32_t apple_wq_gpu_addr = getMember<uint32_t>(contextBase, 0x5A80);
+	uint32_t descFlags = getMember<uint32_t>(desc, 0x04);
+	uint32_t engineClass = 5;
+	if ((descFlags >> 30) < 3) engineClass = AppleToGuC_EngineClassMap[descFlags >> 29];
+
+	struct intel_context *ce=(struct intel_context *)contextBase;
+	IOLockLock(contextLock);
+	register_context(ce, false);
+	IOLockUnlock(contextLock);
+	
+
+	return apple_result;
+}
+
+void Gen11::DetachContextDescFromGucContext(void *that, void *desc)
+{
+	void* hashTable = getMember<void*>(that, 0xA30);
+	uint32_t gpu_address = *(uint32_t*)desc;
+	uint32_t hashKey = gpu_address >> 0xC;
+	
+	uint32_t* queueDw1Ptr = nullptr;
+	
+	if (hashTable != nullptr)
+	if (IGHashTablecontains(hashTable, &hashKey)) {
+		queueDw1Ptr = (uint32_t*)IGHashTableoperator(hashTable, &hashKey);
+	}
+	
+	if (queueDw1Ptr != nullptr) {
+		struct drm_i915_private *i915 = NBlue::callback->i915b;
+		struct intel_gt *gt = to_gt(i915);
+		struct intel_guc *guc = gt_to_guc(gt);
+		struct intel_guc_ct *ct = &guc->ct;
+		struct intel_guc_ct_buffer *send_ctb = &ct->ctbs.send;
+
+		uint8_t* poolBase = (uint8_t*)fgetVirtualAddress(getMember<void*>(that, 0x68));
+		uint64_t offset = (uint8_t*)queueDw1Ptr - poolBase;
+		
+		uint32_t contextId = (uint32_t)(offset / GUCCtx_ENTRY_STRIDE);
+		
+		IOLock* contextLock = (IOLock*)getMember<void*>(that, 0x40);
+		IOLockLock(contextLock);
+		deregister_context(guc, contextId);
+		IOLockUnlock(contextLock);
+
+	}
+
+	FunctionCast(DetachContextDescFromGucContext, callback->oDetachContextDescFromGucContext)(that, desc);
+}
+
+
+
+void Gen11::releaseUkContext(void *that, uint32_t context_id)
+{
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	struct intel_gt *gt = to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	struct intel_guc_ct *ct = &guc->ct;
+	struct intel_guc_ct_buffer *send_ctb = &ct->ctbs.send;
+
+	FunctionCast(releaseUkContext, callback->oreleaseUkContext)(that, context_id);
+}
+
+
+
+static void guc_route_semaphores(struct intel_gt *gt, bool to_guc)
+{
+	struct drm_i915_private *i915 = gt->i915;
+	struct intel_display *display = i915->display;
+	
+	u32 val;
+
+	if (GRAPHICS_VER(gt->i915) < 12)
+		return;
+
+	if (to_guc)
+		val = GUC_SEM_INTR_ROUTE_TO_GUC | GUC_SEM_INTR_ENABLE_ALL;
+	else
+		val = 0;
+
+	intel_de_write(display, GEN12_GUC_SEM_INTR_ENABLES, val);
+}
+
+
+
+static int guc_action_register_ct_buffer(struct intel_guc *guc,
+					 u32 desc_addr,
+					 u32 type)
+{
+	u32 action[] = {
+		INTEL_GUC_ACTION_REGISTER_COMMAND_TRANSPORT_BUFFER,
+		desc_addr,
+		sizeof(struct guc_ct_buffer_desc0),
+		type
+	};
+
+	return intel_guc_send_mmio(guc, action, ARRAY_SIZE(action), NULL, 0);
+}
+
+static int ct_register_buffer0(struct intel_guc_ct0 *ct, u32 desc_addr, u32 type)
+{
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	struct intel_gt *gt = to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	
+	int err = guc_action_register_ct_buffer(guc, desc_addr, type);
+
+	return err;
+}
+
+static void guc_ct_buffer_desc_init0(struct guc_ct_buffer_desc0 *desc,
+					u32 cmds_addr, u32 size)
+{
+	memset(desc, 0, sizeof(*desc));
+	desc->addr = cmds_addr;
+	desc->size = size;
+	desc->owner = CTB_OWNER_HOST;
+}
+static int intel_guc_ct_enable0(struct intel_guc *guc)
+{
+	struct intel_guc_ct0 *ct=&guc->ct0;
+	u32 base, cmds, size;
+	int err;
+	int i;
+
+
+	base = intel_guc_ggtt_offset(guc, ct->vma);
+
+
+	for (i = 0; i < ARRAY_SIZE(ct->ctbs); i++) {
+		cmds = base + PAGE_SIZE / 4 * i + PAGE_SIZE / 2;
+		size = PAGE_SIZE / 4;
+		guc_ct_buffer_desc_init0(ct->ctbs[i].desc, cmds, size);
+	}
+
+
+	err = ct_register_buffer0(ct, base + PAGE_SIZE / 4 * CTB_RECV,
+				 INTEL_GUC_CT_BUFFER_TYPE_RECV);
+	if (unlikely(err))
+		goto err_out;
+
+	err = ct_register_buffer0(ct, base + PAGE_SIZE / 4 * CTB_SEND,
+				 INTEL_GUC_CT_BUFFER_TYPE_SEND);
+	if (unlikely(err))
+		goto err_deregister;
+
+	ct->enabled = true;
+
+	return 0;
+
+err_deregister:
+err_out:
+	return err;
+}
+static int guc_enable_communication(void *that)
+{
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	struct intel_gt *gt = to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	struct intel_guc_ct0 *ct = &guc->ct0;
+	struct intel_display *display = i915->display;
+	int ret;
+
+
+	//ret = intel_guc_ct_enable0(guc);
+
+
+	/* check for mmio messages received before/during the CT enable */
+	//guc_get_mmio_msg(guc);
+	//guc_handle_mmio_msg(guc);
+
+	gen11_enable_guc_interrupts(gt);
+
+	/* check for CT messages received before we enabled interrupts */
+	//spin_lock_irq(&i915->irq_lock);
+	//intel_guc_ct_event_handler(&guc->ct);
+	//spin_unlock_irq(&i915->irq_lock);
+
+
+	return 0;
+}
+
+static void guc_proc_desc_init(struct intel_guc *guc)
+{
+	struct guc_process_desc *desc;
+
+	desc = (struct guc_process_desc *)memset(guc->proc_desc_vaddr, 0, sizeof(*desc));
+
+	desc->wq_base_addr = 0;
+	desc->db_base_addr = 0;
+
+	desc->wq_size_bytes = GUC_WQ_SIZE;
+	desc->wq_status = WQ_STATUS_ACTIVE;
+	desc->priority = GUC_CLIENT_PRIORITY_KMD_NORMAL;
+}
+
+static struct guc_stage_desc *__get_stage_desc(struct intel_guc *guc, u32 id)
+{
+	struct guc_stage_desc *base = (struct guc_stage_desc *)guc->stage_desc_pool_vaddr;
+
+	return &base[id];
+}
+
+static void guc_stage_desc_init(struct intel_guc *guc)
+{
+	struct guc_stage_desc *desc;
+
+	/* we only use 1 stage desc, so hardcode it to 0 */
+	desc = __get_stage_desc(guc, 0);
+	memset(desc, 0, sizeof(*desc));
+
+	desc->attribute = GUC_STAGE_DESC_ATTR_ACTIVE |
+			  GUC_STAGE_DESC_ATTR_KERNEL;
+
+	desc->stage_id = 0;
+	desc->priority = GUC_CLIENT_PRIORITY_KMD_NORMAL;
+
+	desc->process_desc = intel_guc_ggtt_offset(guc, guc->proc_desc);
+	desc->wq_addr = intel_guc_ggtt_offset(guc, guc->workqueue);
+	desc->wq_size = GUC_WQ_SIZE;
+}
+
+static void guc_route_semaphores(struct intel_guc *guc, bool to_guc)
+{
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	struct intel_display *display = i915->display;
+	u32 val;
+
+	if (GRAPHICS_VER(i915) < 12)
+		return;
+
+	if (to_guc)
+		val = GUC_SEM_INTR_ROUTE_TO_GUC | GUC_SEM_INTR_ENABLE_ALL;
+	else
+		val = 0;
+
+	intel_de_write(display, GEN12_GUC_SEM_INTR_ENABLES, val);
+}
+
+u32 intel_guc_engine_usage_offset(struct intel_guc *guc)
+{
+	return intel_guc_ggtt_offset(guc, guc->ads_vma) +
+		offsetof(struct __guc_ads_blob, engine_usage);
+}
+
+
+#define __iosys_map_wr_sys(val__, vaddr__, type__)				\
+	WRITE_ONCE(*(type__ *)(vaddr__), val__)
+
+#define iosys_map_wr(map__, offset__, type__, val__) ({					\
+	type__ val_ = (val__);								\
+		__iosys_map_wr_sys(val_, (u8*)((map__)->vaddr) + (offset__), type__);		\
+})
+
+#define iosys_map_wr_field(map__, struct_offset__, struct_type__, field__, val__) ({	\
+	struct_type__ *s_;								\
+	iosys_map_wr(map__, struct_offset__ + offsetof(struct_type__, field__),		\
+			 __typeof(s_->field__), val__);					\
+})
+
+
+struct iosys_map intel_guc_engine_usage_record_map(struct intel_engine_cs *engine)
+{
+	struct intel_guc *guc = gt_to_guc(engine->gt);
+	u8 guc_class = engine_class_to_guc_class(engine->classb);
+	size_t offset = offsetof(struct __guc_ads_blob,
+				 engine_usage.engines[guc_class][ilog2(engine->logical_mask)]);
+
+	return IOSYS_MAP_INIT_OFFSET(&guc->ads_map, offset);
+}
+
+static void __set_engine_usage_record(struct intel_engine_cs *engine,
+					  u32 last_in, u32 id, u32 total)
+{
+	struct iosys_map rec_map = intel_guc_engine_usage_record_map(engine);
+
+#define record_write(map_, field_, val_) \
+	iosys_map_wr_field(map_, 0, struct guc_engine_usage_record, field_, val_)
+
+	record_write(&rec_map, last_switch_in_stamp, last_in);
+	record_write(&rec_map, current_context_index, id);
+	record_write(&rec_map, total_runtime, total);
+
+#undef record_write
+}
+
+static int guc_action_enable_usage_stats(struct intel_guc *guc)
+{
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	struct intel_gt *gt = to_gt(i915);
+	struct intel_guc_ct *ct = &guc->ct;
+	struct intel_display *display = i915->display;
+	struct intel_engine_cs *engine;
+	enum intel_engine_id id;
+	u32 offset = intel_guc_engine_usage_offset(guc);
+	u32 action[] = {
+		INTEL_GUC_ACTION_SET_ENG_UTIL_BUFF,
+		offset,
+		0,
+	};
+
+	for_each_engine(engine, gt, id)
+		__set_engine_usage_record(engine, 0, 0xffffffff, 0);
+
+	//return intel_guc_send(guc, action, ARRAY_SIZE(action));
+	return intel_guc_send_mmio(guc, action, ARRAY_SIZE(action), NULL, 0);
+}
+
+static int guc_init_engine_stats(struct intel_guc *guc)
+{
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	struct intel_gt *gt = to_gt(i915);
+	struct intel_guc_ct *ct = &guc->ct;
+	struct intel_display *display = i915->display;
+	int ret;
+
+	//with_intel_runtime_pm(&gt->i915->runtime_pm, wakeref)
+		ret = guc_action_enable_usage_stats(guc);
+
+	if (ret)
+		return ret;
+	//else
+	//	guc_enable_busyness_worker(guc);
+
+	return ret;
+}
+
+#define __MASKED_FIELD(mask, value) ((mask) << 16 | (value))
+#define _MASKED_FIELD(mask, value) ({					   \
+	__MASKED_FIELD(mask, value); })
+#define _MASKED_BIT_ENABLE(a)	({ __typeof(a) _a = (a); _MASKED_FIELD(_a, _a); })
+
+#define RING_MODE_GEN7(base)	_MMIO((base) + 0x29c)
+static int intel_guc_submission_enable0(struct intel_guc *guc)
+{
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	struct intel_display *display = i915->display;
+	struct intel_gt *gt = to_gt(i915);
+	
+		struct intel_engine_cs *engine;
+		enum intel_engine_id id;
+		int irqs;
+
+		/* tell all command streamers to forward interrupts (but not vblank)
+		 * to GuC
+		 */
+		irqs = _MASKED_BIT_ENABLE((1 << 14));
+		for_each_engine(engine, gt, id)
+			intel_de_write(display,	RING_MODE_GEN7(engine->mmio_base), irqs);
+
+		/* route USER_INTERRUPT to Host, all others are sent to GuC. */
+		irqs = GT_RENDER_USER_INTERRUPT << 0 |
+			   GT_RENDER_USER_INTERRUPT << 16;
+		/* These three registers have the same bit definitions */
+		intel_de_write(display, GUC_BCS_RCS_IER, ~irqs);
+		intel_de_write(display, GUC_VCS2_VCS1_IER, ~irqs);
+		intel_de_write(display, GUC_WD_VECS_IER, ~irqs);
+
+	return 0;
+
+}
+
+static int intel_guc_submission_enable(struct intel_guc *guc)
+{
+	int ret;
+
+	/* Semaphore interrupt enable and route to GuC */
+	guc_route_semaphores(guc, true);
+
+	//ret = guc_init_submission(guc);
+	//if (ret)
+	//	goto fail_sem;
+
+	ret = guc_init_engine_stats(guc);
+	if (ret)
+		goto fail_sem;
+
+	//ret = guc_init_global_schedule_policy(guc);
+	//if (ret)
+	//	goto fail_stats;
+
+	return 0;
+
+fail_stats:
+	//guc_fini_engine_stats(guc);
+fail_sem:
+	//guc_route_semaphores(guc, false);
+	return ret;
+}
+
+uint64_t Gen11::loadFirmware(void *that)
+{
+	struct drm_i915_private *i915 = NBlue::callback->i915b;
+	struct intel_gt *gt = to_gt(i915);
+	struct intel_guc *guc = gt_to_guc(gt);
+	struct intel_guc_ct *ct = &guc->ct;
+	struct intel_display *display = i915->display;
+	
+	auto ret=FunctionCast(loadFirmware, callback->oloadFirmware)(that);
+	
+	
+	void *m_accelerator = getMember<void *>(that, 0x10);
+	
+	if (guc->fw.file_selected.ver.major < 69) {
+		Gen11::callback->SafeForceWake(m_accelerator, true, 7);
+		gen11_rc6_enable(m_accelerator);
+		
+		//gen11_irq_reset(i915);
+		//gen11_irq_postinstall(i915);
+		
+		gen11_enable_guc_interrupts(gt);
+		
+		intel_guc_sample_forcewake(m_accelerator, guc);
+		intel_guc_submission_enable0(guc);
+		//intel_guc_resume0(m_accelerator, guc);
+		Gen11::callback->SafeForceWake(m_accelerator, false, 7);
+	}
+	
+	return ret;
+}
+
+
+static uint16_t tglCsbItemId(void *item) {
+	if (!item)
+		return 0xFFFF;
+	auto context = getMember<uint8_t *>(item, 0);
+	return context ? static_cast<uint16_t>(getMember<uint32_t>(context, 0x7C)) : 0xFFFE;
+}
+
+void Gen11::wrapProcessContextStatusBuffer(void *that, uint32_t flags) {
+	// Offsets are those of IGHardwareCommandStreamer5 in AppleIntelICLGraphics 24.0.5:
+	//   +0x10 IntelAccelerator, +0x28 engine description (byte 0 = IGHwCsType), +0x30 two execlists of two work
+	//   items each, +0x50 index of the active list, +0x68 hardware status page, +0x1C04 read pointer.
+	// Hardware status page (same on Gen11 and Gen12): entries at +0x40, write pointer at +0xBC.
+	// Six entries: the driver leaves GFX_MODE bit 3 clear, and run GA3 showed the hardware wrap from entry 5 to
+	// entry 0 with entries 6-11 never written. Only the layout of an entry is the Gen12 one.
+	static constexpr uint32_t Entries = 6;
+	static constexpr uint32_t IdleId = 0x7FF;
+	static constexpr uint32_t Stored = 0x10; // the read pointer is kept at +0x1C04 as Stored + index
+	auto self = callback;
+	auto cs = static_cast<uint8_t *>(that);
+	auto accel = getMember<uint8_t *>(that, 0x10);
+	auto page = getMember<volatile uint32_t *>(that, 0x68);
+
+
+	// The driver reads the buffer through MMIO when bit 7 of this byte is set; that path is left to the driver
+	if (!page || (accel[0x11C0] & 0x80)) {
+		FunctionCast(wrapProcessContextStatusBuffer, self->orgProcessContextStatusBuffer)(that, flags);
+		return;
+	}
+
+	uint32_t writePointer = page[0xBC / 4];
+	auto &stored = *reinterpret_cast<uint32_t *>(cs + 0x1C04);
+	uint32_t readPointer;
+	if (stored >= Stored && stored < Stored + Entries) {
+		readPointer = stored - Stored;
+	} else {
+		// The driver put its reset value (7) here, in init(), resetOnWake() or processGPUReset(); the last two
+		// also write 7 to the write pointer in the page. After a reset the hardware's next entry
+		// is entry 0. Entries read here are overwritten with all ones, the page starts out zeroed, and the first
+		// entry after a reset is an idle-to-active one with bit 0 set: an entry 0 of zeros or ones is not new.
+		uint32_t lo = page[0x40 / 4], hi = page[0x44 / 4];
+		if ((lo == 0 && hi == 0) || (lo == 0xFFFFFFFF && hi == 0xFFFFFFFF)) {
+			return;
+		}
+		readPointer = Entries - 1;
+	}
+	if (writePointer >= Entries) {
+		return;
+	}
+
+	while (readPointer != writePointer) {
+		uint32_t index = readPointer + 1 == Entries ? 0 : readPointer + 1;
+		volatile uint32_t *entry = page + 0x40 / 4 + index * 2;
+		uint32_t lo = entry[0], hi = entry[1];
+		// The write pointer can be visible before the entry is (i915 csb_read/wa_csb_read, Tiger Lake)
+		for (uint32_t spins = 0; (lo == 0xFFFFFFFF || hi == 0xFFFFFFFF) && spins < 20; spins++) {
+			IODelay(10);
+			lo = entry[0];
+			hi = entry[1];
+		}
+		if (lo == 0xFFFFFFFF || hi == 0xFFFFFFFF) {
+			return;
+		}
+		entry[0] = 0xFFFFFFFF;
+		entry[1] = 0xFFFFFFFF;
+		readPointer = index;
+		stored = Stored + readPointer;
+
+		uint32_t to = (lo >> 15) & 0x7FF, away = (hi >> 15) & 0x7FF, detail = hi & 0xF;
+		bool newQueue = (lo & 1) != 0;
+		auto lists = reinterpret_cast<void **>(cs + 0x30);
+		uint32_t active = getMember<uint32_t>(that, 0x50) & 1;
+		uint32_t active0 = tglCsbItemId(lists[active * 2]), active1 = tglCsbItemId(lists[active * 2 + 1]);
+		uint32_t pending0 = tglCsbItemId(lists[(1 - active) * 2]);
+		// Gen8 event bits: 0 idle to active, 1 preempted, 2 element switch, 3 active to idle, 4 context complete,
+		// 7 wait on semaphore, 15 lite restore
+		uint32_t waitOrDone = detail == 4 ? 0x80 : 0x10;
+		uint8_t action;
+		uint32_t synth[2];
+		bool fits;
+		
+		enum Action : uint8_t {
+			IdleToActive = 1, Preempted = 2, ElementSwitch = 3, ActiveToIdle = 4, // handed to the driver's handler
+			Skipped = 0x10,       // + one of the above: did not fit the driver's execlist state, not handed on
+			BothIdle = 0x20,      // neither context id valid
+			NotWritten = 0x30,    // write pointer moved but the entry still read as all ones after 200 us
+			Passthrough = 0x40,   // driver is in MMIO mode: its own function ran
+			BadPointer = 0x50,    // write pointer above 5
+			AfterReset = 0x60     // driver's read pointer is in its reset state and entry 0 is empty
+		};
+		
+		if (away == IdleId && to == IdleId) {
+			continue;
+		} else if (away == IdleId) {
+			action = IdleToActive;
+			synth[0] = 0x1;
+			synth[1] = to << 5;
+			fits = pending0 == to;
+		} else if (newQueue) {
+			action = Preempted;
+			synth[0] = 0x2 | (to == away ? 0x8000 : (detail == 0 ? 0x10 : (detail == 4 ? 0x80 : 0)));
+			synth[1] = away << 5;
+			fits = active0 == away && pending0 != 0xFFFF;
+		} else if (to != IdleId) {
+			// The handler dereferences the second slot of the active list without a check
+			action = ElementSwitch;
+			synth[0] = 0x4 | waitOrDone;
+			synth[1] = away << 5;
+			fits = active0 == away && active1 == to;
+		} else {
+			action = ActiveToIdle;
+			synth[0] = 0x8 | waitOrDone;
+			synth[1] = away << 5;
+			fits = active0 == away;
+		}
+		if (!fits) {
+			continue;
+		}
+		self->csbHandlers[action - 1](that, synth);
+	}
+}

@@ -137,11 +137,5 @@
   "-wexbeta": [
     "-wxebeta"
   ],
-  "-wex-edp-trans-off": [],
-  "-wex-edphpd-off": [],
-  "-wex-blfreq-off": [],
-  "-wex-bl64-off": [],
-  "-wex-lt-off": [],
-  "-wex-tahoe-off": [],
-  "-wex-accel-off": []
+  "-wex-noaccel": []
 }

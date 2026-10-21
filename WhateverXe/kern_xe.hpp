@@ -70,10 +70,6 @@ private:
 	__attribute__((noinline)) bool processDisplay13Framebuffer(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);
 	__attribute__((noinline)) bool processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);
 	__attribute__((noinline)) bool processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);
-	// macOS 26 Tahoe 25G241 host. Donor ABI fixes that are not tied to the 20G1443 contract.
-	bool tglTahoe {false};
-	bool tglTahoeIOSurfaceReady[2] {};
-	void processTGLTahoeIOSurfaceABI(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size, bool framebuffer);
 	// Separate from generation-selected SKL/ICL patch modules.
 	bool tglRequested {false};
 	bool tglActive {false};
@@ -316,20 +312,6 @@ private:
 	mach_vm_address_t orgTGLGetOSInformation {};
 	bool tglStolenMemoryReady {};
 	static bool wrapTGLGetOSInformation(void *controller);
-	// scale the donor backlight duty to the firmware PWM period.
-	mach_vm_address_t orgKXSetBacklight {};
-	mach_vm_address_t kxReadRegister32 {};
-	bool kxDirectDuty {true};
-	uint32_t kxBacklightRecord[4] {};
-	static int wrapKXSetBacklight(void *controller, uint32_t level);
-	mach_vm_address_t orgKXSetAttributeForConnection {};
-	// {calls, last value, last native return, fb+0x1DC, fb+0x4284, ctl+0xE55, forced, native sets}
-	uint32_t kxBkltRecord[8] {};
-	static int wrapKXSetAttributeForConnection(void *framebuffer, int connect, uint32_t attribute, uintptr_t value);
-	mach_vm_address_t orgKXSetMode {};
-	// {calls, failures, last result, ddi, config[4 dwords], then reg/value pairs}
-	uint32_t kxLinkRecord[8 + 2 * 28] {};
-	static int wrapKXSetMode(void *controller, void *framebuffer, void *path, void *timing);
 	mach_vm_address_t orgTGLLightUpTMDS {};
 	static uint32_t wrapTGLLightUpTMDS(void *controller, void *fb, void *path, const void *timing);
 	bool tglProbeReady {false};

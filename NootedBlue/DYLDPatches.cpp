@@ -55,7 +55,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 			return;
 		}
 		
-		return; // stop here!
+		//return; // stop here!
 		
 	   /* if ((!strncmp(path, kCoreLSKDMSEPath, arrsize(kCoreLSKDMSEPath))) ||
 			(!strncmp(path, kCoreLSKDPath, arrsize(kCoreLSKDPath)))) {
@@ -189,8 +189,8 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 		return;
 	}
 
-	/*
-
+	
+/*
 		if (UNLIKELY(KernelPatcher::findAndReplace(const_cast<void *>(data), PAGE_SIZE, kVideoToolboxDRMModelOriginal,
 												   arrsize(kVideoToolboxDRMModelOriginal), BaseDeviceInfo::get().modelIdentifier, 20))) {
 			DBGLOG("DYLD", "Applied 'VideoToolbox DRM model check' patch");
@@ -201,7 +201,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 			{kHEVCEncBoardIdOriginal, kHEVCEncBoardIdPatched, "iMacPro1,1 spoof (AppleGVAHEVCEncoder)"},
 		};
 		DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
-		
-	*/
+		*/
+	
 	
 }

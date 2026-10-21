@@ -233,6 +233,10 @@
 				<key>WaitForComplete</key>
 				<integer>0</integer>
 			</dict>
+			<key>GPURawCounterBundleName</key>
+			<string>AppleIntelTGLGraphicsMTLDriver</string>
+			<key>GPURawCounterPluginClassName</key>
+			<string>IGGPURawCounterSourceGroup</string>
 			<key>IOAccelDisplayPipeCapabilities</key>
 			<dict>
 				<key>DisplayPipeSupported</key>
@@ -284,6 +288,8 @@
 					<integer>3</integer>
 				</array>
 			</dict>
+			<key>IOGVAHEVCEncode</key>
+			<string>2</string>
 			<key>IOGVAHEVCEncodeCapabilities</key>
 			<dict>
 				<key>VTPerProfileDetails</key>
@@ -301,6 +307,8 @@
 			</dict>
 			<key>IOGVAScaler</key>
 			<string>Gen10</string>
+			<key>IOGVAXDecode</key>
+			<string>2</string>
 			<key>IOMatchCategory</key>
 			<string>IOAccelerator</string>
 			<key>IOPCIClassMatch</key>

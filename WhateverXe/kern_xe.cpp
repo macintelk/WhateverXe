@@ -8942,30 +8942,30 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
  if(adlnDetected && (checkKernelArgument("-wex-adln-kernel-ctx") || adlnNativeRCSProfileRequested))adlnPrepareRCSProfile(patcher,index,address,size);
    // Serialize only the two direct stores in detectEDRAM. The original
    // forcewake and 1000ms sleep remain outside the shared gate.
-   {
-    static const uint8_t before[25] {
-     0x49,0x8b,0x46,0x18,0xbb,0,0,0,0xb0,0x89,0x98,0x28,0x81,0x13,0,
-     0xc7,0x80,0x24,0x81,0x13,0,0x12,0x10,0x59,0x80};
-    uint8_t after[25] {};
-    const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,
-     "__ZN21IntelTGLMemoryManager11detectEDRAMEv",address,size);
-    auto site=reinterpret_cast<uint8_t *>(address+0x4BC90);
-    bool known=size>=0x4BCD6 && fn==address+0x4BAAE &&
-     !memcmp(site,before,sizeof(before)) && site[25]==0xBF && site[30]==0xE8 &&
-     TGLPcodeEDRAMPatch::make(reinterpret_cast<uintptr_t>(tglEDRAMPCODE),after);
-    patcher.clearError();
-    if (known) {
-     KernelPatcher::LookupPatch patch {currentGraphics,before,after,sizeof(before),1};
-     patcher.applyLookupPatch(&patch,site,sizeof(before)+1);
-     known=!memcmp(site,after,sizeof(after));
-    }
-    __atomic_store_n(&tglPcodeAcceleratorReady,known,__ATOMIC_RELEASE);
-    doaibs("TGLPcodeAcceleratorReady",known);
-    if (known) if (auto live=OSSerializer::forTarget(nullptr,tglPcodeEDRAMSerialize)) {
-     doaibs("TGLPcodeEDRAMLive",live);live->release();
-    }
-    patcher.clearError();
-   }
+	{
+		static const uint8_t before[25] {
+			0x49,0x8b,0x46,0x18,0xbb,0,0,0,0xb0,0x89,0x98,0x28,0x81,0x13,0,
+			0xc7,0x80,0x24,0x81,0x13,0,0x12,0x10,0x59,0x80};
+		uint8_t after[25] {};
+		const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,
+															 "__ZN21IntelTGLMemoryManager11detectEDRAMEv",address,size);
+		auto site=reinterpret_cast<uint8_t *>(address+0x4BC90);
+		bool known=size>=0x4BCD6 && fn==address+0x4BAAE &&
+		!memcmp(site,before,sizeof(before)) && site[25]==0xBF && site[30]==0xE8 &&
+		TGLPcodeEDRAMPatch::make(reinterpret_cast<uintptr_t>(tglEDRAMPCODE),after);
+		patcher.clearError();
+		if (known) {
+			KernelPatcher::LookupPatch patch {currentGraphics,before,after,sizeof(before),1};
+			patcher.applyLookupPatch(&patch,site,sizeof(before)+1);
+			known=!memcmp(site,after,sizeof(after));
+		}
+		__atomic_store_n(&tglPcodeAcceleratorReady,known,__ATOMIC_RELEASE);
+		doaibs("TGLPcodeAcceleratorReady",known);
+		if (known) if (auto live=OSSerializer::forTarget(nullptr,tglPcodeEDRAMSerialize)) {
+			doaibs("TGLPcodeEDRAMLive",live);live->release();
+		}
+		patcher.clearError();
+	}
 			// Exact donor probe: admit the real PCI ID to the selected backend.
 			// device-id chooses policy; config-space identity is never rewritten.
 			// Native -allow3d passes the first development-ID filter; the second
@@ -15508,6 +15508,7 @@ uint32_t XE::wrapTGLPortTraining(void *port, void *request) {
 		__sync_add_and_fetch(&count, 1), 32);
 	tglObservePath(port, nullptr, 0, true, r, request ? *reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(request) + 0x38) : 0, caller);
 	tglDPCDPublish();
+	
 	return r;
 }
 

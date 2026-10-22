@@ -187,7 +187,7 @@
 				<key>ForceDisableEDRAM</key>
 				<integer>0</integer>
 				<key>GraphicsSchedulerSelect</key>
-				<integer>5</integer>
+				<integer>0</integer>
 				<key>MetalCoalesce</key>
 				<integer>1</integer>
 				<key>MultiForceWakeSelect</key>
@@ -233,10 +233,6 @@
 				<key>WaitForComplete</key>
 				<integer>0</integer>
 			</dict>
-			<key>GPURawCounterBundleName</key>
-			<string>AppleIntelTGLGraphicsMTLDriver</string>
-			<key>GPURawCounterPluginClassName</key>
-			<string>IGGPURawCounterSourceGroup</string>
 			<key>IOAccelDisplayPipeCapabilities</key>
 			<dict>
 				<key>DisplayPipeSupported</key>
@@ -259,8 +255,6 @@
 			<string>Gen10</string>
 			<key>IOGVACodec</key>
 			<string>Gen10</string>
-			<key>IOGVAHEVCDecode</key>
-			<integer>2</integer>
 			<key>IOGVAHEVCDecodeCapabilities</key>
 			<dict>
 				<key>VTPerProfileDetails</key>
@@ -288,8 +282,6 @@
 					<integer>3</integer>
 				</array>
 			</dict>
-			<key>IOGVAHEVCEncode</key>
-			<string>2</string>
 			<key>IOGVAHEVCEncodeCapabilities</key>
 			<dict>
 				<key>VTPerProfileDetails</key>
@@ -307,8 +299,6 @@
 			</dict>
 			<key>IOGVAScaler</key>
 			<string>Gen10</string>
-			<key>IOGVAXDecode</key>
-			<string>2</string>
 			<key>IOMatchCategory</key>
 			<string>IOAccelerator</string>
 			<key>IOPCIClassMatch</key>
@@ -322,7 +312,7 @@
 			<key>IOSourceVersion</key>
 			<string>0.0.0.0.0</string>
 			<key>IOVARendererID</key>
-			<integer>17301632</integer>
+			<integer>17301568</integer>
 			<key>MetalPluginName</key>
 			<string>AppleIntelTGLGraphicsMTLDriver</string>
 		</dict>
@@ -504,8 +494,6 @@
 				<key>SupportPSRwithExternalDisplay</key>
 				<integer>1</integer>
 				<key>TTNFBuffDistribution</key>
-				<integer>0</integer>
-				<key>ThreadingMode</key>
 				<integer>0</integer>
 				<key>TransitionAmount</key>
 				<integer>14</integer>

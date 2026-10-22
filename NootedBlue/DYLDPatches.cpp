@@ -121,7 +121,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 			
 			if (ok && NBlue::callback->tglid) {
 				
-				if ((!strncmp(path, libMTLIGCCompilerPluginPath, arrsize(libMTLIGCCompilerPluginPath)) )) {
+				/*if ((!strncmp(path, libMTLIGCCompilerPluginPath, arrsize(libMTLIGCCompilerPluginPath)) )) {
 					const DYLDPatch patches[] = {
 						{klibMTLIGCCompilerPluginOriginal2, sle ? klibMTLIGCCompilerPluginPatched2:klibMTLIGCCompilerPluginPatched3, "path"},
 						{klibMTLIGCCompilerPluginOriginal2b, sle ? klibMTLIGCCompilerPluginPatched2:klibMTLIGCCompilerPluginPatched3, "path"},
@@ -149,16 +149,16 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 					};
 					DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
 					return;
-				}
+				}*/
 				
-				if (!sle)
+				/*if (!sle)
 				if ((!strncmp(path, TGLGraphicsMTLDriver2, arrsize(TGLGraphicsMTLDriver2)) )) {
 					const DYLDPatch patches[] = {
 						{kTGLGraphicsMTLDrivero, kTGLGraphicsMTLDriverp, "GPUBundles mtl path"},
 					};
 					DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
 					return;
-				}
+				}*/
 				
 				if (sle)
 				if ((!strncmp(path, TGLGraphicsGLDriver, arrsize(TGLGraphicsGLDriver)) )) {

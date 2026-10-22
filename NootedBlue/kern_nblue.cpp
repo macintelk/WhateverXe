@@ -37,13 +37,13 @@ static HDMI agfxhda;
 
 void NBlue::init() {
     callback = this;
-	/*
+	
 	lilu.onKextLoadForce(&kextAGDP);
 	lilu.onKextLoadForce(&kextBacklight);
 	lilu.onKextLoadForce(&kextMCCSControl);
-	lilu.onKextLoadForce(&kextIOGraphics);
-	lilu.onKextLoadForce(&kextIOAcceleratorFamily2);
-	*/
+	//lilu.onKextLoadForce(&kextIOGraphics);
+	//lilu.onKextLoadForce(&kextIOAcceleratorFamily2);
+	
 	gen11.init();
 	dyldpatches.init();
 	/*

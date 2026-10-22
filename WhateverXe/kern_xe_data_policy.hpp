@@ -47,7 +47,7 @@ inline Client clientForFile(const char *path, bool executable) {
             Client::WebKitGPU : Client::None;
     }
 	
-	constexpr const char va2[] = "Library/GPUBundles/AppleIntelTGLGraphicsVAME.bundle/Contents/MacOS/";
+	constexpr const char va2[] = "/Library/GPUBundles/AppleIntelTGLGraphicsVAME.bundle/Contents/MacOS/";
 	if (!strncmp(path, va2, sizeof(va)-1)) {
 		path += sizeof(va2)-1;
 		return !strcmp(path, "AppleIntelTGLGraphicsVAME")  ?

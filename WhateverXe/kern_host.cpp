@@ -2,15 +2,23 @@
 #include "kern_host.hpp"
 #include "kern_xelp_device.hpp"
 #include "kern_xe_data_access.hpp"
+#include "kern_backlight_profile.hpp"
 #include <Headers/kern_api.hpp>
 #include <Headers/kern_iokit.hpp>
 #include <IOKit/pci/IOPCIDevice.h>
+
+#include "kern_nblue.hpp"
+static NBlue nblue;
+
+
 XeHost *XeHost::callbackHost;
 struct FramebufferViewer : public IOFramebuffer {
  static IOMemoryMap *&getVramMap(IOFramebuffer *fb) { return static_cast<FramebufferViewer *>(fb)->fVramMap; }
 };
 static const char *graphicsPath[] { "/System/Library/Extensions/IOGraphicsFamily.kext/IOGraphicsFamily" };
 static KernelPatcher::KextInfo graphics { "com.apple.iokit.IOGraphicsFamily",graphicsPath,arrsize(graphicsPath),{true},{},KernelPatcher::KextInfo::Unloaded };
+static const char *backlightPath[] { "/System/Library/Extensions/AppleBacklight.kext/Contents/MacOS/AppleBacklight" };
+static KernelPatcher::KextInfo backlight { "com.apple.driver.AppleBacklight",backlightPath,arrsize(backlightPath),{true},{},KernelPatcher::KextInfo::Unloaded };
 void XeHost::init() {
  callbackHost=this;
  PE_parse_boot_argn("gfxrst",&resetFramebuffer,sizeof(resetFramebuffer));
@@ -18,8 +26,10 @@ void XeHost::init() {
  lilu.onPatcherLoadForce([](void *u,KernelPatcher &p){static_cast<XeHost *>(u)->processKernel(p);},this);
  lilu.onKextLoadForce(nullptr,0,[](void *u,KernelPatcher &p,size_t i,mach_vm_address_t a,size_t s){static_cast<XeHost *>(u)->processKext(p,i,a,s);},this);
  if(resetFramebuffer!=FB_NONE)lilu.onKextLoadForce(&graphics);
+ lilu.onKextLoadForce(&backlight);
  xe.init();
  XeDataAccess::init();
+	nblue.init();
 }
 void XeHost::processKernel(KernelPatcher &patcher) {
  auto info=DeviceInfo::create();if(!info)return;
@@ -28,6 +38,9 @@ void XeHost::processKernel(KernelPatcher &patcher) {
  const bool published=gpu && WIOKit::awaitPublishing(gpu);
  const auto profile=published ? XELP::deviceProfile(gpu) : XELP::Profile {};
  active=profile.admitted();
+ backlightEnabled=active && profile.family==XELP::Family::TigerLake &&
+  info->firmwareVendor!=DeviceInfo::FirmwareVendor::Apple;
+ backlightGPU=backlightEnabled ? gpu : nullptr;
  if(published) {
   uint32_t selection[] {1,profile.identity,profile.revision,profile.effectiveIdentity,
    static_cast<uint32_t>(profile.family),static_cast<uint32_t>(profile.display),
@@ -57,9 +70,19 @@ void XeHost::processKernel(KernelPatcher &patcher) {
  }
  if(!active || resetFramebuffer==FB_DETECT){resetFramebuffer=FB_NONE;graphics.switchOff();}
  DeviceInfo::deleter(info);
+	nblue.processPatcher(patcher);
 }
 void XeHost::processKext(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
  if(!active)return;
+ if(backlight.loadIndex==index) {
+  if(backlightEnabled) {
+   KernelPatcher::RouteRequest route("__ZN15AppleIntelPanel10setDisplayEP9IODisplay",wrapPanelSetDisplay,orgPanelSetDisplay);
+   const bool ready=patcher.routeMultiple(index,&route,1,address,size);
+   doaibs("WhateverXeBacklightProfileReady",ready);
+   patcher.clearError();
+  }
+  return;
+ }
  if(XeDataAccess::processKext(patcher,index,address,size))return;
  if(graphics.loadIndex==index) {
   gIOFBVerboseBootPtr=patcher.solveSymbol<uint8_t *>(index,"__ZL16gIOFBVerboseBoot",address,size);
@@ -67,6 +90,57 @@ void XeHost::processKext(KernelPatcher &patcher,size_t index,mach_vm_address_t a
   patcher.clearError();return;
  }
  xe.processKext(patcher,index,address,size);
+}
+bool XeHost::wrapPanelSetDisplay(IOService *panel,IOService *display) {
+ // Add only the missing UID-19 profile for an actual internal 16-bit PWM
+ // display. Keep Apple's/custom profiles and the native selection algorithm.
+ // No string patch, product-ID list, ACPI path or model-specific table.
+ auto provider=panel ? panel->getProvider() : nullptr;
+ auto uid=provider ? OSDynamicCast(OSString,provider->getProperty("_UID")) : nullptr;
+ auto product=display ? OSDynamicCast(OSNumber,display->getProperty("DisplayProductID")) : nullptr;
+ bool owned=false;
+ IOFramebuffer *framebuffer=nullptr;
+ for(auto entry=display;entry;entry=entry->getProvider()) {
+  // IOGraphicsFamily is loaded later than this Lilu plugin. A direct
+  // IOFramebuffer::metaClass import is not available in our dependency set.
+  if(!framebuffer)framebuffer=static_cast<IOFramebuffer *>(entry->metaCast("IOFramebuffer"));
+  if(entry==callbackHost->backlightGPU){owned=true;break;}
+ }
+ // setDisplay precedes publication of IODisplayParameters. Query the same
+ // three-word (current,min,max) attribute as AppleIntelPanelA itself.
+ uintptr_t pwm[3] {};
+ const bool internal=display && display->metaCast("AppleBacklightDisplay");
+ const bool range=owned && internal && framebuffer &&
+  framebuffer->getAttributeForConnection(0,'bklt',pwm)==kIOReturnSuccess;
+ OSDictionary *heldProfiles=nullptr;
+ if(range && uid && product && pwm[1]<=UINT32_MAX && pwm[2]<=UINT32_MAX &&
+    XeBacklightProfile::eligible(uid->isEqualTo("19") ? 19 : 0,pwm[1],pwm[2],internal)) {
+  auto original=OSDynamicCast(OSDictionary,panel->getProperty("ApplePanels"));
+  if(original && !panel->getProperty("ApplePanel")) {
+   char key[32];snprintf(key,sizeof(key),"F19T%04x",product->unsigned32BitValue());
+   if(!original->getObject(key) && !original->getObject("F19")) {
+    auto copy=OSDictionary::withDictionary(original);
+    auto curve=OSData::withBytes(XeBacklightProfile::curve,sizeof(XeBacklightProfile::curve));
+    if(copy && curve && copy->setObject(key,curve) && panel->setProperty("ApplePanels",copy)) {
+     // Native removes ApplePanels before retaining its selected OSData in
+     // ApplePanel. Keep the candidate dictionary alive across that handoff.
+     heldProfiles=copy;
+     panel->setProperty("WhateverXeBacklightProfile",key);
+    }
+    if(curve)curve->release();
+    if(copy && !heldProfiles)copy->release();
+   }
+  }
+ }
+ uint32_t inputs[]={1,owned,uid && uid->isEqualTo("19"),range ? static_cast<uint32_t>(pwm[1]) : ~0U,
+  range ? static_cast<uint32_t>(pwm[2]) : 0,0};
+ const bool result=FunctionCast(wrapPanelSetDisplay,callbackHost->orgPanelSetDisplay)(panel,display);
+ if(heldProfiles)heldProfiles->release();
+ if(panel) {
+  inputs[5]=result;
+  panel->setProperty("WhateverXeBacklightMatch",inputs,sizeof(inputs));
+ }
+ return result;
 }
 void XeHost::wrapFramebufferInit(IOFramebuffer *fb) {
 	bool backCopy = callbackHost->gotConsoleVinfo && callbackHost->resetFramebuffer == FB_COPY;

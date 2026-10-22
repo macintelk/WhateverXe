@@ -25,8 +25,29 @@ struct Port {
 struct Ports {
     Status status {Status::Missing};
     uint32_t version {},bytes {},present {},unmapped {},ambiguous {};
+    uint32_t checksum {};
+    struct Panel {
+        bool valid {},lowSwing {},hobl {};
+        uint32_t type {},ddi {PortCount};
+    } panel;
     Port port[PortCount];
     bool valid() const {return status==Status::Valid;}
+    // USB-C DP-alt uses the native mode3 owner, not the fixed-DP mode4
+    // backend. VBT AUX D is 0x30 (A is 0x40), then E..I are 0x50..0x90.
+    uint32_t tglDPAltCandidates(uint32_t backend) const {
+        if(!valid())return 0;
+        uint32_t result=0;
+        for(unsigned d=3;d<PortCount;++d) {
+            const auto &p=port[d];
+            bool shared=false;
+            for(unsigned other=0;other<PortCount;++other)
+                if(other!=d && (present&(1U<<other)) && port[other].dp() && port[other].aux==p.aux)shared=true;
+            if((present&backend&(1U<<d)) && p.dp() && !p.internal() &&
+               !(p.type&(0x400|0x20|1)) && !(p.flags&0x17) && (p.capabilities&1) &&
+               !shared && p.aux==(d==3 ? 0x30U : (d+1)*0x10U))result|=1U<<d;
+        }
+        return result;
+    }
     // TGL external DP candidates, not a fixed/alt/TBT mode decision. Current
     // native AUX routing follows DDI; different firmware AUX needs a backend.
     uint32_t tglDPCandidates(uint32_t backend) const {
@@ -56,6 +77,41 @@ struct Ports {
         return w;
     }
 };
+// Optional panel facts must never weaken General Definitions admission or
+// make an unrelated malformed firmware tail reject usable connector facts.
+inline void panelFacts(const uint8_t *b,size_t header,size_t size,Ports &ports) {
+    const uint8_t *options=nullptr,*edp=nullptr,*power=nullptr;
+    size_t optionsSize=0,edpSize=0,powerSize=0;
+    bool duplicate=false;
+    for(size_t at=header;at<size;) {
+        if(size-at<3)break;
+        size_t n=u16(b+at+1);
+        if(b[at]==53 && size-at>=4 && b[at+3]>=3) {
+            if(size-at<8)break;
+            n=u32(b+at+4);
+        }
+        if(n>size-at-3)break;
+        auto block=b+at+3;
+        if(b[at]==40){duplicate|=options!=nullptr;options=block;optionsSize=n;}
+        if(b[at]==27){duplicate|=edp!=nullptr;edp=block;edpSize=n;}
+        if(b[at]==44){duplicate|=power!=nullptr;power=block;powerSize=n;}
+        at+=3+n;
+    }
+    if(duplicate || !options || optionsSize<1 || options[0]>=16 ||
+       !edp || edpSize<212 || (ports.version>=232 && (!power || powerSize<56)))return;
+    unsigned internal=PortCount;
+    for(unsigned d=0;d<PortCount;++d)if((ports.present&(1U<<d)) &&
+        ports.port[d].internal() && ports.port[d].dp()) {
+        if(internal!=PortCount)return; // no guessed panel/connector association
+        internal=d;
+    }
+    if(internal==PortCount)return;
+    auto &p=ports.panel;
+    p.type=options[0];p.ddi=internal;
+    p.lowSwing=((u64(edp+204)>>(4*p.type))&15)==0;
+    p.hobl=ports.version>=232 && (u16(power+54)&(1U<<p.type));
+    p.valid=true;
+}
 // Return the donor's physical-DDI slot, never an FB index. Display13 VBT
 // retains C/D/E labels even on ADL-N, whose physical Combo set is only A/B.
 inline uint32_t ddi(Family family,uint32_t dvo) {
@@ -75,8 +131,11 @@ inline Ports parse(const void *data,size_t length,Family family) {
     if(length<48 || memcmp(p,"$VBT",4))return r;
     const size_t header=u16(p+22),size=u16(p+24),bdb=u32(p+28);
     if(header<48 || size<header || size>length || bdb<header || bdb>size || size-bdb<22)return r;
+    // Firmware may update runtime fields without a matching table checksum.
+    // Like i915, admit by bounded structure and connector semantics; retain
+    // the checksum residue for diagnosis, never rewrite the firmware bytes.
     uint8_t sum=0;for(size_t i=0;i<size;++i)sum+=p[i];
-    if(sum){r.status=Status::Checksum;return r;}
+    r.checksum=sum;
     const auto b=p+bdb;const size_t bh=u16(b+18),bs=u16(b+20);
     if(memcmp(b,"BIOS_DATA_BLOCK ",16) || bh<22 || bs<bh || bs>size-bdb)return r;
     r.version=u16(b+16);r.bytes=static_cast<uint32_t>(size);
@@ -110,7 +169,7 @@ inline Ports parse(const void *data,size_t length,Family family) {
         r.present|=1U<<d;
         if(!q.fixedTMDS())r.ambiguous|=1U<<d;
     }
-    r.status=Status::Valid;return r;
+    r.status=Status::Valid;panelFacts(b,bh,bs,r);return r;
 }
 // OpRegion acquisition descriptor, kept pure for malformed/overflow testing.
 struct Region {uint64_t address {};uint32_t bytes {},inlineBytes {};bool valid {};};

@@ -2,6 +2,7 @@
 #pragma once
 #include "kern_xe.hpp"
 #include <IOKit/graphics/IOFramebuffer.h>
+
 class XeHost {
 public:
  void init();
@@ -9,6 +10,10 @@ private:
  static XeHost *callbackHost;
  XE xe;
  bool active {};
+ bool backlightEnabled {};
+ IOPCIDevice *backlightGPU {};
+ mach_vm_address_t orgPanelSetDisplay {};
+ static bool wrapPanelSetDisplay(IOService *,IOService *);
  void processKernel(KernelPatcher &);
  void processKext(KernelPatcher &,size_t,mach_vm_address_t,size_t);
  enum { FB_DETECT, FB_RESET, FB_COPY, FB_ZEROFILL, FB_NONE, FB_TOTAL };

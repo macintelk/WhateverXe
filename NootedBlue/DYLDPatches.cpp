@@ -17,12 +17,12 @@ void DYLDPatches::processPatcher(KernelPatcher &patcher) {
 
 	//return;
 	
-	/*auto *entry = IORegistryEntry::fromPath("/", gIODTPlane);
+	auto *entry = IORegistryEntry::fromPath("/", gIODTPlane);
 	if (entry) {
 		DBGLOG("DYLD", "Setting hwgva-id to iMacPro1,1");
 		entry->setProperty("hwgva-id", const_cast<char *>(kHwGvaId), arrsize(kHwGvaId));
 		OSSafeReleaseNULL(entry);
-	}*/
+	}
 
 	KernelPatcher::RouteRequest request {"_cs_validate_page", wrapCsValidatePage, this->orgCsValidatePage};
 
@@ -46,23 +46,22 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 	
 	if (!UserPatcher::matchSharedCachePath(path)) {
 		
-		if ((!strncmp(path, binarydisplaypolicyd, arrsize(binarydisplaypolicyd))) )
+		/*if ((!strncmp(path, binarydisplaypolicyd, arrsize(binarydisplaypolicyd))) )
 		{
 			const DYLDPatch patches[] = {
 				{displaypolicydf3, displaypolicydr3, "displaypolicyd edid read"},
 			};
 			DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
 			return;
-		}
+		}*/
 		
-		//return; // stop here!
 		
-	   /* if ((!strncmp(path, kCoreLSKDMSEPath, arrsize(kCoreLSKDMSEPath))) ||
+	    if ((!strncmp(path, kCoreLSKDMSEPath, arrsize(kCoreLSKDMSEPath))) ||
 			(!strncmp(path, kCoreLSKDPath, arrsize(kCoreLSKDPath)))) {
 			const DYLDPatch patch = {kCoreLSKDOriginal, kCoreLSKDPatched, "CoreLSKD streaming CPUID to Haswell"};
 			patch.apply(const_cast<void *>(data), PAGE_SIZE);
 			return;
-		}*/
+		}
 		
 		NBlue::callback->tglid=true;
 		
@@ -88,7 +87,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 		}
 			
 			if (!ok && NBlue::callback->iclid) {
-				/*if ((!strncmp(path, libMTLIGCCompilerPluginPath, arrsize(libMTLIGCCompilerPluginPath)) )) {
+				if ((!strncmp(path, libMTLIGCCompilerPluginPath, arrsize(libMTLIGCCompilerPluginPath)) )) {
 					const DYLDPatch patches[] = {
 						{klibMTLIGCCompilerPluginOriginal2b, klibMTLIGCCompilerPluginOriginal2, "path"},
 						{klibMTLIGCCompilerPluginOriginal4, klibMTLIGCCompilerPluginPatched4, "klibMTLIGCCompilerPluginOriginal4"},
@@ -105,9 +104,9 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 					};
 					DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
 					return;
-				}*/
+				}
 				
-				/*if ((!strncmp(path, ICLGraphicsGLDriver, arrsize(ICLGraphicsGLDriver)) )) {
+				if ((!strncmp(path, ICLGraphicsGLDriver, arrsize(ICLGraphicsGLDriver)) )) {
 					const DYLDPatch patches[] = {
 						{glf1i, glr1i, "sku"},
 						{glf2i, glr2i, "compiler fam"},
@@ -115,13 +114,13 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 					};
 					DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
 					return;
-				}*/
+				}
 				
 			}
 			
 			if (ok && NBlue::callback->tglid) {
 				
-				/*if ((!strncmp(path, libMTLIGCCompilerPluginPath, arrsize(libMTLIGCCompilerPluginPath)) )) {
+				if ((!strncmp(path, libMTLIGCCompilerPluginPath, arrsize(libMTLIGCCompilerPluginPath)) )) {
 					const DYLDPatch patches[] = {
 						{klibMTLIGCCompilerPluginOriginal2, sle ? klibMTLIGCCompilerPluginPatched2:klibMTLIGCCompilerPluginPatched3, "path"},
 						{klibMTLIGCCompilerPluginOriginal2b, sle ? klibMTLIGCCompilerPluginPatched2:klibMTLIGCCompilerPluginPatched3, "path"},
@@ -149,16 +148,16 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 					};
 					DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
 					return;
-				}*/
+				}
 				
-				/*if (!sle)
+				if (!sle)
 				if ((!strncmp(path, TGLGraphicsMTLDriver2, arrsize(TGLGraphicsMTLDriver2)) )) {
 					const DYLDPatch patches[] = {
 						{kTGLGraphicsMTLDrivero, kTGLGraphicsMTLDriverp, "GPUBundles mtl path"},
 					};
 					DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
 					return;
-				}*/
+				}
 				
 				if (sle)
 				if ((!strncmp(path, TGLGraphicsGLDriver, arrsize(TGLGraphicsGLDriver)) )) {
@@ -190,7 +189,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 	}
 
 	
-/*
+
 		if (UNLIKELY(KernelPatcher::findAndReplace(const_cast<void *>(data), PAGE_SIZE, kVideoToolboxDRMModelOriginal,
 												   arrsize(kVideoToolboxDRMModelOriginal), BaseDeviceInfo::get().modelIdentifier, 20))) {
 			DBGLOG("DYLD", "Applied 'VideoToolbox DRM model check' patch");
@@ -201,7 +200,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 			{kHEVCEncBoardIdOriginal, kHEVCEncBoardIdPatched, "iMacPro1,1 spoof (AppleGVAHEVCEncoder)"},
 		};
 		DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
-		*/
+		
 	
 	
 }

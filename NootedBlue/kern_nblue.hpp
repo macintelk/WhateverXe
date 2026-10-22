@@ -13,7 +13,6 @@ typedef unsigned int  IOSelect;
 #include <IOKit/acpi/IOACPIPlatformExpert.h>
 #include "intel_vbt_defs.h"
 
-
 class AppleACPIPlatformExpert : IOACPIPlatformExpert {
 	friend class NBlue;
 };

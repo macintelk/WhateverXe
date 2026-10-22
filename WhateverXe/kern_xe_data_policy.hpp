@@ -46,22 +46,6 @@ inline Client clientForFile(const char *path, bool executable) {
         return !strcmp(path, "AppleIntelTGLGraphicsVADriver") || !strcmp(path, "TGLVA") ?
             Client::WebKitGPU : Client::None;
     }
-	
-	constexpr const char va2[] = "/Library/GPUBundles/AppleIntelTGLGraphicsVAME.bundle/Contents/MacOS/";
-	if (!strncmp(path, va2, sizeof(va)-1)) {
-		path += sizeof(va2)-1;
-		return !strcmp(path, "AppleIntelTGLGraphicsVAME")  ?
-			Client::WebKitGPU : Client::None;
-	}
-	
-	constexpr const char gl[] = "/Library/GPUBundles/AppleIntelTGLGraphicsGLDriver.bundle/Contents/MacOS/";
-	if (!strncmp(path, gl, sizeof(va)-1)) {
-		path += sizeof(gl)-1;
-		return !strcmp(path, "AppleIntelTGLGraphicsGLDriver") || !strcmp(path, "libigdmd.dylib") ?
-			Client::WebKitGPU : Client::None;
-	}
-	
-	
     constexpr const char metal[] = "/Library/GPUBundles/AppleIntelTGLGraphicsMTLDriver.bundle/Contents/MacOS/";
     if (strncmp(path, metal, sizeof(metal)-1)) return Client::None;
     path += sizeof(metal)-1;

@@ -7,4 +7,3 @@ KernelPatcher::KextInfo kextIntelTGLFb { "com.apple.driver.AppleIntelTGLGraphics
 
 static const char *pathAppleIntelTGLCompat[] { "/System/Library/Extensions/AppleIntelTGLCompat.kext/Contents/MacOS/AppleIntelTGLCompat" };
 KernelPatcher::KextInfo kextAppleIntelTGLCompat { "org.b00t0x.AppleIntelTGLCompat", pathAppleIntelTGLCompat, arrsize(pathAppleIntelTGLCompat), {}, {}, KernelPatcher::KextInfo::Unloaded };
-

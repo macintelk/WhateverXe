@@ -75,7 +75,7 @@ void XeDataAccess::processKernel(KernelPatcher &p) {
     putVnode = reinterpret_cast<decltype(putVnode)>(p.solveSymbol(KernelPatcher::KernelID, "_vnode_put"));
     p.clearError();
     enabled = currentProcess && executableVnode && fileVnode && getPath && putVnode;
-    //IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeDataAccessSymbols", enabled);
+    //doaibs("WhateverXeDataAccessSymbols", enabled);
 }
 bool XeDataAccess::processKext(KernelPatcher &p, size_t index, mach_vm_address_t address, size_t size) {
     if (index != sandbox.loadIndex) return false;
@@ -100,7 +100,7 @@ bool XeDataAccess::processKext(KernelPatcher &p, size_t index, mach_vm_address_t
         ready = p.routeMultiple(index, routes, arrsize(routes), address, size);
         p.clearError();
     }
-    //IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeDataAccess", ready);
+    //doaibs("WhateverXeDataAccess", ready);
     SYSLOG("wex", "GPU Data access ready=%d", ready);
     return true;
 }

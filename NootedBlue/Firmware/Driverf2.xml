@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>com.xxxxx.driver.AppleIntelTGLGraphicsFramebuffer</string>
+	<string>com.apple.driver.AppleIntelTGLGraphicsFramebuffer</string>
 	<key>Debug</key>
 	<dict>
 		<key>LogEnable</key>
@@ -104,7 +104,7 @@
 		<key>4KVideoDownscale</key>
 		<integer>1</integer>
 		<key>ASFU</key>
-		<integer>0</integer>
+		<integer>1</integer>
 		<key>ASFUThresholdFPS</key>
 		<integer>50</integer>
 		<key>ASRDisable</key>
@@ -113,8 +113,6 @@
 		<integer>0</integer>
 		<key>CoarsePowerGatingSelect</key>
 		<integer>4</integer>
-		<key>DBUFOptimizeTime</key>
-		<integer>1</integer>
 		<key>DPDownSpreadDisable</key>
 		<integer>0</integer>
 		<key>DPM</key>
@@ -197,7 +195,7 @@
 	<key>IOPCIClassMatch</key>
 	<string>0x03000000&amp;0xff000000</string>
 	<key>IOPCIPrimaryMatch</key>
-	<string>0x9A498086</string>
+	<string>0x9a408086 0x9a498086 0x9a788086</string>
 	<key>IOProbeScore</key>
 	<integer>80000</integer>
 	<key>IOProviderClass</key>

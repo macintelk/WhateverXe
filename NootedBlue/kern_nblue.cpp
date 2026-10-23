@@ -119,13 +119,16 @@ void NBlue::processPatcher(KernelPatcher &patcher) {
 		memcpy(this->edid, edid0->getBytesNoCopy(), 0x80);
 	}*/
 	
+	this->deviceId =0x9a49;
+	this->tglid=true;
+	
 	dyldpatches.processPatcher(patcher);
 	
-	/*KernelPatcher::RouteRequest request{"__ZN11IOCatalogue10addDriversEP7OSArrayb", wrapAddDrivers,
+	KernelPatcher::RouteRequest request{"__ZN11IOCatalogue10addDriversEP7OSArrayb", wrapAddDrivers,
 										this->orgAddDrivers};
 	PANIC_COND(!patcher.routeMultipleLong(KernelPatcher::KernelID, &request, 1), "DriverInjector",
 			   "Failed to route addDrivers");
-	*/
+	
 	
 	
 }

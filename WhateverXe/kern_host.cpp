@@ -6,7 +6,12 @@
 #include <Headers/kern_api.hpp>
 #include <Headers/kern_iokit.hpp>
 #include <IOKit/pci/IOPCIDevice.h>
+#include "kern_nblue.hpp"
+
 XeHost *XeHost::callbackHost;
+
+static NBlue nblu;
+
 struct FramebufferViewer : public IOFramebuffer {
  static IOMemoryMap *&getVramMap(IOFramebuffer *fb) { return static_cast<FramebufferViewer *>(fb)->fVramMap; }
 };
@@ -24,6 +29,7 @@ void XeHost::init() {
  lilu.onKextLoadForce(&backlight);
  xe.init();
  XeDataAccess::init();
+	nblu.init();
 }
 void XeHost::processKernel(KernelPatcher &patcher) {
  auto info=DeviceInfo::create();if(!info)return;
@@ -67,6 +73,7 @@ void XeHost::processKernel(KernelPatcher &patcher) {
  }
  if(!active || resetFramebuffer==FB_DETECT){resetFramebuffer=FB_NONE;graphics.switchOff();}
  DeviceInfo::deleter(info);
+	nblu.processPatcher(patcher);
 }
 void XeHost::processKext(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
  if(!active)return;

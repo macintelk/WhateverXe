@@ -43,7 +43,7 @@ PluginConfiguration ADDPR(config) {
 
 // Match Xcode's kext lifecycle. The kernel runs C++ initializers; libkmod
 // forwards the start/stop callbacks through _realmain and _antimain.
-extern "C" {
+/*extern "C" {
 extern kern_return_t _start(kmod_info_t *, void *);
 extern kern_return_t _stop(kmod_info_t *, void *);
 extern kern_return_t WhateverXe_kern_start(kmod_info_t *, void *);
@@ -53,3 +53,4 @@ __attribute__((visibility("hidden"))) kmod_start_func_t *_realmain = WhateverXe_
 __attribute__((visibility("hidden"))) kmod_stop_func_t *_antimain = WhateverXe_kern_stop;
 __attribute__((visibility("hidden"))) int _kext_apple_cc = __APPLE_CC__;
 }
+*/

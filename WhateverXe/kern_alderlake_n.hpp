@@ -13,6 +13,7 @@
 #include <stddef.h>
 #include "kern_display13_power_bridge.hpp"
 #include "kern_display13_clock.hpp"
+#include "kern_display13_tc.hpp"
 
 namespace AlderLakeN {
 constexpr uint32_t Identity = 0x46D18086;
@@ -55,7 +56,8 @@ static_assert(sizeof(GTReadout)==60*4,"AlderLakeN GT readout layout");
 
 // Linux v6.12 gen12 forcewake domains: fuses and BCS are GT, RCS is render.
 // Only acquire an unowned kernel bit0. Never reset domains or alter engines.
-template<class IO> GTReadout readGT(IO &io, bool admitted, uint32_t *edram=nullptr) {
+template<class IO> GTReadout readGT(IO &io, bool admitted, uint32_t *edram=nullptr,
+    bool (*decode)(const uint32_t *,Resources &)=nullptr) {
     GTReadout out;
     if(!admitted)return out;
     constexpr uint32_t request[] {0xA188,0xA278},ack[] {0x130044,0xD84};
@@ -95,8 +97,9 @@ template<class IO> GTReadout readGT(IO &io, bool admitted, uint32_t *edram=nullp
             if(out.fuses[i]==UINT32_MAX)out.status=GTStatus::Unavailable;
         }
         if(out.status==GTStatus::Complete &&
-           (!resources(out.fuses[0],out.fuses[1],out.fuses[2],out.fuses[3],out.resources) ||
-            out.fuses[4]!=0x000E00FE))out.status=GTStatus::ProfileMismatch;
+           !(decode ? decode(out.fuses,out.resources) :
+             (resources(out.fuses[0],out.fuses[1],out.fuses[2],out.fuses[3],out.resources) &&
+              out.fuses[4]==0x000E00FE)))out.status=GTStatus::ProfileMismatch;
         if(edram) {
             *edram=io.readable(0x120010) ? io.read(0x120010) : UINT32_MAX;
             if(*edram==UINT32_MAX)out.status=GTStatus::Unavailable;
@@ -173,6 +176,12 @@ template<class IO> DisplayReadout readDisplay(IO &io, bool admitted) {
         for (auto offset : transport)
             add(offset + 0x1000 * pipe);
         add(0x46140 + 4 * pipe);
+        // Display11+ has two scalers per powered pipe (Linux display runtime).
+        // Capture the binding and destination, without touching power/coefficients.
+        for(unsigned scaler=0;scaler<2;++scaler) {
+            const auto base=0x68170+0x800*pipe+0x100*scaler;
+            add(base);add(base+4);add(base+0x10);
+        }
         // Display13 DSC/joiner belongs to the corresponding pipe well.
         add(0x78000 + 0x200 * pipe);add(0x78004 + 0x200 * pipe);
     }
@@ -191,13 +200,23 @@ inline bool value(const DisplayReadout &r, uint32_t offset, uint32_t &out) {
 
 // Source-side certificate for an already-running, uncompressed external SST
 // GOP. This does not prove sink DPCD state, PLL rate or native AUX ownership.
-inline bool dpSource(const DisplayReadout &boot,unsigned pipe,unsigned ddi) {
-    if(pipe>=3 || ddi>=2 || boot.status!=ReadoutStatus::Complete ||
+inline bool dpSource(const DisplayReadout &boot,unsigned pipe,unsigned ddi,const Display13TC::Boot *tc=nullptr) {
+    const bool typeC=ddi>=3 && ddi<=6;
+    if(pipe>=3 || (ddi>=2 && !typeC) || boot.status!=ReadoutStatus::Complete ||
        !(boot.activePipes&boot.poweredPipes&(1U<<pipe)))return false;
     const auto bank=pipe*0x1000;
     uint32_t trans=0,tp=0,buf=0,clock=0,ctl2=0,dss1=0,dss2=0,dm=0,dn=0,lm=0,ln=0;
+    // TC buffer access needs the separate powered TCSS/ownership witness.
+    // Do not add every TC register to the unconditional common readout.
+    if(typeC) {
+        uint32_t power=0,ddiPower=0;
+        if(!tc || !tc->valid() || tc->port.ddi!=ddi || tc->pipe!=pipe ||
+           !value(boot,0x45404,power) || power!=tc->power ||
+           !value(boot,0x45454,ddiPower) || ddiPower!=tc->ddiPower)return false;
+        buf=tc->buffer;
+    } else if(!value(boot,0x64000+ddi*0x100,buf))return false;
     if(!value(boot,0x60400+bank,trans) || !value(boot,0x60540+bank,tp) ||
-       !value(boot,0x64000+ddi*0x100,buf) || !value(boot,0x46140+4*pipe,clock) ||
+       !value(boot,0x46140+4*pipe,clock) ||
        !value(boot,0x60404+bank,ctl2) || !value(boot,0x78000+pipe*0x200,dss1) ||
        !value(boot,0x78004+pipe*0x200,dss2) || !value(boot,0x60030+bank,dm) ||
        !value(boot,0x60034+bank,dn) || !value(boot,0x60040+bank,lm) ||
@@ -205,10 +224,16 @@ inline bool dpSource(const DisplayReadout &boot,unsigned pipe,unsigned ddi) {
     const unsigned lanes=((trans>>1)&7)+1;
     // Linux v6.12 i915_reg.h: SST, normal training, scrambling, no FEC/MST,
     // port sync, HDCP, DSC or joined pipes. Enhanced framing may be on or off.
+    // intel_ddi_read_func_ctl classifies SST from MODE_SELECT, not the MST
+    // payload-allocation bit. Firmware may leave bit8 set on an SST GOP;
+    // preserve it and include it in the unchanged-source check, never clear it
+    // on an enabled transcoder or infer an MST transport from that bit alone.
     return (trans&0xFF700000U)==(0x82000000U|((ddi+1)<<27)) &&
-        !(trans&((1U<<15)|(1U<<9)|(1U<<8))) && !ctl2 &&
+        !(trans&((1U<<15)|(1U<<9))) && !ctl2 &&
         (lanes==1 || lanes==2 || lanes==4) && ((buf>>1)&7)==lanes-1 &&
-        (buf&0x800000C0U)==0x80000000U && (clock>>28)==ddi+1 &&
+        (buf&(typeC && tc->ownershipOptional?0x80000080U:0x800000C0U))==
+            (typeC && !tc->ownershipOptional?0x80000040U:0x80000000U) &&
+        (clock>>28)==ddi+(typeC?3:1) && (!typeC || clock==tc->transClock) &&
         (tp&~(1U<<18))==0x80000300U &&
         !(dss1&0xF0300000U) && !(dss2&0x80008000U) &&
         !(dm&0x81000000U) && (dm&0xFFFFFF) &&
@@ -220,15 +245,23 @@ enum class GOPProtocol : uint32_t {TMDS,DP};
 // This is an early, serialized bootstrap transaction, not a modeset or link
 // adoption certificate. A changed link stops further writes, including rollback.
 template<class IO> bool dpSourceUnchanged(IO &io,const DisplayReadout &r,unsigned pipe,unsigned ddi,
-                                         uint32_t addedAUXRequest=0) {
-    if(pipe>=3 || ddi>=2 || (addedAUXRequest && addedAUXRequest!=(2U<<(2*ddi))))return false;
+                                         uint32_t addedAUXRequest=0,const Display13TC::Boot *tc=nullptr) {
+    // addedAUXRequest is the existing Combo boot-lease transition only.
+    // TC lifetime uses Mode's own AUX lease, not the Combo MainLinkAUX slot.
+    if(!dpSource(r,pipe,ddi,tc) || (addedAUXRequest && (ddi>=2 || addedAUXRequest!=(2U<<(2*ddi)))))return false;
+    if(ddi>=3 && !tc->unchanged(io))return false;
     const uint32_t bank=pipe*0x1000;
-    const uint32_t regs[] {0x60400+bank,0x60404+bank,0x60540+bank,0x60030+bank,0x60034+bank,
+    // Recheck power before touching pipe-local registers. A captured snapshot
+    // is not permission to read a bank whose well has since disappeared.
+    const uint32_t regs[] {0x45404,0x45454,0x45444,0x42000,
+        0x60400+bank,0x60404+bank,0x60540+bank,0x60030+bank,0x60034+bank,
         0x60040+bank,0x60044+bank,0x70008+bank,0x46140+4*pipe,0x64000+0x100*ddi,
-        0x78000+0x200*pipe,0x78004+0x200*pipe,0x45404,0x45454,0x45444,0x42000};
+        0x78000+0x200*pipe,0x78004+0x200*pipe};
     for(auto reg:regs) {
         uint32_t expected=0;
-        if(!value(r,reg,expected) || !io.readable(reg))return false;
+        if(ddi>=3 && reg==0x64000+0x100*ddi)expected=tc->buffer;
+        else if(!value(r,reg,expected))return false;
+        if(!io.readable(reg))return false;
         if(reg==Display13Power::AUX)expected|=addedAUXRequest;
         if(io.read(reg)!=expected)return false;
     }
@@ -269,7 +302,7 @@ template<class IO> Display13Power::Result adoptDPBootAUX(IO &io,const DisplayRea
 }
 enum class LinearStatus : uint32_t {
     NotAdmitted, Ready, Success, NotSingleHDMI, NotLinearFHD, OtherPlaneActive,
-    StateChanged, NoVblank, DisableTimeout, EnableTimeout, RollbackFailed, InvalidDPSource
+    StateChanged, NoVblank, DisableTimeout, EnableTimeout, RollbackFailed, InvalidDPSource, InvalidTCSource
 };
 struct LinearPlan {
     uint32_t pipe {}, chicken {}, arb {}, control {}, stride {}, position {}, size {}, offset {}, surface {};
@@ -281,19 +314,60 @@ struct LinearResult {
     uint32_t pipe {}, writes {}, framesBefore {}, framesAfter {}, restored {};
 };
 
+// Qualify a firmware pipe scaler separately from an unscaled linear GOP.
+// PIPESRC is width:height minus one; scaler WIN_SZ is width:height, not
+// minus one. Only one pipe-bound scaler covering the complete output is
+// accepted. Plane-bound/planar/programmed-factor scaling is not this contract.
+inline bool bootGeometry(const DisplayReadout &r,unsigned pipe,const XELPGeometry::Linear &geometry,
+                         uint32_t ht,uint32_t vt) {
+    if(XELPGeometry::timing(geometry,ht,vt))return true;
+    if(!geometry.valid || pipe>=3 || ht==UINT32_MAX || vt==UINT32_MAX ||
+       (ht&0xC000C000) || (vt&0xC000C000))return false;
+    uint32_t src=0;
+    if(!value(r,0x6001C+0x1000*pipe,src) ||
+       src!=(((geometry.width-1)<<16)|(geometry.height-1)))return false;
+    const auto width=(ht&0x3FFF)+1,height=(vt&0x3FFF)+1;
+    if(((ht>>16)&0x3FFF)+1<width || ((vt>>16)&0x3FFF)+1<height ||
+       width<geometry.width || height<geometry.height)return false;
+    unsigned active=0;
+    for(unsigned scaler=0;scaler<2;++scaler) {
+        const auto base=0x68170+0x800*pipe+0x100*scaler;
+        uint32_t ctl=0,pos=0,size=0;
+        if(!value(r,base+0x10,ctl) || !value(r,base,pos) || !value(r,base+4,size))return false;
+        if(!(ctl&0x80000000U))continue;
+        if((ctl&((7U<<25)|(1U<<29)|(1U<<19))) || pos || size!=((width<<16)|height))return false;
+        ++active;
+    }
+    return active==1;
+}
+template<class IO> bool bootGeometryUnchanged(IO &io,const DisplayReadout &r,unsigned pipe) {
+    // The accepted scaler stays live while the primary plane changes GGTT mode.
+    // Any captured source/timing/scaler drift invalidates the handoff.
+    const uint32_t regs[] {0x60000+0x1000*pipe,0x6000C+0x1000*pipe,0x6001C+0x1000*pipe,
+        0x68170+0x800*pipe,0x68174+0x800*pipe,0x68180+0x800*pipe,
+        0x68270+0x800*pipe,0x68274+0x800*pipe,0x68280+0x800*pipe};
+    for(auto reg:regs) {uint32_t v=0;if(value(r,reg,v) && io.read(reg)!=v)return false;}
+    return true;
+}
+
 // First Display 13 operation: reinitialize an existing linear RGB primary
-// plane on the explicitly selected Combo A/B/C. The default remains B for
+// plane on the explicitly selected Combo, or fixed TC with a live link
+// certificate. The default remains B for
 // the original standalone diagnostics. No new PLL/PHY/power-well cold
 // initialization, a new GGTT mapping, full modeset or accelerated scanout.
-inline LinearStatus linearPlan(const DisplayReadout &r, LinearPlan &p,unsigned ddi=1,GOPProtocol protocol=GOPProtocol::TMDS) {
+inline LinearStatus linearPlan(const DisplayReadout &r, LinearPlan &p,unsigned ddi=1,GOPProtocol protocol=GOPProtocol::TMDS,
+                               const Display13TC::Boot *tc=nullptr) {
     p={};
-    if (ddi>=3 || r.status!=ReadoutStatus::Complete || !r.activePipes || (r.activePipes&~7U) ||
+    if (ddi>=7 || r.status!=ReadoutStatus::Complete || !r.activePipes || (r.activePipes&~7U) ||
         (r.activePipes & (r.activePipes-1)) || (r.activePipes&~r.poweredPipes) ||
         (protocol!=GOPProtocol::TMDS && protocol!=GOPProtocol::DP) ||
         (protocol==GOPProtocol::TMDS && ddi==1 && r.activePipes!=r.hdmiBPipes))
         return LinearStatus::NotSingleHDMI;
     while (!(r.activePipes & (1U<<p.pipe))) ++p.pipe;
     if (p.pipe>=3) return LinearStatus::NotSingleHDMI;
+    if(ddi>=3 && (!tc || !tc->valid() || tc->port.ddi!=ddi || tc->pipe!=p.pipe ||
+       (protocol!=GOPProtocol::DP && tc->ownershipOptional)))
+        return LinearStatus::InvalidTCSource;
     const uint32_t delta=0x1000*p.pipe;
     uint32_t trans {}, cursor {}, surfLive {}, plane {}, pipeConf {}, htotal {}, vtotal {};
     if (!value(r,0x42084,p.chicken) || !value(r,0x70028+delta,p.arb) ||
@@ -306,11 +380,11 @@ inline LinearStatus linearPlan(const DisplayReadout &r, LinearPlan &p,unsigned d
     if(!(trans&(1U<<31)) || ((trans>>27)&15)!=ddi+1 ||
        (protocol==GOPProtocol::TMDS && ((trans>>24)&7)>1))
         return LinearStatus::NotSingleHDMI;
-    if(protocol==GOPProtocol::DP && !dpSource(r,p.pipe,ddi))return LinearStatus::InvalidDPSource;
+    if(protocol==GOPProtocol::DP && !dpSource(r,p.pipe,ddi,tc))return LinearStatus::InvalidDPSource;
     p.geometry=XELPGeometry::linear(p.control,p.stride,p.size,p.position,p.offset);
     if(!p.geometry.valid || (p.surface&4095) || p.surface!=surfLive ||
        ((trans>>20)&7)!=0 || (pipeConf&0xC0000000)!=0xC0000000 ||
-       !XELPGeometry::timing(p.geometry,htotal,vtotal))return LinearStatus::NotLinearFHD;
+       !bootGeometry(r,p.pipe,p.geometry,htotal,vtotal))return LinearStatus::NotLinearFHD;
     // DPT disable is global on Display 13. Exclude all other active planes
     // and cursors, including planes on powered but inactive pipes.
     for (unsigned pipe=0;pipe<3;++pipe) {
@@ -328,11 +402,11 @@ inline LinearStatus linearPlan(const DisplayReadout &r, LinearPlan &p,unsigned d
 }
 
 template<class IO> LinearResult reinitializeLinear(IO &io, const DisplayReadout &r, bool admitted,unsigned ddi=1,
-                                                  GOPProtocol protocol=GOPProtocol::TMDS) {
+                                                  GOPProtocol protocol=GOPProtocol::TMDS,const Display13TC::Boot *tc=nullptr) {
     LinearResult out;
     if (!admitted) return out;
     LinearPlan p;
-    out.status=linearPlan(r,p,ddi,protocol);
+    out.status=linearPlan(r,p,ddi,protocol,tc);
     if(out.status!=LinearStatus::Ready)return out;
     out.pipe=p.pipe;
     const auto d=0x1000*p.pipe;
@@ -340,7 +414,9 @@ template<class IO> LinearResult reinitializeLinear(IO &io, const DisplayReadout 
     const auto write=[&](uint32_t reg,uint32_t v){io.write(reg,v);++out.writes;io.read(reg);};
     bool linkChanged=false;
     const auto linkStable=[&] {
-        if(protocol==GOPProtocol::DP && !dpSourceUnchanged(io,r,p.pipe,ddi))linkChanged=true;
+        if(!bootGeometryUnchanged(io,r,p.pipe))linkChanged=true;
+        if(protocol==GOPProtocol::DP && !dpSourceUnchanged(io,r,p.pipe,ddi,0,tc))linkChanged=true;
+        if(ddi>=3 && (!tc || !tc->unchanged(io)))linkChanged=true;
         return !linkChanged;
     };
     // Check all captured words used by the transaction before the first write.

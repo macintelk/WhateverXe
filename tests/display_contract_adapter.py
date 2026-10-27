@@ -16,6 +16,7 @@ code=r'''
 using C=XELP::DisplayContract;
 struct State {
 FIELDS
+ bool display13FBDPHooksReady=false,display13TCDPProbeReady=false,display13ClockOrderReady=true;
  struct Native {bool valid=true;bool complete()const{return valid;}}tglTCNativeFunctions;
  bool tglHDMIB=false,adlsDisplaySelected=false,tglTrainingLeaseRequested=true;
  struct {struct {bool valid=false;}panel;}firmwarePorts;
@@ -27,8 +28,12 @@ METHODS
 };
 int main() {
  State s;
- assert(s.display12Available()==((1ULL<<39)-1|C::ClockOrder|C::ComboAUXGate|C::PanelDepth|C::PanelTiming|C::PanelPWM));
- assert(s.display13Available()==(C::Backend13|C::SST13|C::AUX13|C::DPProbe13));
+ s.framebufferDonorRuntimeReady=false;
+ assert(s.start().missing()==C::DonorRuntime);
+ assert(C::display13(s.display13Available()).missing()==C::DonorRuntime);
+ s.framebufferDonorRuntimeReady=true;
+ assert(s.display12Available()==((1ULL<<39)-1|C::ClockOrder|C::ComboAUXGate|C::PanelDepth|C::PanelTiming|C::PanelPWM|C::DonorRuntime));
+ assert(s.display13Available()==(C::Backend13|C::SST13|C::AUX13|C::DPProbe13|C::Training12|C::Framing));
  assert(C::display13(s.display13Available(),true).missing()==C::DPBoot13);
  s.display13DPProbeReady=false;
  assert(C::display13(s.display13Available()).ready()); // Existing provider/HDMI stays valid.
@@ -38,6 +43,14 @@ int main() {
  s.display13FBAUXHooksReady=true;s.display13FBSSTHooksReady=false;
  assert(C::display13(s.display13Available(),true).missing()==(C::DPBoot13|C::SST13));
  s.display13FBSSTHooksReady=true;
+ s.display13FBDPHooksReady=true;assert(C::display13(s.display13Available(),true).missing()==C::DPBoot13);
+ s.display13TCDPProbeReady=true;assert(C::display13(s.display13Available(),true).ready());
+ s.display13TrainingReady=false;assert(C::display13(s.display13Available(),true).missing()==C::Training12);
+ s.display13TrainingReady=true;s.display13ClockOrderReady=false;
+ assert(C::display13(s.display13Available(),true).missing()==C::ClockOrder);
+ s.display13ClockOrderReady=true;s.display13FramingReady=false;
+ assert(C::display13(s.display13Available(),true).missing()==C::Framing);s.display13FramingReady=true;
+ s.display13FBDPHooksReady=false;assert(C::display13(s.display13Available(),true).missing()==C::DPBoot13);
  // TGL: candidate not yet registered, native donor setup is complete.
  // Missing framing, AUX, mode lock or cleanup must fail before any hotplug.
  s.tglTCAutoCandidates=8;assert(s.start().ready());
@@ -60,7 +73,7 @@ int main() {
  return 0;
 }
 '''
-code=code.replace('FIELDS','\n'.join(' bool '+f+'=true;' for f in fields)).replace('METHODS','\n'.join(methods)).replace('ADAPTER',adapter)
+code=code.replace('FIELDS','\n'.join(' bool '+f+'=true;' for f in dict.fromkeys(fields))).replace('METHODS','\n'.join(methods)).replace('ADAPTER',adapter)
 with tempfile.TemporaryDirectory(prefix='display-contract-') as d:
  p=Path(d);(p/'test.cpp').write_text(code)
  subprocess.run(['clang++','-std=c++17','-O1','-fsanitize=address,undefined','-I'+str(r/'WhateverXe'),str(p/'test.cpp'),'-o',str(p/'test')],check=True)

@@ -12,6 +12,29 @@ struct IO {
  uint32_t read(uint32_t r){reads.push_back(r);return regs.at(r);}
 };
 int main() {
+ auto candidate=identify(0x46a68086,12,0x9a498086);
+ assert(candidate.mobileDisplay13() && candidate.displayAdmitted() && candidate.admitted());
+ assert(candidate.family==Family::AlderLakeP && candidate.display==Display::XeLPD && candidate.gt==GT::ADLPMobile);
+ assert(identify(0x46a68086,12).displayAdmitted());
+ assert(identify(0x46a38086,12,0x9a498086).displayAdmitted());
+
+ // ABI3 explicitly describes fixed TC HDMI; capability query prevents an
+ // old provider from accepting a configuration whose implementation it lacks.
+ for(unsigned d=3;d<=6;++d)for(unsigned ready=0;ready<16;++ready)for(unsigned h=0;h<2;++h) {
+  alignas(8) uint8_t platform[0x1c0] {};
+  ProbeConfig c;c.profile=identify(0x46d18086,0);c.comboBackend=3;c.legacy=1U<<d;c.legacyBackend=0x78;
+  ProbeBinding b{1,2,reinterpret_cast<uintptr_t>(platform),c};assert(b.valid());
+  auto rec=reinterpret_cast<uint32_t *>(platform+0x20+24*d);
+  const uint32_t native[]={d,d+6,2,1,0x800,0x202};memcpy(rec,native,sizeof(native));
+  IO io;io.regs={{0xc4000,h<<(21+d)},{0x161500+4*(d-3),ready}};
+  assert(probeMode(io,b,2,reinterpret_cast<uintptr_t>(rec),rec)==(h && (ready&7)==4?4U:0U));
+  assert(io.reads[0]==0x161500+4*(d-3));
+  for(unsigned f:{0U,1U,2U,3U,4U,5U}) {
+   auto old=rec[f];rec[f]=~0U;io.reads.clear();
+   assert(!probeMode(io,b,2,reinterpret_cast<uintptr_t>(rec),rec) && io.reads.empty());rec[f]=old;
+  }
+  auto bad=c;bad.legacyBackend=0;assert(!bad.valid());bad=c;bad.typeC=c.legacy;assert(!bad.valid());
+ }
  static_assert(sizeof(Profile)==28 && sizeof(ProbeConfig)==60,"Keep existing provider ABI3 layout");
  for(auto id:{0xA7808086U,0xA7828086U,0xA7888086U,0xA78B8086U}) {
   auto p=identify(id,12);
@@ -26,7 +49,9 @@ int main() {
   const bool tgl=id==0x9A40 || id==0x9A49 || id==0x9A78 || id==0x9A60 || id==0x9A68 || id==0x9A70,adln=id>=0x46D0 && id<=0x46D4;
   const bool adls=id==0x4680 || id==0x4682 || id==0x4688 || id==0x468A || id==0x468B || id==0x4690 || id==0x4692 || id==0x4693;
   const bool rpls=id==0xA780 || id==0xA781 || id==0xA782 || id==0xA783 || id==0xA788 || id==0xA789 || id==0xA78A || id==0xA78B;
-  assert(p.admitted()==(tgl || adln || adls || rpls));
+  const bool mobile=id==0x46a3 || id==0x46a6 || id==0x46a8 || id==0x46aa || id==0x46b3 || id==0x46c3 || id==0xa7a0 || id==0xa7a1 || (id>=0xa7a8 && id<=0xa7ad);
+  assert(p.admitted()==(tgl || adln || adls || rpls || mobile));
+  if(mobile){assert(p.mobileDisplay13());assert(!identify((id<<16)|0x8086,rev,0x46d18086).admitted());}
   if(adls||rpls)assert(!identify((id<<16)|0x8086,rev,0x9A498086).admitted());
   assert(!adln || p.display==Display::XeLPD);
   assert(!identify((id<<16)|0x1234,rev).admitted());
@@ -35,10 +60,10 @@ int main() {
  ProbeConfig c;c.profile=identify(0x9A498086,1);c.combo=2;c.comboBackend=7;c.legacyBackend=0x1F8;c.legacy=0x1F8;
  ProbeBinding b {1,2,reinterpret_cast<uintptr_t>(platform),c};assert(b.valid());
  unsigned cases=0;
- // Independent old WEG equations, plus exact MMIO read order for every TC.
+ // Independent Linux FIA layouts and exact MMIO read order for every TC.
  for(unsigned d=3;d<=8;++d)for(unsigned h=0;h<2;++h)for(unsigned mod=0;mod<2;++mod)
  for(unsigned ready=0;ready<2;++ready)for(unsigned alt=0;alt<4;++alt) {
-  const unsigned tc=d-3,instance=tc/2,index=tc%2;const uint32_t bases[]={0x163000,0x16E000,0x16F000};
+  const unsigned tc=d-3,instance=mod?tc/2:0,index=mod?tc%2:tc<4?tc:0;const uint32_t bases[]={0x163000,0x16E000,0x16F000};
   const auto liveReg=bases[instance]+0x8A0,readyReg=bases[instance]+0x890;
   IO io;io.regs={{0xC4000,h<<(24+tc)},{0x1638A0,mod<<4},{liveReg,(mod<<4)|(alt<<(5+8*index))},{readyReg,ready<<index}};
   // For FIA1 the per-port fields share its topology word.
@@ -46,9 +71,9 @@ int main() {
   io.regs[0x1638A0]|=mod<<4;
   auto record=reinterpret_cast<uint32_t *>(platform+0x20+24*d);record[0]=d;
   const auto mode=probeMode(io,b,2,reinterpret_cast<uintptr_t>(record),record);
-  assert(mode==(h && mod && ready && !alt?4U:0U));
+  assert(mode==(h && (mod || tc<4) && ready && !alt?4U:0U));
   std::vector<uint32_t> expected {0xC4000};
-  if(h){expected.push_back(0x1638A0);if(mod){if(instance)expected.push_back(liveReg);expected.push_back(readyReg);}}
+  if(h){expected.push_back(0x1638A0);if(mod || tc<4){if(instance)expected.push_back(liveReg);expected.push_back(readyReg);}}
   assert(io.reads==expected);++cases;
  }
  // Selection never grants an unknown, Type-C or excluded port access.

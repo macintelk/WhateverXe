@@ -10,7 +10,7 @@ struct Platform {
         data()[0x12]=Ports;data()[0x13]=3;
         const uint32_t panel[] {0,0,0,0,2,0x18};memcpy(config(0),panel,24);
         for(unsigned d=1;d<Ports;++d) {
-            const uint32_t record[] {d,d+1,1,0,0x400,0x201};memcpy(config(d),record,24);
+            const uint32_t record[] {d,d<3?d+1:d+6,1,d<3?0U:1U,0x400,0x201};memcpy(config(d),record,24);
         }
         words[0]=0x123456789A490000ULL;words[0x108/8]=0x123456789ABCDEF0ULL;
     }
@@ -26,12 +26,17 @@ int main() {
         if(d!=1)assert(output.config(d)[4]==1 && !output.config(d)[5]);
     }
     assert(output.config(1)[1]==2 && output.config(1)[2]==2 && output.config(1)[4]==0x800 && output.config(1)[5]==0x202);
-    assert(excludedTypeC(output.data(),Bytes,wiring)==0x3F000000);
+    assert(excludedHotplug(output.data(),Bytes,wiring)==0x3F050000);
     auto activeTC=output;activeTC.config(3)[4]=0x400;
-    assert(!excludedTypeC(activeTC.data(),Bytes,wiring));
+    assert(!excludedHotplug(activeTC.data(),Bytes,wiring));
     activeTC=output;activeTC.config(8)[5]=0x201;
-    assert(!excludedTypeC(activeTC.data(),Bytes,wiring));
-    assert(!excludedTypeC(output.data(),Bytes-1,wiring));
+    assert(!excludedHotplug(activeTC.data(),Bytes,wiring));
+    assert(!excludedHotplug(output.data(),Bytes-1,wiring));
+    // Unselected Combo records must be disabled just like TC records.
+    for(unsigned d=0;d<3;d+=2)for(unsigned field=4;field<=5;++field) {
+        auto bad=output;bad.config(d)[field]=0x400;
+        assert(!excludedHotplug(bad.data(),Bytes,wiring));
+    }
     // The selected record is the only changed route; keep counts/pool/config.
     assert(!memcmp(output.data(),input.data(),0x20));
     assert(!memcmp(output.data()+0xF8,input.data()+0xF8,Bytes-0xF8));
@@ -45,15 +50,6 @@ int main() {
     assert(!apply(input.data(),Bytes,input.data(),wiring));
     assert(!apply(output.data(),Bytes-1,input.data(),wiring));
     assert(!apply(output.data(),Bytes,nullptr,wiring));
-    assert(skipDPLanes(output.data(),output.config(1),wiring,true,false,0,0));
-    assert(!skipDPLanes(output.data(),output.config(1),wiring,false,false,0,0));
-    assert(!skipDPLanes(output.data(),output.config(1),wiring,true,true,0,0));
-    assert(!skipDPLanes(output.data(),output.config(1),wiring,true,false,1,0));
-    assert(!skipDPLanes(output.data(),output.config(1),wiring,true,false,0,1));
-    assert(!skipDPLanes(output.data(),input.config(1),wiring,true,false,0,0));
-    assert(!skipDPLanes(output.data(),output.config(0),wiring,true,false,0,0));
-    auto dp=output;dp.config(1)[2]=1;
-    assert(!skipDPLanes(dp.data(),dp.config(1),wiring,true,false,0,0));
     // Both physical S1 routes and their simultaneous board description.
     for(unsigned mask=1;mask<=7;++mask) {
         const uint32_t prop[] {1,mask,(mask&1)?1U:0U,(mask&2)?2U:0U,(mask&4)?3U:0U};
@@ -84,12 +80,12 @@ int main() {
             if(active)assert(out.config(d)[1]==d+1 && out.config(d)[2]==2 && out.config(d)[4]==0x800 && out.config(d)[5]==0x202);
             else assert(out.config(d)[4]==1 && !out.config(d)[5]);
         }
-        assert(excludedTypeC(out.data(),Bytes,w)==0x3F000000);
+        assert(excludedHotplug(out.data(),Bytes,w)==(0x3F000000|((7U&~mask)<<16)));
         assert(!selected(out.data(),reinterpret_cast<void *>(1),w));
         assert(!memcmp(out.data(),in.data(),0x20) && !memcmp(out.data()+0xF8,in.data()+0xF8,Bytes-0xF8));
         auto malformed=w;malformed.ddc[0]=4;auto keep=out;
         assert(!apply(out.data(),Bytes,in.data(),malformed) && !memcmp(out.data(),keep.data(),Bytes));
-        if(mask==3){auto broken=out;broken.config(0)[5]=0x18;assert(!excludedTypeC(broken.data(),Bytes,w));}
+        if(mask==3){auto broken=out;broken.config(0)[5]=0x18;assert(!excludedHotplug(broken.data(),Bytes,w));}
     }
     // All fixed Combo HDMI/DP assignments compose CPU topology/resources.
     // DP runtime/boot admission stays closed until the hardware hooks exist.
@@ -103,12 +99,11 @@ int main() {
         for(unsigned d=0;d<9;++d) {
             const bool on=w.selected()&(1U<<d),hdmi=w.hdmi&(1U<<d);
             assert(selected(out.data(),out.config(d),w)==on);
-            assert(skipDPLanes(out.data(),out.config(d),w,true,false,0,0)==hdmi);
             if(on)assert(out.config(d)[2]==(hdmi?2U:1U));
             for(unsigned mode=0;mode<8;++mode)
                 assert(bootDDI(w,0x80000000|((d+1)<<27)|(mode<<24))==(hdmi&&mode<=1?d:~0U));
         }
-        assert(excludedTypeC(out.data(),Bytes,w)==0x3f000000);
+        assert(excludedHotplug(out.data(),Bytes,w)==(0x3f000000|((7U&~w.selected())<<16)));
         auto reloaded=w;reloaded=wiring;assert(!reloaded.dp && reloaded.hdmi==2);
         auto bad=w;bad.dp|=bad.hdmi; // Empty HDMI in DP-only: inject explicit overlap.
         if(!bad.hdmi){bad.hdmi=bad.dp;for(unsigned d=0;d<2;++d)if(bad.hdmi&(1U<<d))bad.ddc[d]=d+1;}
@@ -117,6 +112,34 @@ int main() {
         auto corrupted=out;
         for(unsigned d=0;d<2;++d)if(w.dp&(1U<<d)) {
             corrupted.config(d)[2]=2;assert(!boundPorts(corrupted.data(),w).valid());corrupted=out;
+        }
+    }
+    // The production topology must apply every physical fixed-HDMI subset,
+    // including mixed Combo/TC and all four TC slots, preserving native bindings.
+    for(unsigned mask=1;mask<128;++mask)if(!(mask&~Display13OutputWiring::Physical)) {
+        Display13OutputWiring w;w.valid=true;w.hdmi=mask;
+        for(unsigned d=0;d<7;++d)if(mask&(1U<<d))w.ddc[d]=d<2?d+1:d+6;
+        Platform in,out;
+        assert(supportedWiring(w,true) && apply(out.data(),Bytes,in.data(),w));
+        assert(boundPorts(out.data(),w).selected==mask);
+        assert(excludedHotplug(out.data(),Bytes,w)==((0x3f000000&~((mask>>3)<<24))|((7U&~mask)<<16)));
+        for(unsigned d=0;d<9;++d)assert(selected(out.data(),out.config(d),w)==bool(mask&(1U<<d)));
+        for(unsigned d=3;d<7;++d)if(mask&(1U<<d)) {
+            auto bad=w;bad.ddc[d]=8;assert(!supportedWiring(bad,true));
+            bad=w;bad.dp=1U<<d;assert(!supportedWiring(bad,true));
+        }
+    }
+    // DP boot is an explicit selection request, followed by source/power proof.
+    // Exercise every physical TC slot with an independent HDMI neighbour.
+    for(unsigned d=3;d<=6;++d) {
+        Display13OutputWiring w;w.valid=true;w.dp=1U<<d;w.hdmi=2;w.ddc[1]=2;
+        assert(supportedWiring(w,true));
+        for(unsigned port=0;port<7;++port)for(unsigned mode=0;mode<8;++mode) {
+            const auto trans=0x80000000U|((port+1)<<27)|(mode<<24);
+            const auto expected=port==d && mode==2?d:port==1 && mode<=1?1U:UINT32_MAX;
+            assert(bootstrapDDI(w,true,1,1,trans,true)==expected);
+            assert(bootstrapDDI(w,true,1,1,trans)==(port==1 && mode<=1?1U:UINT32_MAX));
+            assert(bootstrapDDI(w,true,3,3,trans,true)==UINT32_MAX);
         }
     }
     // A failure on the last selected predecessor must not publish a copy.

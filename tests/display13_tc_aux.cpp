@@ -65,7 +65,8 @@ int main() {
         assert(suspend(io,b.state).status==Display13Power::Status::Complete);
         assert(restore(io,b.state).status==Display13Power::Status::Complete && io.locks==2 && io.regs[0x1010A0]==hip);
         assert(b.putAUX(io,tc+3).status==Display13Power::Status::Complete);
-        assert(!(io.regs[0x45444]&(3U<<(2*(tc+3)))) && !(io.regs[0x45404]&12));
+        assert(!(io.regs[0x45444]&(3U<<(2*(tc+3)))) && (io.regs[0x45404]&12)==12);
+        assert(b.putDDI(io,tc+3).status==Display13Power::Status::Complete && !(io.regs[0x45404]&12));
         cases+=6;
     }
     // Refuse invalid, unselected, unpowered or in-flight AUX before writing.

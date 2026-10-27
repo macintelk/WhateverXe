@@ -14,11 +14,21 @@ struct Profile {
     GT gt {GT::Unknown};
     Donor donor {Donor::Unknown};
     uint32_t effectiveIdentity {}; // Table selector; may come from device-id.
+    // Mobile Display13 selection is distinct from whether Render is requested.
+    // The donor selector never changes the physical Display13 identity.
+    bool mobileDisplay13() const {
+        return mobileDisplay13Device(identity) && revision<=255 &&
+            (effectiveIdentity==identity || effectiveIdentity==0x9A498086) &&
+            display==Display::XeLPD && gt==GT::ADLPMobile && donor==Donor::C004FC1A &&
+            family==deviceEntry(identity)->family;
+    }
+    bool displayAdmitted() const {return admitted();}
     bool overridden() const {return identity!=effectiveIdentity;}
     // Select the implemented family backend for every PCI revision. Hardware
     // validation is independent; a stepping split needs a concrete behavior delta.
     bool admitted() const {return (identity&0xFFFF)==0x8086 && revision<=255 &&
         donor==Donor::C004FC1A && gt!=GT::Unknown &&
+        ((gt!=GT::ADLPMobile && !mobileDisplay13Device(identity)) || mobileDisplay13()) &&
         ((!display12SmallGT(gt) && !display12SmallGTDevice(identity)) ||
          (display12SmallGT(gt) && display12SmallGTDevice(identity) && !overridden()));}
 };
@@ -26,6 +36,12 @@ inline Profile identify(uint32_t physical,uint32_t revision,uint32_t effective) 
     Profile p;p.identity=physical;p.revision=revision;p.effectiveIdentity=effective;
     if((physical&0xFFFF)!=0x8086 || revision>255)return p;
     const auto entry=deviceEntry(effective);if(!entry)return p;
+    const auto physicalEntry=deviceEntry(physical);
+    if(physicalEntry && physicalEntry->backend==GT::ADLPMobile) {
+        p.family=physicalEntry->family;p.display=physicalEntry->display;p.gt=physicalEntry->backend;
+        if(effective==physical || effective==0x9A498086)p.donor=Donor::C004FC1A;
+        return p;
+    }
     p.family=entry->family;p.display=entry->display;p.gt=entry->backend;
     if(p.gt!=GT::Unknown)p.donor=Donor::C004FC1A;
     return p;
@@ -65,21 +81,28 @@ struct NativePorts {
 };
 // ABI3 includes physical/effective identity and binds a profile and immutable probe policy, not mutable connection state.
 // legacy permits probing for mode4; it does not force mode4 or classify a
-// USB-C-capable connector as physically fixed DP. The provider still checks FIA.
+// USB-C-capable connector as physically fixed DP. The provider checks generation-specific live state.
 // Type-C intent is represented but not admitted by either current backend.
-constexpr uint32_t ProbeABI=3,ProbeCapabilityABI=1,ProbeDisplay13ComboDP=1U;
+constexpr uint32_t ProbeABI=3,ProbeCapabilityABI=1,ProbeDisplay13ComboDP=1U,ProbeDisplay13FixedTC=2U,ProbeDisplay13FixedDP=4U;
 using QueryProbeCapabilities=uint32_t (*)(uint32_t,uint32_t);
 // Optional export: old ABI3 providers remain valid for their existing routes,
 // but their lack of a capability reply cannot authorize a new DP route.
 inline bool display13ProbeCapable(QueryProbeCapabilities query) {
     return query && (query(ProbeCapabilityABI,ProbeABI)&ProbeDisplay13ComboDP);
 }
+inline bool display13TCProbeCapable(QueryProbeCapabilities query) {
+    return query && (query(ProbeCapabilityABI,ProbeABI)&ProbeDisplay13FixedTC);
+}
+inline bool display13TCDPProbeCapable(QueryProbeCapabilities query) {
+    return query && (query(ProbeCapabilityABI,ProbeABI)&ProbeDisplay13FixedDP);
+}
+
 struct ProbeConfig {
     uint32_t abi {ProbeABI},bytes {sizeof(ProbeConfig)};
     Profile profile;
     uint32_t combo {},legacy {},typeC {},excluded {},comboBackend {},legacyBackend {};
     bool valid() const {
-        if(abi!=ProbeABI || bytes!=sizeof(ProbeConfig) || !profile.admitted() ||
+        if(abi!=ProbeABI || bytes!=sizeof(ProbeConfig) || !profile.displayAdmitted() ||
            !same(profile,identify(profile.identity,profile.revision,profile.effectiveIdentity)))return false;
         // ADL-S firmware routes use the donor's three Combo PHY slots.
         // Its TC label grants neither Type-C nor Dekel register access.
@@ -91,8 +114,9 @@ struct ProbeConfig {
         if((combo&~7U) || ((legacy|typeC|excluded|legacyBackend)&~0x1F8U) ||
            (comboBackend&~7U) || (legacy&typeC) || (legacy&excluded) || (typeC&excluded))return false;
         if(profile.display==Display::XeD)return comboBackend==7;
-        return profile.display==Display::XeLPD && combo && !(combo&~3U) &&
-            comboBackend && !(comboBackend&~3U) && !legacy && !typeC && !legacyBackend;
+        return profile.display==Display::XeLPD && (combo|legacy) && !(combo&~3U) &&
+            comboBackend && !(comboBackend&~3U) && !typeC &&
+            !(legacy&~0x78U) && !(legacyBackend&~0x78U) && !(legacy&~legacyBackend);
     }
 };
 inline bool same(const ProbeConfig &a,const ProbeConfig &b) {

@@ -17,7 +17,7 @@ def main():
  base+=['-fdebug-compilation-dir=.', '-ffile-prefix-map='+str(ROOT)+'=/WhateverXe',
         '-ffile-prefix-map='+str(sdk)+'=/MacKernelSDK', '-ffile-prefix-map='+str(lilu)+'=/Lilu']
  manifest={}
- for name,version,sources in [('WhateverXe','0.5.0',sorted((ROOT/'WhateverXe').glob('*.cpp'))+[lilu/'Library/plugin_start.cpp']),('AppleIntelTGLCompat','0.5.0',[ROOT/'AppleIntelTGLCompat/AppleIntelTGLCompat.cpp'])]:
+ for name,version,sources in [('WhateverXe','0.6.0',sorted((ROOT/'WhateverXe').glob('*.cpp'))+[lilu/'Library/plugin_start.cpp']),('AppleIntelTGLCompat','0.6.0',[ROOT/'AppleIntelTGLCompat/AppleIntelTGLCompat.cpp'])]:
   bundle=out/(name+'.kext')/'Contents';(bundle/'MacOS').mkdir(parents=True,exist_ok=True);objdir=out/name;objdir.mkdir(exist_ok=True)
   objects=[]
   for source in sources:
@@ -37,6 +37,13 @@ def main():
   if name=='WhateverXe':
    libs['as.vit9696.Lilu']='1.2.0'
    info['IOKitPersonalities']={ident:dict(CFBundleIdentifier=ident,IOClass=name,IOMatchCategory=name,IOProviderClass='IOResources',IOResourceMatch='IOKit')}
+  else:
+   # This is the oldest compatible provider ABI, not the release version.
+   # Existing framebuffer payloads declare a dependency on 0.5.0.
+   info['OSBundleCompatibleVersion']='0.5.0'
+   # The parent readiness property is published only by the admitted Display13 backend.
+   # Keep the native policy class, scoped to its Intel client and independent of SMBIOS.
+   info['IOKitPersonalities']=plistlib.loads((ROOT/'AppleIntelTGLCompat/GraphicsPolicy.plist').read_bytes())
   (bundle/'Info.plist').write_bytes(plistlib.dumps(info))
   # Preserve DWARF before removing the linker's object-path records.
   if name=='WhateverXe':run(['xcrun','dsymutil',exe,'-o',out/(name+'.kext.dSYM')])
@@ -49,6 +56,7 @@ def main():
    assert not any(x in unresolved for x in ['chkstk_darwin','___memcpy_chk','___memmove_chk','DispatchE5IORPC']), 'userspace/DriverKit ABI imported into kernel plugin'
    assert not any(x in unresolved for x in ['__ZN2XE','__ZN6XeHost','__ZN11DVMTCalcFix']), 'unresolved local implementation'
   manifest[name]={'identifier':ident,'version':version,'configuration':'RELEASE' if a.release else 'DEBUG','sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'source_sha256':{str(s.relative_to(ROOT)) if s.is_relative_to(ROOT) else 'Lilu/'+str(s.relative_to(lilu)):hashlib.sha256(s.read_bytes()).hexdigest() for s in sources}}
+  if name=='AppleIntelTGLCompat':manifest[name]['personality_sha256']=hashlib.sha256((ROOT/'AppleIntelTGLCompat/GraphicsPolicy.plist').read_bytes()).hexdigest()
  manifest['headers']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for d in ['WhateverXe','AppleIntelTGLCompat'] for p in sorted((ROOT/d).glob('*.hpp'))}
  (out/'build-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
  print(json.dumps({n:v['sha256'] for n,v in manifest.items() if n!='headers'},indent=2))

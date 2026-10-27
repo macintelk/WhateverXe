@@ -62,18 +62,26 @@ int main(){
         assert(b.begin(io,0,1U|(1U<<port)).status==Status::Complete);
         assert(b.getDDI(io,port).status==Status::Complete && b.nativeDDIRefs(port)==1);
         assert((io.regs[0x45454]&(3U<<(2*(tc+3))))==(3U<<(2*(tc+3))));
-        assert(!b.state.refs[static_cast<unsigned>(Domain::PW2)]);
+        assert(b.state.refs[static_cast<unsigned>(Domain::PW2)]==1);
         assert(b.getAUX(io,port).status==Status::Complete && io.prepares==1 && io.preparedTC==tc);
         assert((io.regs[0x45444]&(3U<<(2*(tc+3))))==(3U<<(2*(tc+3))));
-        assert(b.state.refs[1]==1 && b.state.refs[3]==0 && b.state.refs[4]==0); // No phantom pipe B/C.
+        assert(b.state.refs[1]==2 && b.state.refs[3]==0 && b.state.refs[4]==0); // DDI + AUX, no phantom pipe B/C.
         assert(b.getAUX(io,port).status==Status::Complete && b.nativeAUXRefs(port)==2 && io.prepares==1);
-        assert(b.putAUX(io,port).status==Status::Complete && b.state.refs[1]==1);
+        assert(b.putAUX(io,port).status==Status::Complete && b.state.refs[1]==2);
         assert(suspend(io,b.state).status==Status::Complete);
         assert(restore(io,b.state).status==Status::Complete && io.prepares==2);
-        assert(b.putAUX(io,port).status==Status::Complete && b.state.refs[1]==0);
+        assert(b.putAUX(io,port).status==Status::Complete && b.state.refs[1]==1 && (io.regs[Driver]&0xC)==0xC);
         assert(b.putDDI(io,port).status==Status::Complete && !b.nativeDDIRefs(port));
         assert((io.regs[0x45404]&0xA80A)==0x802 && (io.regs[0x45454]&0x2AAA)==2);
         assert(!b.nativeDDIRefs(7) && !b.nativeAUXRefs(8));
+        // A TC boot GOP on pipe A must retain PW2 without any AUX client.
+        // Dropping another native PG2 user cannot turn its lanes off.
+        PowerIO bootIO;NativeBridge boot;
+        assert(boot.begin(bootIO,port,1U<<port).status==Status::Complete && !boot.nativeAUXRefs(port));
+        assert(boot.adoptBootPath(1,0,port).status==Status::Complete);
+        assert(boot.getPG(bootIO,2).status==Status::Complete && boot.putPG(bootIO,2).status==Status::Complete);
+        assert(boot.state.refs[1]==1 && (bootIO.regs[Driver]&0xC)==0xC && boot.ddiHeld(bootIO,port));
+        assert(boot.putDDI(bootIO,port).status==Status::Complete && !boot.state.refs[1] && !(bootIO.regs[Driver]&0xC));
         PHYIO phy;phy.regs={{p.ready,4},{p.buffer,0x12300080}};Display13TC::Ownership own;
         auto r=own.acquire(phy,0x100,0x200,port);assert(r.status==Display13TC::Status::Complete && r.writes==1);
         assert(phy.regs[p.buffer]==0x123000C0 && own.active);
@@ -125,7 +133,10 @@ int main(){
         PHYIO io;io.regs={{0x161500,ready},{0x64300,0}};Display13TC::Ownership s;
         const auto r=s.acquire(io,0x100,0x200,3);
         assert(r.status==(ready==0?Display13TC::Status::NotReady:ready==UINT32_MAX?Display13TC::Status::Unavailable:Display13TC::Status::UnsupportedMode));
-        assert(!s.owner && io.writes.empty() && (ready!=0 || io.time==500000));
+        if(ready==0) {
+            assert(s.owner && io.writes.size()==1 && io.time==500000);
+            assert(s.release(io,0x100,0x200,3).status==Display13TC::Status::Complete);
+        } else assert(!s.owner && io.writes.empty());
     }
     {PHYIO io;io.regs={{0x161500,4},{0x64300,0}};io.rejectWrite=true;Display13TC::Ownership s;
      assert(s.acquire(io,0x100,0x200,3).status==Display13TC::Status::Readback && s.owner && !s.active);

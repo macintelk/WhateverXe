@@ -1,6 +1,6 @@
-// ADL-N fixed HDMI uses the shared Combo-only board property.
+// The legacy explicit HDMI property selects Combo wiring only.
 // Native nine-port identity and three-pipe resources are managed separately.
-// TC HDMI has been deferred; fixed DP requires its own transport policy.
+// Firmware-selected Display13 routes also support fixed TC HDMI.
 #ifndef KERN_DISPLAY13_HDMI_WIRING_HPP
 #define KERN_DISPLAY13_HDMI_WIRING_HPP
 // Compatibility name for the version1 HDMI property and older callers.

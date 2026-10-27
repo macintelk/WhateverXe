@@ -79,7 +79,7 @@ int main(){
    if(kind==4)reg(buffer())=0x80000000;
    if(kind==5){nativeResult=0xBAD;assert(!mprotect(mmio,span,PROT_NONE));}
    auto r=XE::wrapTGLEnablePort(port);assert(enableCalls==1);
-   assert(r==((kind==0||kind==4)?0u:nativeResult));assert(delays==(kind==0?2u:kind==1?30u:0u));
+   assert(r==nativeResult && delays==0); // Waiting belongs to the common native-loop adapter.
    if(kind!=5)neighbors();
   }
   for(unsigned reason=0;reason<4;++reason){reset(d);
@@ -102,5 +102,5 @@ int main(){
   reset(d);readable=false;XE::wrapTGLPhyClockGating(port,false);assert(clockCalls==1&&writes==0);
  }
  assert(!mprotect(mmio,span,PROT_READ|PROT_WRITE));munmap(mmio,span);
- puts("PASS actual 5 TX wrappers across 6 mock-qualified ports, quiet/on: native coefficient/clock/mode semantics, all lane counts/rates, buffer-local stagger, 3ms late-enable success/timeout/all-ones, protected-MMIO wiring/backend exclusions, native errors and neighboring outputs preserved. No physical qualification.");
+ puts("PASS actual 5 TX wrappers across 6 mock-qualified ports, quiet/on: native coefficient/clock/mode semantics, all lane counts/rates, buffer-local stagger, native enable return (shared wait tested separately), protected-MMIO wiring/backend exclusions, native errors and neighboring outputs preserved. No physical qualification.");
 }

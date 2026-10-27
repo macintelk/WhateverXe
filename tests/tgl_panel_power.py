@@ -5,7 +5,7 @@ import re, subprocess, tempfile, sys
 r=Path(__file__).resolve().parents[1]
 s=(r/'WhateverXe/kern_xe.cpp').read_text()
 begin=s.index('\t\t\t\t// Both power-on and power-off converge')
-end=s.index('\n\t\t\t\tif (framebufferPatchFlags.bits.FPFStolenMemorySize)',begin)
+end=s.index('\n }\n // DONOR_PANEL_PROPERTY_END',begin)
 install=s[begin:end]
 wrapper=re.search(r'bool XE::wrapTGLPanelPowerProperty\(.*?\n\}',s,re.S).group()
 if len(sys.argv)>1:

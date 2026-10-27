@@ -7,10 +7,12 @@ machine-name setting is required.
 
 By default, the physical Intel GPU device ID selects the backend. The implemented
 IDs are Tiger Lake `9A40`, `9A49`, `9A60`, `9A68`, `9A70`, `9A78` and Alder Lake-N / Twin Lake
-`46D0`–`46D4`, plus the ADL-S/HX and RPL-S/HX IDs below.
+`46D0`–`46D4`, plus the S/HX and mobile Display13 IDs below.
 
 | Family | Accepted IDs |
 | --- | --- |
+| ADL-H / P / U | `46A3`, `46A6`, `46A8`, `46AA`, `46B3`, `46C3` |
+| RPL-H / P / U | `A7A0`, `A7A1`, `A7A8`–`A7AD` |
 | ADL-S / HX | `4680`, `4682`, `4688`, `468A`, `468B`, `4690`, `4692`, `4693` |
 | RPL-S / HX | `A780`, `A781`, `A782`, `A783`, `A788`, `A789`, `A78A`, `A78B` |
 
@@ -47,6 +49,12 @@ HX IDs `4688/468B/A788/A78B` select the S-family backend, independent of CPU
 branding. RKL remains identification-only: its absent PW_2, PLL/PHY mapping
 and HTI resource reservations require a separate Display adapter.
 
+Mobile Display13 keeps the physical family and accepts its physical ID or the
+legacy 9A49 donor selector. Other-family overrides are rejected. GT resources
+come from slice/DSS/EU-pair/L3 fuses: one slice, up to six DSS, 8/12/16 EUs per
+DSS and four/six/eight L3 banks, with supported media-engine fuses. A shared
+backend does not imply every resource combination has been tested.
+
 Do not use an override merely to change the displayed GPU name.
 
 ## Display name
@@ -76,7 +84,13 @@ must match the implemented path; ambiguous or cross-routed AUX layouts are exclu
   has CPU coverage; not every panel or link rate has been tested on hardware.
 - TGL panels requesting HOBL use standard signal settings; the HOBL power-saving
   optimization is disabled until its retry behavior is supported.
-- Display 13: implemented Combo HDMI/DP paths do not imply USB-C/eDP support.
+- Display 13: fixed HDMI uses firmware Combo A/B and TC1–4 routes; TC requires
+  verified legacy mode. Experimental fixed TC1–4 SST DP requires matching VBT
+  AUX wiring. Boot handoff supports validated linear RGB scanout, including
+  supported firmware scaling, and retires secondary fixed TC firmware outputs
+  before native startup. ADL-H has been tested with three outputs and a
+  DP-to-HDMI adapter. Direct DP sinks remain unverified. Combo DP, eDP, MST,
+  Type-C-managed output and cross-routed AUX still need further implementation.
 
 The Display12 small-GT implementation accepts one slice, up to two DSS,
 16/24/32 EUs, four L3 banks and the supported media engines. Different resource

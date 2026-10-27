@@ -48,6 +48,53 @@ struct IO {
     }
 };
 int main() {
+    // Actual TC1-only firmware enable masks: north TC3/TBT3 and PCH DDI B.
+    {IO io;State state;io.r[HPDBank+4]=0x40004;io.r[HPDBank-4]=0;
+     io.r[0xC400C]=0x07020000;io.r[0xC4004]=0x38853f07;io.r[0xC4008]=0x20000;
+     assert(enable(io,state,0x3e070000,NativeGT,1,8)==Status::Complete);
+     assert(!(io.r[0xC400C]&0x3e070000) && (io.r[0xC4004]&0x3e070000)==0x3e070000);
+     assert(io.r[0xC4008]==0x20000 && !(io.r[HPDBank+4]&0x40004));}
+    // DDI D and other PCH events must still refuse admission, not be hidden.
+    for(uint32_t bit:{1U<<19,1U<<23,1U<<30}) {
+        IO io;State state;io.r[0xC400C]=bit;io.r[0xC4004]=0;
+        assert(enable(io,state,0x3e070000,NativeGT,1,8)==Status::ForeignIRQ);
+        assert(state.failureRegister==0xC400C && state.failureBits==bit);
+    }
+    for(uint32_t excluded:{1U<<19,1U<<24,1U<<30}) {
+        IO io;State state;assert(enable(io,state,excluded,NativeGT,1,8)==Status::Topology);
+    }
+    {IO io;State state;assert(enable(io,state,1U<<17,NativeGT,1,2)==Status::Topology);}
+    // Firmware may leave north TC/TBT enables for excluded connectors.
+    // Cover all exclusion subsets and each selected TC1..4 independently.
+    for(unsigned selected=0;selected<4;++selected)for(unsigned mask=0;mask<64;++mask) {
+        if(mask&(1U<<selected))continue;
+        IO io;State state;const auto excluded=mask<<24,north=(mask|(1U<<selected))|((mask|(1U<<selected))<<16);
+        const uint32_t keep=0x80000000U;
+        io.r[HPDBank+4]=north|keep;io.r[HPDBank-4]=keep;io.r[HPDBank]=north|keep;
+        assert(enable(io,state,excluded,NativeGT,1,8U<<selected)==Status::Complete);
+        assert(io.r[HPDBank+4]==keep && io.r[HPDBank-4]==(north|keep));
+        assert(io.r[HPDBank]==(north|keep));
+        assert(std::find(io.writes.begin(),io.writes.end(),HPDBank)==io.writes.end());
+    }
+    {IO io;State state;io.r[HPDBank+4]=0x40004;io.r[HPDBank-4]=0;
+     assert(enable(io,state,0x3e000000,NativeGT,1,8)==Status::Complete);}
+    {IO io;State state;io.r[HPDBank+4]=0x40004;io.r[HPDBank-4]=0;
+     assert(enable(io,state,0,NativeGT,1,8)==Status::ForeignIRQ && io.writes==std::vector<uint32_t>{Master});}
+    for(uint32_t bits:{1U<<15,1U<<22,1U<<30}) {
+        IO io;State state;io.r[HPDBank+4]=0x40004|bits;io.r[HPDBank-4]=0;
+        assert(enable(io,state,0x3e000000,NativeGT,1,8)==Status::ForeignIRQ && io.writes==std::vector<uint32_t>{Master});
+        assert(state.failureRegister==HPDBank+4 && state.failureBits==bits);
+    }
+    for(auto reg:{HPDBank-4,HPDBank+4}) {
+        IO io;State state;io.r[HPDBank+4]=0x40004;io.r[HPDBank-4]=0;io.rejectRegister=reg;
+        assert(enable(io,state,0x3e000000,NativeGT,1,8)==Status::Readback && !(io.r[Master]&Enable));
+    }
+    // HDMI TC1/2 + cold DP TC3: GOP left north TC3/TBT3 enabled.
+    {IO io;State state;io.r[HPDBank+4]=0x40004;io.r[HPDBank-4]=0;
+     io.r[HPDBank]=0x40004;
+     assert(enable(io,state,0x38070000,NativeGT,1,0x38)==Status::Complete);
+     assert(!(io.r[HPDBank+4]&0x40004) && (io.r[HPDBank-4]&0x40004)==0x40004);
+     assert(io.r[HPDBank]==0x40004 && (io.r[0xC400C]&0x07000000)==0x07000000);}
     // ADL-P/N TC legacy HPD is PCH bit24+tc and a separate control bank.
     // Foreign masked statuses must survive both enable and collect.
     for(unsigned tc=0;tc<4;++tc)for(unsigned pulse=0;pulse<4;++pulse) {

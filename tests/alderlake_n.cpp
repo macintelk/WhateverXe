@@ -176,6 +176,20 @@ int main() {
     assert(t8Ready.resources.slices==1 && t8Ready.resources.dss==1 && t8Ready.resources.nativeSubslices==2);
     assert(t8Ready.resources.eus==16 && t8Ready.resources.l3Banks==4 && t8Ready.resources.urbKiB==256);
     assert(t8Ready.fuses[4]==0xe00fe && !(t8.regs[0x130044]&1) && !(t8.regs[0xD84]&1));
+    // ADL-P shares forcewake/readout, not the small-GT/media capacity rule.
+    for(unsigned failure=0;failure<5;++failure) {
+        auto p=firmwareGT();p.regs[0x913C]=0x3f;p.regs[0x9134]=0;p.regs[0x9118]=0;p.regs[0x9140]=0xe00fa;
+        if(failure==1)p.failGT=true;
+        if(failure==2)p.failReleaseGT=true;
+        if(failure==3)p.regs[0x913C]=UINT32_MAX;
+        if(failure==4)p.regs[0x9140]=0xe00ff;
+        auto a=AlderLakeN::readGT(p,true,nullptr,XELP::decodeADLPGT);
+        using S=AlderLakeN::GTStatus;
+        const S expected[]={S::Complete,S::AckTimeout,S::ReleaseFailed,S::Unavailable,S::ProfileMismatch};
+        assert(a.status==expected[failure]);
+        if(!failure)assert(a.resources.eus==96 && a.resources.nativeSubslices==12 &&
+            a.resources.l3Banks==8 && a.resources.urbKiB==512 && a.releasedMask==3);
+    }
     auto excludedGT=firmwareGT();assert(AlderLakeN::readGT(excludedGT,false).status==AlderLakeN::GTStatus::NotAdmitted && excludedGT.reads.empty());
     auto busyGT=firmwareGT();busyGT.regs[0xA188]=1;
     assert(AlderLakeN::readGT(busyGT,true).status==AlderLakeN::GTStatus::ExistingOwner && busyGT.writes.empty());

@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 struct TGLNativeFiaContext {
- uintptr_t owner {}; void *port {}; uint32_t ddi {};
+ uintptr_t owner {}; void *port {}; uint32_t ddi {}; bool failed {};
  bool matches(uintptr_t thread,void *p) const {
   return thread && __atomic_load_n(&owner,__ATOMIC_ACQUIRE)==thread && port==p;
  }
@@ -13,21 +13,23 @@ struct TGLNativeFiaContext {
 // The existing recursive mode mutex serializes writers. Only the owning
 // thread reads port/ddi; other threads stop at the atomic owner check.
 struct TGLNativeFiaScope {
- TGLNativeFiaContext &ctx; uintptr_t previousOwner; void *previousPort; uint32_t previousDDI; bool active;
+ TGLNativeFiaContext &ctx; uintptr_t previousOwner; void *previousPort; uint32_t previousDDI; bool previousFailed,active;
  TGLNativeFiaScope(TGLNativeFiaContext &c,uintptr_t thread,void *p,uint32_t d,bool enable):
-  ctx(c),previousOwner(0),previousPort(nullptr),previousDDI(0),active(enable) {
+  ctx(c),previousOwner(0),previousPort(nullptr),previousDDI(0),previousFailed(false),active(enable) {
   if(!active)return;
-  previousOwner=__atomic_load_n(&ctx.owner,__ATOMIC_RELAXED);previousPort=ctx.port;previousDDI=ctx.ddi;
+  previousOwner=__atomic_load_n(&ctx.owner,__ATOMIC_RELAXED);previousPort=ctx.port;previousDDI=ctx.ddi;previousFailed=ctx.failed;ctx.failed=false;
   ctx.port=p;ctx.ddi=d;__atomic_store_n(&ctx.owner,thread,__ATOMIC_RELEASE);
  }
+ bool failed()const{return active && ctx.failed;}
  void finish(){if(!active)return;__atomic_store_n(&ctx.owner,0,__ATOMIC_RELEASE);
-  ctx.port=previousPort;ctx.ddi=previousDDI;__atomic_store_n(&ctx.owner,previousOwner,__ATOMIC_RELEASE);active=false;}
+  ctx.port=previousPort;ctx.ddi=previousDDI;ctx.failed=previousFailed;__atomic_store_n(&ctx.owner,previousOwner,__ATOMIC_RELEASE);active=false;}
  ~TGLNativeFiaScope(){finish();}
 };
 
 struct TGLNativeFia {
  TGLFiaPort fia {}; uint32_t donorMask {};
- // The caller has already observed modular FIA in the powered mode4 probe.
+ // Initial modular coordinates; the host resolves the live layout at the
+ // donor's powered access before using them. No boot-probe prerequisite.
  // TC5/6 remain excluded: the native ready switch has no case for them.
  bool resolve(uint32_t ddi){TGLTypeCPort tc;
   if(ddi<3 || ddi>6 || !TGLTypeCPort::resolve(ddi,tc) || !tc.resolveFia(0x10,fia))return false;

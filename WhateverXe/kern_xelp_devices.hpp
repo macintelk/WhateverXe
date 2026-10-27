@@ -8,7 +8,7 @@
 namespace XELP {
 enum class Family : uint32_t { Unknown, TigerLake, AlderLakeN, RocketLake, AlderLakeS, AlderLakeP, RaptorLakeS, RaptorLakeP };
 enum class Display : uint32_t { Unknown, XeD = 12, XeLPD = 13 };
-enum class GT : uint32_t { Unknown, TGLGT2, TGLG4, ADLNSmall, ADLSSmall, TGLGT1 };
+enum class GT : uint32_t { Unknown, TGLGT2, TGLG4, ADLNSmall, ADLSSmall, TGLGT1, ADLPMobile };
 enum class Donor : uint32_t { Unknown, C004FC1A = 1 };
 struct DeviceEntry {
     uint16_t device; Family family; Display display; GT backend;
@@ -24,12 +24,12 @@ constexpr DeviceEntry DeviceTable[] {
     {0x4690, Family::AlderLakeS, Display::XeD, GT::ADLSSmall, "Intel UHD Graphics 770"},
     {0x4692, Family::AlderLakeS, Display::XeD, GT::ADLSSmall, "Intel UHD Graphics 730"},
     {0x4693, Family::AlderLakeS, Display::XeD, GT::ADLSSmall, "Intel UHD Graphics 710"},
-    {0x46A3, Family::AlderLakeP, Display::XeLPD, GT::Unknown, "Intel UHD Graphics"},
-    {0x46A6, Family::AlderLakeP, Display::XeLPD, GT::Unknown, "Intel Iris Xe Graphics"},
-    {0x46A8, Family::AlderLakeP, Display::XeLPD, GT::Unknown, "Intel Iris Xe Graphics"},
-    {0x46AA, Family::AlderLakeP, Display::XeLPD, GT::Unknown, "Intel Iris Xe Graphics"},
-    {0x46B3, Family::AlderLakeP, Display::XeLPD, GT::Unknown, "Intel UHD Graphics"},
-    {0x46C3, Family::AlderLakeP, Display::XeLPD, GT::Unknown, "Intel UHD Graphics"},
+    {0x46A3, Family::AlderLakeP, Display::XeLPD, GT::ADLPMobile, "Intel UHD Graphics"},
+    {0x46A6, Family::AlderLakeP, Display::XeLPD, GT::ADLPMobile, "Intel Iris Xe Graphics"},
+    {0x46A8, Family::AlderLakeP, Display::XeLPD, GT::ADLPMobile, "Intel Iris Xe Graphics"},
+    {0x46AA, Family::AlderLakeP, Display::XeLPD, GT::ADLPMobile, "Intel Iris Xe Graphics"},
+    {0x46B3, Family::AlderLakeP, Display::XeLPD, GT::ADLPMobile, "Intel UHD Graphics"},
+    {0x46C3, Family::AlderLakeP, Display::XeLPD, GT::ADLPMobile, "Intel UHD Graphics"},
     {0x46D0, Family::AlderLakeN, Display::XeLPD, GT::ADLNSmall, "Intel UHD Graphics"},
     {0x46D1, Family::AlderLakeN, Display::XeLPD, GT::ADLNSmall, "Intel UHD Graphics"},
     {0x46D2, Family::AlderLakeN, Display::XeLPD, GT::ADLNSmall, "Intel UHD Graphics"},
@@ -51,19 +51,23 @@ constexpr DeviceEntry DeviceTable[] {
     {0xA789, Family::RaptorLakeS, Display::XeD, GT::ADLSSmall, "Intel UHD Graphics"},
     {0xA78A, Family::RaptorLakeS, Display::XeD, GT::ADLSSmall, "Intel UHD Graphics"},
     {0xA78B, Family::RaptorLakeS, Display::XeD, GT::ADLSSmall, "Intel UHD Graphics"},
-    {0xA7A0, Family::RaptorLakeP, Display::XeLPD, GT::Unknown, "Intel Iris Xe Graphics"},
-    {0xA7A1, Family::RaptorLakeP, Display::XeLPD, GT::Unknown, "Intel Iris Xe Graphics"},
-    {0xA7A8, Family::RaptorLakeP, Display::XeLPD, GT::Unknown, "Intel UHD Graphics"},
-    {0xA7A9, Family::RaptorLakeP, Display::XeLPD, GT::Unknown, "Intel UHD Graphics"},
-    {0xA7AA, Family::RaptorLakeP, Display::XeLPD, GT::Unknown, "Intel Graphics"},
-    {0xA7AB, Family::RaptorLakeP, Display::XeLPD, GT::Unknown, "Intel Graphics"},
-    {0xA7AC, Family::RaptorLakeP, Display::XeLPD, GT::Unknown, "Intel Graphics"},
-    {0xA7AD, Family::RaptorLakeP, Display::XeLPD, GT::Unknown, "Intel Graphics"},
+    {0xA7A0, Family::RaptorLakeP, Display::XeLPD, GT::ADLPMobile, "Intel Iris Xe Graphics"},
+    {0xA7A1, Family::RaptorLakeP, Display::XeLPD, GT::ADLPMobile, "Intel Iris Xe Graphics"},
+    {0xA7A8, Family::RaptorLakeP, Display::XeLPD, GT::ADLPMobile, "Intel UHD Graphics"},
+    {0xA7A9, Family::RaptorLakeP, Display::XeLPD, GT::ADLPMobile, "Intel UHD Graphics"},
+    {0xA7AA, Family::RaptorLakeP, Display::XeLPD, GT::ADLPMobile, "Intel Graphics"},
+    {0xA7AB, Family::RaptorLakeP, Display::XeLPD, GT::ADLPMobile, "Intel Graphics"},
+    {0xA7AC, Family::RaptorLakeP, Display::XeLPD, GT::ADLPMobile, "Intel Graphics"},
+    {0xA7AD, Family::RaptorLakeP, Display::XeLPD, GT::ADLPMobile, "Intel Graphics"},
 };
 inline const DeviceEntry *deviceEntry(uint32_t pci) {
     if((pci&0xFFFF)!=0x8086)return nullptr;
     for(const auto &entry:DeviceTable)if(entry.device==(pci>>16))return &entry;
     return nullptr;
+}
+inline bool mobileDisplay13Device(uint32_t pci) {
+    const auto e=deviceEntry(pci);
+    return e && e->backend==GT::ADLPMobile;
 }
 inline bool desktopGTDevice(uint32_t pci) {
     const auto e=deviceEntry(pci);

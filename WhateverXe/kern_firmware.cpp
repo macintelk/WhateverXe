@@ -10,7 +10,8 @@ static void publishBytes(IOPCIDevice *pci,const char *key,const void *bytes,unsi
 // Firmware is read once, before topology/hook selection. No PCI BAR/ROM scan,
 // power acquisition, or MMIO probing occurs here. Explicit properties win later.
 void XE::xelpReadFirmware(IOPCIDevice *pci) {
-    if(!pci || !xeProfile.admitted())return;
+    // Wiring is needed by framebuffer-only profiles before Render is admitted.
+    if(!pci || !xeProfile.displayAdmitted())return;
     const uint32_t asls=pci->configRead32(0xFC);
     uint32_t source=0;
     if(asls && asls<=0xFFFFE000U) {

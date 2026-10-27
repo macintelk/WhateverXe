@@ -111,7 +111,7 @@ int main(int argc,char **) {
  unsigned cases=0;
  for(unsigned hp:{0u,1u})for(unsigned modular:{0u,1u})for(unsigned rd:{0u,1u})for(unsigned alt=0;alt<4;++alt) {
   hpd=hp<<25;live=(modular<<4)|(alt<<13);ready=rd<<1;
-  const auto expected=hp&&modular&&rd&&!alt?4u:0u;
+  const auto expected=hp&&rd&&!alt?4u:0u;
   assert(XE::wrapTGLProbePort(port)==expected);++cases;
  }
  hpd=1u<<25;live=0x10;ready=2;length=0x1638A4;

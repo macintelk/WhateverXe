@@ -9,11 +9,8 @@ This project is experimental and requires the signed graphics package from
 [WhateverXe Graphics](https://github.com/b00t0x/WhateverXe-Graphics). It installs
 the graphics stack under `/Library` and updates the Auxiliary Kernel Collection
 (AuxKC), without patching System files or snapshots. WEX and the graphics package
-have independent release versions. Graphics **0.2.0** is needed for the GPUs
-added in WEX **0.5.0** and supplies the latest rendering fixes. Previously
-supported Tiger Lake/Alder Lake-N configurations can retain Graphics 0.1.0,
-but will not receive the new package fixes or features requiring its updated
-components. Use WEX 0.5.0 with Graphics 0.2.0 for the complete set of current features and fixes.
+have independent release versions. Use the latest releases of both WEX and
+WhateverXe Graphics.
 
 ## Compatibility
 
@@ -42,6 +39,7 @@ Graphics; GPU generation and connector routing are handled by WEX.
 | --- | --- |
 | Tiger Lake-U | 48- and 80-EU graphics; desktop-style and laptop display layouts |
 | Alder Lake-N | 16- and 24-EU graphics; two HDMI displays |
+| Alder Lake-H | 96-EU graphics (`46A6`); fixed TC HDMI and DisplayPort through a DP-to-HDMI adapter |
 | Alder Lake-S | UHD Graphics 770 (`4690`); HDMI, DisplayPort and a USB-C port wired as fixed DisplayPort |
 
 These are tested configurations within each family, not a guarantee for every
@@ -53,6 +51,7 @@ for OS coverage and remaining problems.
 - Other supported Tiger Lake-U/H35 configurations, including 96-EU graphics.
 - Tiger Lake-H45 (GT1): `9A60`, `9A68`, `9A70`.
 - Other supported Alder Lake-N configurations and Twin Lake.
+- Other Alder Lake-H/P/U and Raptor Lake-H/P/U configurations with supported fixed HDMI or fixed TC DisplayPort wiring.
 - Other supported Alder Lake-S configurations, Alder Lake-HX, Raptor Lake-S and Raptor Lake-HX.
 
 These devices use implemented support shared with the tested families. Their
@@ -62,8 +61,9 @@ limits are listed in [device selection](docs/device-selection.md).
 
 ### Further implementation required
 
-- Alder Lake-H/P/U and Raptor Lake-H/P/U: additional graphics and display support
-  is needed. These are distinct from the HX products listed above.
+- On Alder Lake-N / Twin Lake and Alder Lake-H/P/U / Raptor Lake-H/P/U,
+  internal eDP panels, Combo-PHY DisplayPort and Type-C-managed output need
+  further implementation. Accepting the GPU ID does not enable these outputs.
 - Rocket Lake-S: its display power and clock handling differ from Tiger Lake.
   It is not supported by this release, and no hardware validation is scheduled.
 
@@ -93,7 +93,7 @@ supported. With the signed graphics package and linked Mod AMFIPass,
 Tahoe requires `CoreMedia / AllowOnePassMetalScaling` to be disabled; the
 WhateverXe Graphics installer applies this setting.
 
-Boot the target OS with WEX **0.3.0 or newer** (0.5.0 for newly added GPUs) before installing the graphics
+Boot the target OS with the latest WEX before installing the latest graphics
 pkg. If an older Xe System patch is installed, restore it using its original
 recovery procedure first. The pkg does not change EFI, System files, snapshots
 or SIP settings. See [installation and removal](https://github.com/b00t0x/WhateverXe-Graphics#install)
@@ -122,6 +122,23 @@ described in [device selection](docs/device-selection.md).
 On supported GPUs, WhateverXe also normalizes the detected Intel Management
 Engine device name to `IMEI`, as WhateverGreen does. A separate ACPI rename
 from `HECI` or `MEI` to `IMEI` is unnecessary.
+
+Tiger Lake automatically selects VBT-described fixed DisplayPort routes on TC1–TC4 when AUX wiring matches the native controller. Fixed DP and DP Alt Mode use the detected FIA layout. TC3/TC4 fixed DP and non-modular FIA support are implemented but have not been verified on hardware. TC5/TC6 and cross-routed AUX require further backend support.
+
+Alder Lake-N / Twin Lake and Alder Lake-H/P/U / Raptor Lake-H/P/U use
+VBT-described Combo A/B and fixed TC1–TC4 HDMI routes. Experimental fixed
+TC1–TC4 SST DisplayPort requires matching VBT AUX wiring. The explicit
+Alder Lake-N HDMI property applies only to Combo routes.
+
+ADL-H has been tested with fixed HDMI outputs and a DP-to-HDMI adapter,
+including three connected displays at startup, firmware-scaled boot displays
+and DP reconnection. Direct DP sinks and other GPUs in these families have
+not been verified with the fixed TC DP path. MST, USB-C DP Alt Mode,
+Thunderbolt and cross-routed AUX remain unsupported on these GPUs.
+
+ADL-P/RPL-P uses its physical ID and detected GPU resources automatically.
+No device-ID override or machine-specific AGDP kext is required.
+`-wex-noaccel` retains framebuffer-only operation.
 
 ### Internal-panel brightness
 
@@ -167,10 +184,20 @@ GPU backend selection is independent of hardware test coverage: untested PCI
 revisions use the same family implementation. Revision-specific behavior is
 added when a documented difference or observed failure requires it.
 
-The supported Display 13 backend selects Y-tiled scanout automatically;
-`AAPL,GfxYTile` is not required in OpenCore. Existing values are preserved.
-Do not use the Apple driver's `-yTileDisable` argument with this backend:
-its X-tiled scanout path is unsupported. Display 12 tiling selection is unchanged.
+Alder Lake-N / Twin Lake and Alder Lake-H/P/U / Raptor Lake-H/P/U select
+Y-tiled scanout automatically; `AAPL,GfxYTile` is not required in OpenCore.
+Existing values are preserved. Do not use the Apple driver's `-yTileDisable`
+argument on these GPUs: their X-tiled scanout path is unsupported.
+
+For framebuffer bring-up, the optional `-wex-noaccel` argument disables accelerator
+startup. On Alder Lake-N / Twin Lake and Alder Lake-H/P/U / Raptor Lake-H/P/U,
+it also skips GPU resource probing while preserving the
+framebuffer's independent boot-memory and MMIO checks. It does not enable an
+otherwise unsupported display backend.
+
+Temporary development diagnostic: `-wex-adlp-readout` captures ADL-P boot resources while keeping GPU driver admission disabled. It is not required for supported hardware.
+`-wex-adlp-load-only` blocks both native framebuffer and accelerator probes/starts on a selected ADL-P/RPL-P device, for load-only diagnostics without GPU initialization.
+`-wex-display13-offline` keeps native display controller initialization enabled on Alder Lake-N / Twin Lake and Alder Lake-H/P/U / Raptor Lake-H/P/U but reports selected outputs as disconnected, isolating HPD/EDID and mode programming for framebuffer diagnostics. It does not establish display operation.
 
 ## Tested features and known issues
 
@@ -179,6 +206,7 @@ its X-tiled scanout path is unsupported. Display 12 tiling selection is unchange
 | Tiger Lake / Alder Lake-N | Big Sur–Tahoe: dual 1920×1080 at 60 Hz output, Metal/MPS, OpenGL, OpenCL, hardware H.264 encode/decode, HEVC decode, display sleep/wake, Safari video decoding and Widevine playback |
 | Tiger Lake laptops | Big Sur–Tahoe: internal 1366×768 eDP display, brightness control, HDMI and USB-C DisplayPort Alt Mode, up to three simultaneous displays; USB-C reconnection remains unreliable |
 | Alder Lake-N | Big Sur/Tahoe: automatic Y tiling without an EFI `AAPL,GfxYTile` setting |
+| Alder Lake-H | Big Sur–Tahoe: Metal, OpenGL, hardware H.264 encode/decode, HEVC decode and three displays using fixed HDMI and a DP-to-HDMI adapter |
 | Alder Lake-S | Big Sur–Tahoe: Metal, OpenGL, OpenCL, hardware H.264 encode/decode, HEVC decode and three displays (two 1080p60 and one 720p60); Safari video playback; Widevine checked on Big Sur and Tahoe |
 | Tiger Lake / Alder Lake-S | Tahoe: Chrome hardware-accelerated Canvas, WebGL and WebGPU |
 
@@ -186,13 +214,10 @@ These results cover tested systems, not every GPU, display, adapter or dock.
 The listed resolutions describe test coverage; they are not a fixed resolution
 limit imposed by WEX.
 
-On Big Sur–Tahoe, WebKit GPU access to the Data GPU drivers uses its valid
-Apple platform signature and service identifier, independently of Safari’s
-installation or update location.
-
 ### Known issues and limits
 
 - Some image-conversion operations can crash the application.
+- App Store video playback can freeze the GPU on Sequoia.
 - Reconnecting a monitor to a dedicated DisplayPort connector can leave the
   screen black or freeze the computer. USB-C DisplayPort Alt Mode reconnection
   can also freeze the computer; this has been reproduced on both Big Sur and
@@ -210,8 +235,7 @@ installation or update location.
 
 ## Roadmap
 
-- Alder Lake-H/P/U and Raptor Lake-H/P/U support.
-- USB-C and internal-display support on Display 13 GPUs.
+- Complete DisplayPort, USB-C and internal-display support on Alder Lake-N / Twin Lake and Alder Lake-H/P/U / Raptor Lake-H/P/U.
 - Improve display reconnection reliability and investigate full system sleep/wake.
 
 ## Build and test
@@ -240,3 +264,5 @@ WhateverGreen source is not a build dependency.
 
 WhateverXe retains WhateverGreen's copyright notices and BSD-3-Clause license.
 See [LICENSE.txt](LICENSE.txt). Lilu and MacKernelSDK are separate dependencies.
+
+Thanks to [JulioNectar/XPS13Plus](https://github.com/JulioNectar/Hackintosh-XPS13Plus-IrisXe-Tahoe) for sharing its Xe graphics work. Its compiler adapter and LLVM bridge informed the OS-native AIR conversion used in WhateverXe Graphics.

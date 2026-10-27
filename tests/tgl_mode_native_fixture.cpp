@@ -1,6 +1,8 @@
 #include "kern_alderlake_s.hpp"
 #include <cassert>
 #include "kern_tgl_native_fia.hpp"
+#include "kern_xelp_link_requirements.hpp"
+#include "kern_xelp_platform.hpp"
 #include <thread>
 void *current_thread(){thread_local char token;return &token;}
 #include <mutex>
@@ -28,6 +30,8 @@ void tglAUXRecord(void*,unsigned,bool,uint32_t,uint32_t,uint32_t){}
 bool coldReady=true;
 bool tglDPAltColdReady(void*){return coldReady;}
 struct XE {
+ XELP::Profile xeProfile=XELP::identify(0x9a498086,1);
+ bool tglActive=true,tglDPAltFiaReady=true;
  bool adlsDisplaySelected=false;AlderLakeS::Wiring adlsWiring;alignas(8) uint8_t tglPlatformCopy[0x1c0]{};
  uint32_t tglDPAltCandidates=0;void *tglObservationController=nullptr;
  static void tglRecordStartOrder(unsigned,void*,unsigned=9,uint64_t=0,uint64_t=0,uint64_t=0) {}
@@ -40,6 +44,7 @@ struct XE {
   auto config=*reinterpret_cast<uint32_t **>(static_cast<uint8_t *>(port)+0x548);
   TGLTypeCPort tc;return coldReady && TGLTypeCPort::resolve(config[0],tc) && tc.resolveFia(0x10,fia);
  }
+ static bool tglLegacyFia(void*,TGLFiaPort&);
  static bool tglNativeFiaAccess(void*,uint32_t,uintptr_t,bool,TGLNativeFia&);
  static uint32_t wrapTGLPortReadReg(void*,uint32_t);
  static void wrapTGLPortWriteReg(void*,uint32_t,uint32_t);
@@ -56,15 +61,16 @@ XE instance,*callbackXE=&instance;
 bool tglQuietTraining(){return true;}
 // PRODUCTION_WRAPPER
 #undef __builtin_return_address
+// LEGACY_FIA_WRAPPER
 // FIA_WRAPPERS
-alignas(8) uint8_t port[0x600],controller[0x1000];
+alignas(8) uint8_t port[0x600],controller[0x1000],access[0x80];
 uint32_t config[8];
 unsigned powerGets,powerPuts,sleeps,reads,writes;
 uint32_t ready,owned,baseError;
-uint32_t ready2=0,owned2=0;
+uint32_t ready2=0,owned2=0,topology=0x10;
 uint32_t &mode(){return *reinterpret_cast<uint32_t*>(port+0x550);}
 uint32_t readReg(void *p,uint32_t r){
- assert(p==port);++reads;assert(r==0x163890 || r==0x163894 || r==0x16e890 || r==0x16e894);
+ assert(p==port);++reads;if(r==0x1638a0){assert(powerGets>powerPuts);return topology;}assert(r==0x163890 || r==0x163894 || r==0x16e890 || r==0x16e894);
  if(r==0x16e890)return ready2;if(r==0x16e894)return owned2;
  return r==0x163890?ready:owned;
 }
@@ -81,7 +87,7 @@ void jump(uint8_t *p,uintptr_t t){p[0]=0x48;p[1]=0xb8;std::memcpy(p+2,&t,8);p[10
 void callTo(uint8_t *p,unsigned site,unsigned target){assert(p[site]==0xe8);int32_t rel=target-site-5;std::memcpy(p+site+1,&rel,4);}
 void reset(unsigned ddi,uint32_t value=0){
  powerGets=powerPuts=sleeps=reads=writes=0;ready=value;owned=0x40000000;mode()=0;baseError=0;
- config[0]=ddi;config[5]=8;instance.tglModeResultCorrections=0;instance.tglModeResultReady=true;
+ config[0]=ddi;config[2]=1;config[3]=1;config[5]=8;instance.tglModeResultCorrections=0;instance.tglModeResultReady=true;
 }
 int main(int argc,char **argv){
  assert(argc==2);std::ifstream f(argv[1],std::ios::binary);std::vector<char>b((std::istreambuf_iterator<char>(f)),{});
@@ -193,6 +199,9 @@ int main(int argc,char **argv){
  mapped.bank=1;mapped.ready=1;
  assert(TGLFia::waitLegacyReady(mapped,5).ok() && TGLFia::setOwned(mapped,5,true).ok());
  assert(mapped.ownership[0]==0x40000000 && mapped.ownership[1]==0x40000001 && mapped.ownership[2]==0x40000000);
+ *reinterpret_cast<uint8_t **>(port+0x578)=access;
+ *reinterpret_cast<uint8_t **>(access+0x50)=controller;
+ *reinterpret_cast<uint32_t *>(access+0x60)=0x170000;
  // Replay the coordinate adapter through the actual native call sites.
  IORecursiveLock lock;instance.tglModeTransitionLock=&lock;instance.tglNativeFiaReady=true;
  instance.tglNativeFiaBase=reinterpret_cast<uintptr_t>(m);instance.tglModularProbed=0x78;
@@ -226,9 +235,25 @@ int main(int argc,char **argv){
    assert(instance.tglNativeFiaContext.matches(reinterpret_cast<uintptr_t>(current_thread()),port));
  }
  assert(!instance.tglNativeFiaContext.owner && instance.tglNativeFiaReads && instance.tglNativeFiaWrites);
- // Missing probe qualification or mutex must leave the native FIA1 failure.
- instance.tglModularProbed=0;reset(5,0);ready2=1;
- assert(XE::wrapTGLSetPortMode(port,4)==kIOReturnNotReady && reads==100 && !writes);
+ // Hotplug needs no previous powered probe or DP-alt bootstrap. Native
+ // acquisition must precede topology reads; the read mock enforces AUX debt.
+ instance.tglDPAltCandidates=0;instance.tglModularProbed=0;coldReady=false;reset(5,0);ready2=1;
+ assert(XE::wrapTGLSetPortMode(port,4)==0 && mode()==4 && owned2&1);
+ assert(XE::wrapTGLSetPortMode(port,0)==0 && powerGets==powerPuts);coldReady=true;
+ for(unsigned d=3;d<=6;++d) {
+  topology=0;reset(d,1U<<(d-3));
+  assert(XE::wrapTGLSetPortMode(port,4)==0 && (owned&(1U<<(d-3))));
+  assert(XE::wrapTGLSetPortMode(port,0)==0 && owned==0x40000000 && powerGets==powerPuts);
+ }
+ topology=UINT32_MAX;reset(5,0);ready2=1;
+ assert(XE::wrapTGLSetPortMode(port,4)==kIOReturnNotReady && !writes && powerGets==powerPuts);
+ topology=16;reset(5,0);ready2=UINT32_MAX;
+ assert(XE::wrapTGLSetPortMode(port,4)==kIOReturnNotReady && !writes && powerGets==powerPuts);
+ // Even when native returns zero after an unavailable ownership access,
+ // the wrapper reports failure and never overwrites the peer owner word.
+ topology=16;reset(5,0);ready2=1;owned2=UINT32_MAX;
+ assert(XE::wrapTGLSetPortMode(port,4)==kIOReturnNotReady && !writes && owned2==UINT32_MAX);
+ // Missing mutex keeps this unqualified path outside the adapter.
  instance.tglModularProbed=0x78;instance.tglModeTransitionLock=nullptr;reset(5,0);
  assert(XE::wrapTGLSetPortMode(port,4)==kIOReturnNotReady && reads==100 && !writes);
  puts("PASS qualified native FIA adapter: TC1/2 identity and TC3/4 modular bank/bit, sibling preservation, paired AUX, scoped caller guards");

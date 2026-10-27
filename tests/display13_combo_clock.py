@@ -12,6 +12,7 @@ def array(name):
 code=r'''
 #include "kern_xelp_platform.hpp"
 #include "kern_tgl_port_map.hpp"
+#include "kern_xelp_combo_clock.hpp"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -30,12 +31,25 @@ template<class T>T &field(void*p,unsigned off){return *reinterpret_cast<T*>(stat
 alignas(8) uint8_t ctl[0xf00]{},port[0x700]{},access[0x80]{};
 uint32_t config[6]{};std::map<unsigned long,uint32_t> mmio;
 uint8_t *image;unsigned delays=0,errors=0,get=0,put=0,fault=0;
-bool correction=true;
+bool correction=true,managed=false;
+XELPComboClock::ClockTranslation translation;
+XELPComboClock::ClockAllocation allocation;
 void jump(uint8_t*p,uintptr_t to){p[0]=0x48;p[1]=0xb8;memcpy(p+2,&to,8);p[10]=0xff;p[11]=0xe0;}
 void redirect(unsigned at,uintptr_t to,unsigned stub){assert(image[at]==0xe8);jump(image+stub,to);int32_t d=stub-at-5;memcpy(image+at+1,&d,4);}
-uint32_t read(void*p,unsigned long reg){assert(p==access&&mmio.count(reg));return mmio.at(reg);}
+uint32_t read(void*p,unsigned long reg){
+ if(managed)reg=translation.reg(reg,(uintptr_t)__builtin_return_address(0)-(uintptr_t)image);
+ assert(p==access&&mmio.count(reg));return mmio.at(reg);
+}
 void write(void*p,unsigned long reg,uint32_t value){assert(p==access&&mmio.count(reg));
  if(correction)value=adjust(p,reg,value,(uintptr_t)__builtin_return_address(0));
+ if(managed) {
+  const auto pc=(uintptr_t)__builtin_return_address(0)-(uintptr_t)image;
+  reg=translation.reg(reg,pc);
+  if(reg==0x164280 && translation.enabling && pc==0x6d77e) {
+   value=translation.mux(value,pc);
+   translation.prepareMux([](uint32_t r){return mmio.at(r);},[](uint32_t r,uint32_t v){mmio[r]=v;},value);
+  }
+ }
  if(reg==0x46010 || reg==0x46014){value&=~0x44000000U;
   if((value&0x08000000)&&fault!=1)value|=0x04000000;
   if((value&0x80000000)&&fault!=2)value|=0x40000000;}
@@ -88,7 +102,53 @@ int main(int argc,char**argv){
    assert(mmio[cfg1]==(hdmi?0xe84U:rate==6?0x90U:rate==10?0x88U:rate==20?0x48U:0x44U));
    disable(ctl,port,nullptr);assert(!errors&&!delays&&put==1&&!mmio[pll]&&(mmio[0x164280]&off));++cases;
   }
-  assert(cases==60 && counterexamples==10);munmap(image,0x400000);
+  assert(cases==60 && counterexamples==10);
+  // Same native bodies and shared allocator on TGL/Display13. Occupied peer
+  // PLLs have deliberately different coefficients, making clobber visible.
+  unsigned sharing=0;
+  for(auto layout:{XELPComboClock::Layout::TGL,XELPComboClock::Layout::Display13})
+  for(unsigned target=0;target<2;++target)for(unsigned peer=0;peer<2u;++peer)
+  for(unsigned occupied=0;occupied<2;++occupied)for(bool hdmi:{false,true}) {
+   if(peer==target)continue;
+   allocation={};get=put=delays=errors=fault=0;correction=true;
+   const auto off=1U<<(peer==2?24:10+peer),shift=2*peer;
+   mmio={{0x164280,(0x01000C00&~(off|(3U<<shift)))|(occupied<<shift)},
+     {0x46010,0},{0x46014,0},{0x164284,0},{0x164288,0},{0x16428c,0},{0x164290,0}};
+   const auto busy=0x46010+4*occupied,cfg0=0x164284+8*occupied,cfg1=cfg0+4;
+   mmio[busy]=0xcc000000;mmio[cfg0]=0x12345;mmio[cfg1]=0x67890;
+   XELPComboClock::ClockSnapshot snap;snap.layout=layout;snap.mux[0]=mmio.at(0x164280);
+   snap.enable[0]=mmio.at(0x46010);snap.enable[1]=mmio.at(0x46014);
+   XELPComboClock::Port route(target);auto choice=allocation.choose(route,snap,true);
+   assert(choice.valid && choice.pll==1-occupied);
+   config[0]=target;config[2]=hdmi?2:1;field<uint8_t>(port,0x114)=hdmi?0:1;field<uint32_t>(port,0x128)=20;
+   field<uint32_t>(ctl,0xea8)=2;
+   translation={target,choice.pll,true};managed=true;
+   uint32_t params[]={464,2049,2,3,2};enable(ctl,port,nullptr,hdmi?params:nullptr);
+   assert(mmio[busy]==0xcc000000 && mmio[cfg0]==0x12345 && mmio[cfg1]==0x67890);
+   assert(((mmio[0x164280]>>(2*target))&3)==choice.pll);
+   const auto nominal=hdmi?(464|(2049<<10)):0x1c001a5;
+   const auto expected=(nominal&~0x1fffc00U)|(((((nominal>>10)&32767)+1)/2)<<10);
+   assert(mmio[0x164284+8*choice.pll]==expected);
+   translation.enabling=false;disable(ctl,port,nullptr);
+   assert(!mmio[0x46010+4*choice.pll] && mmio[busy]==0xcc000000);
+   assert(mmio[cfg0]==0x12345 && mmio[cfg1]==0x67890 && !errors && !delays && get==1 && put==1);
+   if(peer<2) {
+    alignas(8) uint8_t other[0x700]{};uint32_t otherConfig[]={peer,peer+1,hdmi?2U:1U,0,0,0};
+    field<void*>(other,0x548)=otherConfig;
+    snap.mux[0]=mmio.at(0x164280);snap.enable[choice.pll]=0;
+    const auto shared=allocation.share(XELPComboClock::Port(peer),snap);
+    assert(shared.valid && shared.pll==occupied);
+    translation={target,shared.pll,true};enable(ctl,port,other,hdmi?params:nullptr);
+    assert(mmio[cfg0]==0x12345 && mmio[cfg1]==0x67890 && mmio[busy]==0xcc000000);
+    assert(((mmio[0x164280]>>(2*target))&3)==occupied);
+    translation.enabling=false;disable(ctl,port,port);
+    assert(mmio[cfg0]==0x12345 && mmio[cfg1]==0x67890 && mmio[busy]==0xcc000000);
+    assert(!errors && !delays && get==2 && put==2);
+   }
+   managed=false;++sharing;
+  }
+  printf("PASS %u TGL/Display13 native shared-PLL DP/HDMI cycles; live A/B peer coefficients retained\n",sharing);
+  munmap(image,0x400000);
   printf("PASS %u exact native Display13 Combo A/B DP/HDMI clock cycles, %u old 38.4 MHz counterexamples\n",cases,counterexamples);
  }
  puts("PASS production Display13 nominal-write owner/caller/reference/register guards");

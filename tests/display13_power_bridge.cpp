@@ -30,6 +30,11 @@ static void slots(const NativeBridge &b, uint32_t a,uint32_t two,uint32_t three,
         b.nativeRefs(3)==three && b.nativeRefs(4)==four);
 }
 int main() {
+    { IO io;NativeBridge b;assert(ok(b.begin(io)) && ok(b.adoptBootPath(1,0,1)));
+      assert(b.pipeHeld(io,0) && b.outputHeld(io,1,0));
+      assert(ok(b.putDDI(io,1)) && b.pipeHeld(io,0) && !b.outputHeld(io,1,0));
+      assert(!b.pipeHeld(io,1) && !b.pipeHeld(io,3));
+      assert(ok(b.getDDI(io,1)) && b.outputHeld(io,1,0)); }
     // Resource leases depend on selected physical ports, not HDMI labels.
     // Start cold, drop the peer before the boot route, and require all counts
     // to return to zero for each fixed HDMI/DP assignment and boot choice.

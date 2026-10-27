@@ -8,12 +8,12 @@ namespace XELP { namespace SSTProgram {
 struct Prepare {
  uint32_t reason {},clockBefore {},clockWanted {},clockAfter {},funcBefore {},funcWanted {},funcAfter {},bufferBefore {};
 };
-template<class Read,class Write> Prepare prepare(Read read,Write write,uint32_t ddi,uint32_t pipe,uint32_t lanes,bool powered) {
+template<class Read,class Write> Prepare prepare(Read read,Write write,uint32_t ddi,uint32_t pipe,uint32_t lanes,bool powered,uint32_t clockSelector=0) {
  Prepare r;
  if(ddi>=9 || pipe>=3){r.reason=8;return r;}
  if(!powered){r.reason=5;return r;}
  const auto clock=0x46140+4*pipe,func=0x60400+0x1000*pipe,buffer=0x64000+0x100*ddi;
- const auto routeClock=(ddi+1)<<28,routePort=(ddi+1)<<27;
+ const auto routeClock=(clockSelector?clockSelector:ddi+1)<<28,routePort=(ddi+1)<<27;
  r.clockBefore=r.clockAfter=read(clock);r.funcBefore=r.funcAfter=read(func);r.bufferBefore=read(buffer);
  if(lanes!=1 && lanes!=2 && lanes!=4)r.reason=1;
  else if((r.funcBefore|r.bufferBefore)&0x80000000U)r.reason=2;

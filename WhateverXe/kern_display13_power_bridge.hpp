@@ -93,13 +93,16 @@ struct NativeBridge {
     template<class IO> bool ddiHeld(IO &io,unsigned port) const {
         return retainsDDI(port) && held(io,state,ddiDomain(port));
     }
-    template<class IO> bool outputHeld(IO &io,unsigned port,unsigned pipe) const {
-        if(pipe>=3 || !retainsDDI(port))return false;
+    template<class IO> bool pipeHeld(IO &io,unsigned pipe) const {
+        if(pipe>=3)return false;
         const auto domain=bit(static_cast<Domain>(static_cast<unsigned>(Domain::PipeA)+pipe));
         bool retained=false;
         for(unsigned pg=0;pg<4;++pg)if(pgRefs[pg] && pgLease[pg].owner==&state &&
             pgLease[pg].domains==dependencies(nativeScope(pg+1)) && (pgLease[pg].domains&domain))retained=true;
-        return retained && held(io,state,domain|ddiDomain(port));
+        return retained && held(io,state,domain);
+    }
+    template<class IO> bool outputHeld(IO &io,unsigned port,unsigned pipe) const {
+        return pipeHeld(io,pipe) && ddiHeld(io,port);
     }
 
     template<class IO> Result begin(IO &io, unsigned port=1, uint32_t ports=2) {

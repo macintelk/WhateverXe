@@ -1,4 +1,4 @@
-// ADL-N/Twin Lake fixed TC HDMI/DP coordinates and PHY ownership.
+// ADL-P/N fixed TC HDMI/DP coordinates and PHY ownership.
 // Linux v6.12 intel_tc.c/i915_reg.h; T8 Pro TC1 Linux values are an
 // independent live fixture. These are not TGL FIA ownership registers.
 #ifndef KERN_DISPLAY13_TC_HPP
@@ -24,8 +24,55 @@ struct Port {
 };
 enum class Status : uint32_t {Invalid,NoPower,NeedsAdoption,InUse,Unavailable,UnsupportedMode,NotReady,Readback,Complete};
 struct Result {Status status {Status::Invalid};uint32_t before {},after {},writes {},elapsedUs {};};
-// Caller keeps lifecycle/port exclusion, live mapping, and separate DDI,
-// lane/PW2 and qualified legacy AUX leases for the entire transaction.
+// Read-only physical certificate for an inherited fixed link. This never takes
+// ownership or programs the PLL. Callers must select the physical Display13
+// backend before reading TCSS; TGL uses a different ownership mechanism.
+// Protocol/source, sink and PLL frequency are separate certificates. An
+// enabled/locked PLL alone does not prove a valid DP link or authorize adoption.
+struct Boot {
+    Port port;unsigned pipe {3};
+    uint32_t power {},ddiPower {},ready {},buffer {},clock {},pll {},transClock {};
+    // Linux intel_tc_port_init_mode reconnects an enabled fixed legacy port
+    // left unowned by firmware. Only explicit DP source validation may request
+    // this witness; the later Mode acquisition must still take ownership.
+    bool ownershipOptional {};
+    bool valid() const {
+        const auto powered=pipe<3 ? 5U|(1U<<(10+2*pipe)) : 0U;
+        return port.ddi>=3 && port.ddi<=6 && pipe<3 &&
+            power!=UINT32_MAX && (power&powered)==powered && ddiPower!=UINT32_MAX &&
+            (ddiPower&(1U<<(2*port.ddi))) && ready!=UINT32_MAX && (ready&7)==4 &&
+            buffer!=UINT32_MAX && (buffer&0x80000080U)==0x80000000U && (ownershipOptional || (buffer&64)) &&
+            clock!=UINT32_MAX && (clock>>28)==8 && pll!=UINT32_MAX &&
+            (pll&0xCC000000U)==0xCC000000U && transClock!=UINT32_MAX && (transClock>>28)==port.ddi+3;
+    }
+    template<class IO> static Boot capture(IO &io,bool admitted,unsigned ddi,unsigned pipe,bool ownershipOptional=false) {
+        Boot b;
+        if(!admitted || pipe>=3 || !Port::resolve(ddi,b.port))return b;
+        b.pipe=pipe;b.ownershipOptional=ownershipOptional;
+        if(!io.readable(0x45404) || !io.readable(0x45454))return {};
+        b.power=io.read(0x45404);b.ddiPower=io.read(0x45454);
+        const auto powered=5U|(1U<<(10+2*pipe));
+        if(b.power==UINT32_MAX || (b.power&powered)!=powered || b.ddiPower==UINT32_MAX ||
+           !(b.ddiPower&(1U<<(2*ddi))))return {};
+        const uint32_t regs[]={b.port.ready,b.port.buffer,b.port.clock,b.port.pll,0x46140+4*pipe};
+        uint32_t *values[]={&b.ready,&b.buffer,&b.clock,&b.pll,&b.transClock};
+        for(unsigned i=0;i<5;++i) {
+            if(!io.readable(regs[i]))return {};
+            *values[i]=io.read(regs[i]);
+        }
+        if(io.read(0x45404)!=b.power || io.read(0x45454)!=b.ddiPower || !b.valid())return {};
+        return b;
+    }
+    template<class IO> bool unchanged(IO &io) const {
+        if(!valid())return false;
+        const auto now=capture(io,true,port.ddi,pipe,ownershipOptional);
+        return now.valid() && now.power==power && now.ddiPower==ddiPower && now.ready==ready &&
+            now.buffer==buffer && now.clock==clock && now.pll==pll && now.transClock==transClock;
+    }
+};
+// Caller keeps lifecycle/port exclusion, live mapping and lane/PW2 access.
+// ADLP ownership precedes AUX cold blocking and DDI IO acquisition. Requiring
+// those later scopes here creates an inverted dependency on a cold port.
 // A matching owner identity is insufficient without that power witness.
 struct Ownership {
     uintptr_t owner {},identity {};Port port;bool active {};
@@ -35,14 +82,9 @@ struct Ownership {
         if(owner && (owner!=who || identity!=object || port.ddi!=ddi)){r.status=Status::InUse;return r;}
         if(!io.powerHeld(who,object,ddi)){r.status=Status::NoPower;return r;}
         if(!io.readable(p.ready) || !io.readable(p.buffer)){r.status=Status::Unavailable;return r;}
-        for(;;) {
-            const auto ready=io.read(p.ready);
-            if(ready==UINT32_MAX){r.status=Status::Unavailable;return r;}
-            if(ready&3){r.status=Status::UnsupportedMode;return r;} // DP-alt/TBT excluded here.
-            if(ready&4)break;
-            if(r.elapsedUs==500000){r.status=Status::NotReady;return r;}
-            io.delayUs(100);r.elapsedUs+=100;
-        }
+        const auto initialReady=io.read(p.ready);
+        if(initialReady==UINT32_MAX){r.status=Status::Unavailable;return r;}
+        if(initialReady&3){r.status=Status::UnsupportedMode;return r;}
         r.before=io.read(p.buffer);if(r.before==UINT32_MAX){r.status=Status::Unavailable;return r;}
         if(owner && active && !(r.before&64)) {r.status=Status::Readback;return r;}
         if(!owner && ((r.before&0x80000040U)!=0) && (!adopt || !io.inheritedVerified(who,object,ddi))) {
@@ -55,6 +97,16 @@ struct Ownership {
         r.after=io.read(p.buffer);
         if(r.after==UINT32_MAX){r.status=Status::Unavailable;return r;}
         if(r.after!=(r.before|64)){r.status=Status::Readback;return r;}
+        // Linux adlp_tc_phy_connect takes ownership before testing ready.
+        // Retain the identity on timeout so cleanup can release only our bit.
+        for(;;) {
+            const auto ready=io.read(p.ready);
+            if(ready==UINT32_MAX){r.status=Status::Unavailable;return r;}
+            if(ready&3){r.status=Status::UnsupportedMode;return r;}
+            if(ready&4)break;
+            if(r.elapsedUs==500000){r.status=Status::NotReady;return r;}
+            io.delayUs(100);r.elapsedUs+=100;
+        }
         active=true;r.status=Status::Complete;return r;
     }
     template<class IO> Result release(IO &io,uintptr_t who,uintptr_t object,unsigned ddi) {

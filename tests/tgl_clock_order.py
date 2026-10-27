@@ -15,7 +15,9 @@ void *current_thread(){return (void*)1;}unsigned delays=0,writes=0,natives=0;uin
 void IODelay(unsigned n){assert(n==8);++delays;}
 struct IORegistryEntry {static IORegistryEntry *getRegistryRoot(){static IORegistryEntry v;return &v;}void setProperty(const char*,bool){} };
 struct XE {
- bool adlsDisplaySelected=false;static bool adlsClockTarget(void*,void*,void*){return false;}
+ static bool comboBeginClock(void*,void*,bool,bool&){assert(false);return false;}
+ static void comboEndClock(){assert(false);}
+ bool adlsDisplaySelected=false;static bool comboClockTarget(void*,void*,void*){return false;}
  void *tglObservationController;uintptr_t tglClockOffCaller=1,orgTGLPathLookup,orgTGLDisableClocks;
  bool tglDPSSTMode(unsigned d,unsigned mode){return d>=3&&d<=8&&(mode==3||mode==4);}
  static volatile uint8_t *tglClockOrderTarget(void*,void*,void*,void*);

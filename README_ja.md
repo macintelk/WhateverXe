@@ -6,7 +6,7 @@ WhateverXeは、一部のIntel Xe-LP内蔵GPU向けにAppleのグラフィック
 
 本プロジェクトは実験段階であり、[WhateverXe Graphics](https://github.com/b00t0x/WhateverXe-Graphics)の署名済みグラフィックスpkgが必要です。資材を`/Library`へ配置してAuxiliary Kernel Collection（AuxKC）を更新し、Systemファイルやsnapshotにはパッチを適用しません。WEXとグラフィックスpkgは、それぞれ独立したバージョンでリリースします。
 
-WEX **0.5.0**で追加したGPUにはWhateverXe Graphics **0.2.0**が必要で、同pkgには最新の描画修正も含まれます。従来対応のTiger Lake／Alder Lake-N構成ではGraphics 0.1.0も利用できますが、新pkgの修正や更新部品を必要とする機能は利用できません。今回の追加機能と修正をすべて利用するには、WEX 0.5.0とGraphics 0.2.0を組み合わせてください。
+WEXとWhateverXe Graphicsは、どちらも最新版を使用してください。
 
 ## 対応範囲
 
@@ -31,6 +31,7 @@ WEXはOSのABIとGPUバックエンドを独立して選択します。OS別の�
 | --- | --- |
 | Tiger Lake-U | 48 EU・80 EU。外部画面を使う構成とノートPCの画面構成 |
 | Alder Lake-N | 16 EU・24 EU。HDMI 2画面 |
+| Alder Lake-H | 96 EU（`46A6`）。固定TC HDMIとDP→HDMI変換器経由のDisplayPort |
 | Alder Lake-S | UHD Graphics 770（`4690`）。HDMI、DisplayPort、固定DisplayPortとして配線されたUSB-C端子 |
 
 各ファミリーの一部構成で確認した結果であり、全モデル・全端子の動作保証ではありません。
@@ -41,6 +42,7 @@ OS別の検証範囲と残る問題は[動作確認済みの機能と既知の�
 - 96 EUを含む、対応IDの他のTiger Lake-U/H35構成。
 - Tiger Lake-H45（GT1）：`9A60`、`9A68`、`9A70`。
 - 対応IDの他のAlder Lake-N構成とTwin Lake。
+- 対応する固定HDMIまたは固定TC DisplayPort配線の、他のAlder Lake-H/P/U・Raptor Lake-H/P/U構成。
 - 対応IDの他のAlder Lake-S構成、Alder Lake-HX、Raptor Lake-S、Raptor Lake-HX。
 
 確認済みのファミリーと処理を共有する実装があり、IDは自動で受け付けます。
@@ -49,8 +51,9 @@ CPUモデル名や機種固有の設定は不要ですが、実機での動作�
 
 ### 対応に追加改修が必要
 
-- Alder Lake-H/P/U、Raptor Lake-H/P/U：描画・表示処理の追加対応が必要です。
-  上記のHX製品とは別の系統です。
+- Alder Lake-N / Twin LakeとAlder Lake-H/P/U / Raptor Lake-H/P/Uの内蔵eDPパネル・
+  Combo PHY経由のDisplayPort・Type-C管理下の出力には追加改修が必要です。
+  GPUのIDを受け付けるだけで、これらの出力が有効になるわけではありません。
 - Rocket Lake-S：Tiger Lakeとは表示の電源・クロック制御が異なります。
   このリリースでは未対応で、実機検証の予定もありません。
 
@@ -74,7 +77,7 @@ SIPは`csr-active-config=03080000`（値`0x803`）に設定してください。
 
 Tahoeでは`CoreMedia / AllowOnePassMetalScaling`の無効化が必要です。WhateverXe Graphicsのインストーラーが設定します。
 
-グラフィックスpkgはWEX **0.3.0以上**（今回追加したGPUでは0.5.0）を読み込んだ対象OSから実行してください。旧Xe System patchがある場合は、先に元の復元手順で戻してください。pkgはEFI・Systemファイル・snapshot・SIP設定を変更しません。pkgの使用方法と単独のアンインストールスクリプトは[導入と削除](https://github.com/b00t0x/WhateverXe-Graphics/blob/main/README_ja.md#インストール)を参照してください。
+最新版のWEXを読み込んだ対象OSから、最新版のグラフィックスpkgを実行してください。旧Xe System patchがある場合は、先に元の復元手順で戻してください。pkgはEFI・Systemファイル・snapshot・SIP設定を変更しません。pkgの使用方法と単独のアンインストールスクリプトは[導入と削除](https://github.com/b00t0x/WhateverXe-Graphics/blob/main/README_ja.md#インストール)を参照してください。
 
 リンク先の **Mod版** アーカイブから`AMFIPass.kext`を展開し、`EFI/OC/Kexts`へ配置して、`Kernel > Add`で有効にしてください。既存のAMFIPassがある場合はこのMod版へ置き換え、両方を同時に読み込まないでください。upstreamのAMFIPassはMod版の署名チェーンに対応していません。
 
@@ -87,6 +90,14 @@ Tahoeでは`CoreMedia / AllowOnePassMetalScaling`の無効化が必要です。W
 GPUはPCI device IDから自動選択します。対応範囲内ではファームウェアのVBTから配線を読み取るため、固定HDMI／固定DisplayPort構成は通常、配線propertyの手動指定が不要です。高度な設定としての`device-id`上書きは[デバイス選択](docs/device-selection.md)で説明しています。
 
 対応GPUでは、WhateverGreenと同様に、検出されたIntel Management Engineのデバイス名も`IMEI`へ統一します。`HECI`や`MEI`から`IMEI`へのACPI renameを別途追加する必要はありません。
+
+Tiger Lakeはnative controllerとAUX配線が一致するVBTの固定DisplayPortをTC1〜TC4で自動選択します。固定DPとDP Alt Modeは検出したFIA構成を使用します。TC3/TC4の固定DPと非modular FIAは実装済み・実機未検証です。TC5/TC6と交差AUX配線には追加のbackend対応が必要です。
+
+Alder Lake-N / Twin LakeとAlder Lake-H/P/U / Raptor Lake-H/P/Uでは、Combo A/B・固定TC1〜TC4 HDMI配線をVBTから選択します。試験的な固定TC1〜TC4 SST DisplayPortには、VBTのAUX配線の一致が必要です。Alder Lake-NのHDMI明示propertyはCombo配線にのみ適用します。
+
+ADL-Hでは、固定HDMIとDP→HDMI変換器を使い、3画面接続での起動、ファームウェアによる拡大表示からの起動、DP再接続を確認しています。固定TC DP経路での直接DP接続の表示先と、これらのファミリーの他のGPUは未検証です。これらのGPUではMST、USB-C DP Alt Mode、Thunderbolt、交差AUX配線は未対応です。
+
+ADL-P/RPL-Pは物理IDと検出したGPU資源を自動で使用します。device-ID上書きや機種別AGDP kextは不要です。`-wex-noaccel`でFramebufferのみの動作を維持します。
 
 ### 内蔵パネルの輝度
 
@@ -124,8 +135,16 @@ Alder Lake-N / Twin Lakeで世代選択や個別機能の有効化引数を追�
 GPU backendの選択と実機検証範囲は独立しています。未検証のPCI revisionも同じfamily実装を使い、
 文書化された差分や実際の不具合で必要になった場合にrevision別の処理を追加します。
 
-対応済みのDisplay 13バックエンドではYタイル出力を自動選択するため、OpenCoreの`AAPL,GfxYTile`設定は不要です。既存の値は保持します。
-このバックエンドはXタイル出力に未対応なので、Appleドライバの`-yTileDisable`引数は使用しないでください。Display 12のタイル選択は変更しません。
+Alder Lake-N / Twin LakeとAlder Lake-H/P/U / Raptor Lake-H/P/UではYタイル出力を自動選択するため、OpenCoreの`AAPL,GfxYTile`設定は不要です。既存の値は保持します。
+これらのGPUはXタイル出力に未対応なので、Appleドライバの`-yTileDisable`引数は使用しないでください。
+
+FBの立上げ時は、任意の`-wex-noaccel`引数でAcceleratorの起動を止められます。
+Alder Lake-N / Twin LakeとAlder Lake-H/P/U / Raptor Lake-H/P/UではGPU資源のprobeも省略し、FB独自の起動メモリ・MMIOの確認は維持します。
+未対応のDisplayバックエンドを有効にする引数ではありません。
+
+開発時の一時診断用に `-wex-adlp-readout` を指定すると、GPUドライバの受付を閉じたままADL-Pの起動資源を採取します。対応済みハードウェアでは不要です。
+`-wex-adlp-load-only` は選択済みADL-P/RPL-Pで、FramebufferとAccelerator両方のnative probe/startを止め、GPUを初期化せずにロード段階を診断します。
+`-wex-display13-offline` はAlder Lake-N / Twin LakeとAlder Lake-H/P/U / Raptor Lake-H/P/Uのnative display controller初期化を有効に保ち、選択した出力を未接続として扱います。FB診断でHPD/EDIDとmode設定を切り離すための設定で、表示成立を意味しません。
 
 ## 動作確認済みの機能と既知の問題
 
@@ -134,18 +153,17 @@ GPU backendの選択と実機検証範囲は独立しています。未検証の
 | Tiger Lake / Alder Lake-N | Big Sur〜Tahoe：外部2画面の1920×1080・60Hz出力、Metal/MPS、OpenGL、OpenCL、ハードウェアH.264エンコード／デコード、HEVCデコード、画面の消灯／復帰、Safariの動画デコード、Widevine再生 |
 | Tiger Lakeラップトップ | Big Sur〜Tahoe：内蔵1366×768 eDP、輝度調整、HDMI、USB-C DisplayPort Alt Mode、最大3画面同時出力。USB-Cの再接続には未解決の問題あり |
 | Alder Lake-N | Big Sur/Tahoe：EFIの`AAPL,GfxYTile`設定なしでのYタイル自動選択 |
+| Alder Lake-H | Big Sur〜Tahoe：Metal、OpenGL、ハードウェアH.264エンコード／デコード、HEVCデコード、固定HDMIとDP→HDMI変換器を使った3画面 |
 | Alder Lake-S | Big Sur〜Tahoe：Metal、OpenGL、OpenCL、ハードウェアH.264エンコード／デコード、HEVCデコード、3画面（1080p60×2＋720p60×1）、Safari動画再生。WidevineはBig SurとTahoeで確認 |
 | Tiger Lake / Alder Lake-S | Tahoe：ChromeのCanvas、WebGL、WebGPUによるハードウェア描画 |
 
 検証した機器での結果であり、すべてのGPU・ディスプレイ・アダプター・ドックでの動作を保証するものではありません。
 記載した解像度は検証範囲であり、WEXが設けた固定の解像度制限ではありません。
 
-Big Sur〜Tahoeでは、有効なApple platform署名とサービス識別子でWebKit GPUを判定し、
-Safariのインストール先や更新による配置変更に依存せずData側GPUドライバへのアクセスを扱います。
-
 ### 既知の問題と制限
 
 - 一部の画像変換処理でアプリがクラッシュすることがあります。
+- SequoiaではApp Storeの動画再生でGPUが停止することがあります。
 - 専用DisplayPort端子の抜き差しで黒画面やシステム停止が起きることがあります。
   USB-C DisplayPort Alt Modeでも再接続時のシステム停止がBig SurとTahoeの両方で再現しています。
 - Safariの動画再生で時折コマ落ちすることがあります。
@@ -159,8 +177,7 @@ Safariのインストール先や更新による配置変更に依存せずData�
 
 ## ロードマップ
 
-- Alder Lake-H/P/UとRaptor Lake-H/P/Uへの対応。
-- Display 13 GPUでのUSB-C・内蔵画面対応。
+- Alder Lake-N / Twin LakeとAlder Lake-H/P/U / Raptor Lake-H/P/UでのDisplayPort・USB-C・内蔵画面対応の拡充。
 - 画面再接続の安定性改善とシステム全体のスリープ／復帰の調査。
 
 ## ビルドとテスト
@@ -177,3 +194,5 @@ WhateverXeとAppleIntelTGLCompatのkext、およびソースのmanifestは`build
 ## ライセンスとクレジット
 
 WhateverXeはWhateverGreenの著作権表示とBSD-3-Clauseライセンスを継承しています。[LICENSE.txt](LICENSE.txt)を参照してください。LiluとMacKernelSDKは別の依存コンポーネントです。
+
+Xeグラフィックスの取り組みを公開している[JulioNectar/XPS13Plus](https://github.com/JulioNectar/Hackintosh-XPS13Plus-IrisXe-Tahoe)に感謝します。同リポジトリのcompiler adapterとLLVM bridgeを、WhateverXe GraphicsのOS標準AIR変換の参考にしました。

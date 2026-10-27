@@ -5,7 +5,7 @@ import re, subprocess, sys, tempfile
 root=Path(__file__).resolve().parents[1]
 s=(root/'WhateverXe/kern_xe.cpp').read_text()
 start=s.index('void XE::wrapTGLRegisterWrite(')
-guard=s[s.index('\n',start)+1:s.index('\tauto &tx = tglClockOffTransaction;',start)]
+guard=s[s.index('\n',start)+1:s.index('    comboClockTranslateWrite(',start)]
 guard=guard.replace('reinterpret_cast<uintptr_t>(__builtin_return_address(0))','caller')
 install=s[s.index('// Qualify the reference-clock field producer'):s.index('if (tglHDMIB)',s.index('// Qualify the reference-clock field producer'))]
 if len(sys.argv)>1:

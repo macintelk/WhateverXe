@@ -38,7 +38,7 @@ int main() {
         if(peer)map.at(AUX)|=3U<<(2*other);
         const auto initial=map.at(AUX);Display13FBBootIO io{&map};NativeBridge bridge;MainLinkAUX link;
         assert(bridge.begin(io,ddi,3).status==Status::Complete);
-        const auto snapshot=readDisplay(io,true);assert(snapshot.status==ReadoutStatus::Complete && snapshot.count==139);
+        const auto snapshot=readDisplay(io,true);assert(snapshot.status==ReadoutStatus::Complete && snapshot.count==157);
         const auto heldResult=holdDPBootAUX(io,snapshot,bridge,link,ddi);
         assert(heldResult.status==Status::Complete && heldResult.writes==(requested?0U:1U));
         assert(!link.owner && link.bootPending && link.port==ddi && !bridge.nativeAUXRefs(ddi));

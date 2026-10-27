@@ -1,4 +1,6 @@
 #include "kern_display13_boot.hpp"
+#include "kern_display13_tc_mode.hpp"
+#include "kern_display13_tc_dp.hpp"
 #include <map>
 #include <vector>
 #include <cassert>
@@ -12,7 +14,8 @@ struct IO {
         assert(reg==0x800000+8*pteReads);++pteReads;
         return memory.pte(uint64_t(reg-0x800000)/8*4096)^(reg==badPTE?4096:0);
     }
-    bool noFrames {},noStop {},noIdle {},changePeer {};
+    bool noFrames {},noStop {},noIdle {},changePeer {},stuckPLL {};
+    uint32_t timeUs {};
     uint32_t changeRegister {},failWrite {};
     IO() {
         regs[0x45404]=0xFC0F;regs[0x4438C]=0x1C000700;
@@ -32,11 +35,15 @@ struct IO {
     void write(uint32_t reg,uint32_t value) {
         writes.push_back({reg,value});if(reg==failWrite)return;regs[reg]=value;
         if((reg==0x71008 || reg==0x72008) && !(value&0x80000000) && !noStop)regs[reg]&=~0x40000000;
-        if((reg==0x64000 || reg==0x64100 || reg==0x64200) && !(value&0x80000000) && !noIdle)regs[reg]|=0x80;
+        if((reg>=0x64000 && reg<=0x64600 && !(reg&255)) && !(value&0x80000000) && !noIdle)regs[reg]|=0x80;
+        for(unsigned t=0;t<4;++t)if(reg==0x46038+8*t && !stuckPLL) {
+            regs[reg]=(value&~0x44000000U)|((value&0x80000000U)?0x40000000U:0)|((value&0x08000000U)?0x04000000U:0);
+        }
         if(writes.size()==1)regs[0x4500C]=0;
         if(changePeer && writes.size()==1)regs[0x70180]^=8;
         if(changeRegister && writes.size()==1)regs[changeRegister]^=1;
     }
+    void delayUs(unsigned us) {timeUs+=us;}
     void delay() {if(!noFrames) {++regs[0x70040];if(regs[0x71008]&0xC0000000)++regs[0x71040];if(regs[0x72008]&0xC0000000)++regs[0x72040];}}
 };
 const uint32_t prop[] {1,7,1,2,3};
@@ -96,8 +103,227 @@ static void prefixCertificates() {
     }
     printf("PASS %u Display boot certificates: physical layouts, PTE corruption, no-read rejection\n",cases);
 }
+static Display13OutputWiring multiGOP(IO &io,const unsigned *ports,unsigned count,uint32_t dpMask,bool owned=true) {
+    Display13OutputWiring w;w.valid=true;w.dp=dpMask;
+    io.regs[0x42000]=0x8e380000;io.regs[Display13TC::Clock::Gate]=0x01e0ffff;
+    for(unsigned p=0;p<3;++p) {
+        const auto b=p*0x1000;
+        io.regs[0x70008+b]=io.regs[0x70180+b]=io.regs[0x60400+b]=0;
+        io.regs[0x46140+4*p]=0;
+        if(p>=count)continue;
+        const auto d=ports[p];if(!(dpMask&(1U<<d))){w.hdmi|=1U<<d;w.ddc[d]=d+(d>=3?6:1);}
+        io.regs[0x70008+b]=0xc0000000;io.regs[0x70180+b]=0x84000008;
+        // Linear 720p firmware geometry, independent of protocol and DDI.
+        io.regs[0x70188+b]=80;io.regs[0x70190+b]=0x02cf04ff;
+        io.regs[0x60000+b]=0x067104ff;io.regs[0x6000c+b]=0x02ed02cf;
+        io.regs[0x7027c+b]=0x03ff0000;
+        io.regs[0x60400+b]=0x80030100|((d+1)<<27);
+        io.regs[0x64000+0x100*d]=0x80000000;
+        if(dpMask&(1U<<d))dp(io,p,d,4,true);
+        io.regs[0x46140+4*p]=(d+(d>=3?3:1))<<28;
+        if(d>=3) {
+            Display13TC::Port port;assert(Display13TC::Port::resolve(d,port));
+            io.regs[0x45454]|=3U<<(2*d);io.regs[0x45444]|=3U<<(2*d);
+            io.regs[port.ready]=0xc;io.regs[port.pll]=0xcc000000;io.regs[port.clock]=0x80000000;
+            io.regs[Display13TC::Clock::Gate]&=~Display13TC::Clock::gateBit(port.tc);
+            if(owned || !(dpMask&(1U<<d)))io.regs[port.buffer]|=64;
+        }
+    }
+    assert(w.described());return w;
+}
+// Compose the real boot, power, Mode and clock cores. This models MMIO ACKs;
+// it is a regression test for the handoff, not proof of physical output.
+struct Runtime : IO {
+    Display13TC::Port port;Display13TC::Mode mode;Display13Power::State power;
+    Display13Power::Lease ddi;unsigned native {};bool locked {};
+    Runtime(const IO &boot,unsigned d):IO(boot) {
+        assert(Display13TC::Port::resolve(d,port));writes.clear();
+        assert(Display13Power::initialize(*this,power,Display13Power::nativeDomains(0x7b)));
+    }
+    bool admissionReady(){return true;}
+    unsigned nativeMode(){return native;}
+    unsigned nativeSetMode(unsigned v){native=v;return 0;}
+    bool tcAuxSupported(){return true;}
+    bool prepareTCAux(unsigned t){return t==port.tc && (read(port.buffer)&64);}
+    bool tcAuxHealthy(unsigned){return true;}
+    Display13Power::Result acquireDomains(Display13Power::Lease &l,uint32_t d){return Display13Power::acquire(*this,power,l,d,true);}
+    Display13Power::Result releaseDomains(Display13Power::Lease &l){return Display13Power::release(*this,power,l);}
+    bool powerHeld(uintptr_t a,uintptr_t b,unsigned d) {
+        return a==1 && b==2 && d==port.ddi && Display13Power::held(*this,power,Display13TC::Mode::accessDomains());
+    }
+    bool inheritedVerified(uintptr_t,uintptr_t,unsigned){return false;}
+    bool powerHeld(){return mode.accessLease.owner && mode.auxLease.owner && Display13Power::held(*this,power,mode.auxLease.domains);}
+    bool owned(unsigned d){return d==port.ddi && mode.phase==Display13TC::Mode::Phase::Active && mode.ownership.active && native==4;}
+    bool quiescent(unsigned d){return d==port.ddi && !(read(port.buffer)&0x80000000U);}
+    bool quiescent(uintptr_t,uintptr_t,unsigned d){return quiescent(d) && !(read(port.pll)&0xcc000000U) && !ddi.owner;}
+    bool linkPower(bool enable) {
+        if(!enable && !ddi.owner)return true;
+        return (enable?acquireDomains(ddi,Display13Power::ddiDomain(port.ddi)):releaseDomains(ddi)).status==Display13Power::Status::Complete;
+    }
+    bool unstarted(){return false;}
+    unsigned lock(){assert(!locked);locked=true;return 0;}
+    void unlock(unsigned){assert(locked);locked=false;}
+    void bankFault(){assert(false);}
+};
+static void tcComposition() {
+    struct Case {unsigned ports[3],count,dp;};
+    const Case cases[]={{{5,3,0},2,1U<<5},{{3,5,0},2,1U<<5},
+        {{0,4,0},2,0},{{6,1,0},2,1U<<6},{{1,6,0},2,1U<<6},
+        {{3,4,5},3,(1U<<3)|(1U<<5)},{{4,1,6},3,1U<<6}};
+    for(const auto &c:cases)for(bool owner:{false,true}) {
+        IO io;const auto wiring=multiGOP(io,c.ports,c.count,c.dp,owner);
+        const auto boot=AlderLakeN::readDisplay(io,true);const auto before=io.regs;
+        const auto r=Display13Boot::normalize(io,boot,true,wiring,memory);
+        assert(r.status==Display13Boot::Status::Complete && r.after==1);
+        for(auto reg:{0x45404U,0x45454U,0x45444U,0x60400U,0x60540U,0x46140U,0x70180U,0x7027cU})
+            assert(io.regs[reg]==before.at(reg));
+        if(c.ports[0]>=3) {
+            const auto retained=Display13TC::Boot::capture(io,true,c.ports[0],0,(c.dp&(1U<<c.ports[0])));
+            assert(retained.valid());
+            for(auto reg:{retained.port.buffer,retained.port.clock,retained.port.pll,retained.port.ready})assert(io.regs[reg]==before.at(reg));
+        }
+        for(unsigned p=1;p<c.count;++p)if(c.ports[p]>=3) {
+            const auto d=c.ports[p];Display13TC::Port port;assert(Display13TC::Port::resolve(d,port));
+            assert((io.regs[port.buffer]&0x800000c0U)==0x80 && !(io.regs[port.pll]&0xcc000000U));
+            assert(!(io.regs[port.clock]&0xf0000000U) && !io.regs[0x46140+4*p]);
+            assert(io.regs[Display13TC::Clock::Gate]&Display13TC::Clock::gateBit(port.tc));
+            Runtime runtime(io,d);
+            assert(runtime.mode.connect(runtime,1,2,d).status==Display13TC::Status::Complete);
+            // No firmware-adoption exemption is supplied to the new Mode.
+            const bool started=(c.dp&(1U<<d))?
+                Display13TC::DPSignal::startLink(runtime,port,Display13TC::DPClock::calculate(6,38400),4):
+                Display13TC::Clock::startLink(runtime,port,Display13TC::TMDSClock::calculate(74250,38400),9);
+            assert(started && runtime.ddi.owner && (runtime.regs[port.pll]&0xcc000000U)==0xcc000000U);
+            assert(Display13TC::Clock::stopLink(runtime,port));
+            assert(runtime.mode.disconnect(runtime,1,2,d).status==Display13TC::Status::Complete);
+        }
+    }
+    const unsigned ports[]={5,3};
+    for(unsigned failure=0;failure<4;++failure) {
+        IO io;const auto wiring=multiGOP(io,ports,2,1U<<5);const auto boot=AlderLakeN::readDisplay(io,true);
+        if(failure==0)io.noIdle=true;
+        if(failure==1)io.stuckPLL=true;
+        if(failure==2)io.changeRegister=0x46048; // Retained TC3 PLL changes.
+        if(failure==3)io.failWrite=Display13TC::Clock::Gate;
+        const auto r=Display13Boot::normalize(io,boot,true,wiring,memory);
+        assert(r.status!=Display13Boot::Status::Complete && io.regs[0x7127c]);
+        assert(io.regs[0x64300]&64); // Failure never returns the affected PHY.
+        assert(io.regs[0x70180]&0x80000000U);
+    }
+    // Unsupported source/AUX activity is rejected before either GOP changes.
+    for(unsigned bad=0;bad<3;++bad) {
+        IO io;const auto wiring=multiGOP(io,ports,2,1U<<5);
+        if(bad==0)io.regs[0x64310]=0x80000000;
+        if(bad==1)io.regs[0x161500]=1;
+        if(bad==2)io.regs[0x46144]=0x40000000; // Combo selector on a TC port.
+        assert(Display13Boot::normalize(io,AlderLakeN::readDisplay(io,true),true,wiring,memory).status==Display13Boot::Status::Topology);
+        assert(io.writes.empty());
+    }
+    puts("PASS mixed Combo/TC GOP handoff into normal Mode/clock start, peer preservation and failure retention");
+}
+static void scaledBoot() {
+    const unsigned ports[] {5,3,4};
+    const auto setup=[&](IO &io,unsigned pipe,unsigned scaler) {
+        const auto b=pipe*0x1000,ps=0x68170+pipe*0x800+scaler*0x100;
+        io.regs[0x70188+b]=80;io.regs[0x70190+b]=0x02CF04FF;
+        io.regs[0x6001C+b]=0x04FF02CF;
+        io.regs[0x60000+b]=0x0897077F;io.regs[0x6000C+b]=0x04640437;
+        io.regs[ps+0x10]=0x80000000;io.regs[ps]=0;io.regs[ps+4]=(1920U<<16)|1080;
+    };
+    for(unsigned scaler=0;scaler<2;++scaler) {
+        IO io;auto w=multiGOP(io,ports,3,1U<<5);
+        setup(io,0,scaler);setup(io,2,1-scaler);
+        auto boot=AlderLakeN::readDisplay(io,true);
+        assert(boot.status==AlderLakeN::ReadoutStatus::Complete && boot.count<=160);
+        auto n=Display13Boot::normalize(io,boot,true,w,memory);
+        assert(n.status==Display13Boot::Status::Complete && n.after==1);
+        assert(io.regs[0x68180+scaler*0x100]==0x80000000);
+        assert(!io.regs[0x69180+(1-scaler)*0x100]);
+        for(auto wr:io.writes)assert(wr.offset<0x68170 || wr.offset>0x68280);
+        auto after=AlderLakeN::readDisplay(io,true);
+        auto tc=Display13TC::Boot::capture(io,true,5,0,true);
+        AlderLakeN::LinearPlan plan;
+        assert(AlderLakeN::linearPlan(after,plan,5,AlderLakeN::GOPProtocol::DP,&tc)==AlderLakeN::LinearStatus::Ready);
+        assert(plan.geometry.width==1280 && plan.geometry.height==720);
+        assert(Display13Boot::reservedPrefix(io,after,true,5,memory,&tc,AlderLakeN::GOPProtocol::DP));
+        io.regs[0x68174+scaler*0x100]^=1;
+        assert(!Display13Boot::reservedPrefix(io,after,true,5,memory,&tc,AlderLakeN::GOPProtocol::DP));
+    }
+    // A timing mismatch alone is never permission to accept scaling.
+    for(unsigned fault=0;fault<11;++fault) {
+        IO io;auto w=multiGOP(io,ports,3,1U<<5);setup(io,0,0);
+        if(fault==0)io.regs[0x68180]=0;
+        if(fault==1)io.regs[0x68180]|=1U<<25;
+        if(fault==2)io.regs[0x68180]|=1U<<29;
+        if(fault==3)io.regs[0x68180]|=1U<<19;
+        if(fault==4)io.regs[0x68170]=1;
+        if(fault==5)io.regs[0x68174]^=1;
+        if(fault==6)io.regs[0x6001C]^=1;
+        if(fault==7) {io.regs[0x68280]=0x80000000;io.regs[0x68274]=io.regs[0x68174];}
+        if(fault==8)io.regs[0x60000]=0x400004FF;
+        if(fault==9)io.regs[0x60000]=0x0100077F;
+        if(fault==10)io.regs[0x6000C]=0x046401FF;
+        auto n=Display13Boot::normalize(io,AlderLakeN::readDisplay(io,true),true,w,memory);
+        if(n.status!=Display13Boot::Status::Topology || !io.writes.empty())fprintf(stderr,"fault=%u status=%u writes=%zu\n",fault,unsigned(n.status),io.writes.size());
+        assert(n.status==Display13Boot::Status::Topology && io.writes.empty());
+    }
+    IO drift;auto w=multiGOP(drift,ports,3,1U<<5);setup(drift,0,0);
+    drift.changeRegister=0x68174;
+    auto n=Display13Boot::normalize(drift,AlderLakeN::readDisplay(drift,true),true,w,memory);
+    assert(n.status==Display13Boot::Status::PeerChanged && drift.writes.size()==2);
+    puts("PASS scaled multi-GOP: binding, full destination, primary preservation, secondary detach and drift rejection");
+}
+static void unusedTCBoot() {
+    const unsigned ports[] {5,4};
+    const auto setup=[&](IO &io) {
+        auto w=multiGOP(io,ports,2,1U<<5);w.hdmi|=1U<<3;w.ddc[3]=9;
+        assert(Display13Boot::normalize(io,AlderLakeN::readDisplay(io,true),true,w,memory).status==Display13Boot::Status::Complete);
+        io.writes.clear();io.regs[0x64300]=0xC0;io.regs[0x161500]=0xC;
+        io.regs[0x4610C]=io.regs[0x46038]=0;io.regs[Display13TC::Clock::Gate]|=1U<<12;
+        io.regs[0x45444]|=3U<<6;
+        return w;
+    };
+    IO io;auto w=setup(io);const auto before=io.regs;
+    auto r=Display13Boot::releaseUnusedTC(io,AlderLakeN::readDisplay(io,true),true,w);
+    assert(r.status==Display13Boot::Status::Complete && r.cleared==8 && r.writes==1 && io.regs[0x64300]==0x80);
+    for(auto x:before)if(x.first!=0x64300)assert(io.regs[x.first]==x.second);
+    assert(io.writes.size()==1 && io.writes[0].offset==0x64300 && io.writes[0].value==0x80);
+    auto again=Display13Boot::releaseUnusedTC(io,AlderLakeN::readDisplay(io,true),true,w);
+    assert(again.status==Display13Boot::Status::Complete && again.writes==0);
+    // Any live/ambiguous resource prevents release of this unclassified port.
+    for(unsigned fault=0;fault<9;++fault) {
+        IO t;auto wiring=setup(t);
+        if(fault==0)t.regs[0x64300]|=0x80000000;
+        if(fault==1)t.regs[0x64300]&=~0x80U;
+        if(fault==2)t.regs[0x161500]|=1;
+        if(fault==3)t.regs[0x4610C]=0x80000000;
+        if(fault==4)t.regs[0x46038]=0xCC000000;
+        if(fault==5)t.regs[Display13TC::Clock::Gate]&=~(1U<<12);
+        if(fault==6)t.regs[0x64310]=0x80000000;
+        if(fault==7)t.regs[0x64300]=UINT32_MAX;
+        if(fault==8)t.regs[0x161500]=UINT32_MAX;
+        auto r=Display13Boot::releaseUnusedTC(t,AlderLakeN::readDisplay(t,true),true,wiring);
+        assert(r.status!=Display13Boot::Status::Complete && t.writes.empty());
+    }
+    for(unsigned kind=0;kind<2;++kind) {
+        IO t;auto wiring=setup(t);
+        t.regs[kind?0x46148:0x62400]=kind?0x60000000:0x20000000;
+        auto r=Display13Boot::releaseUnusedTC(t,AlderLakeN::readDisplay(t,true),true,wiring);
+        assert(r.status==Display13Boot::Status::Complete && r.writes==0 && t.regs[0x64300]==0xC0);
+    }
+    IO changed;auto wiring=setup(changed);auto boot=AlderLakeN::readDisplay(changed,true);changed.regs[0x68174]=1;
+    r=Display13Boot::releaseUnusedTC(changed,boot,true,wiring);
+    assert(r.status==Display13Boot::Status::PeerChanged && changed.writes.empty());
+    IO failed;wiring=setup(failed);failed.failWrite=0x64300;
+    r=Display13Boot::releaseUnusedTC(failed,AlderLakeN::readDisplay(failed,true),true,wiring);
+    assert(r.status==Display13Boot::Status::Readback && failed.writes.size()==1);
+    puts("PASS unused fixed TC firmware ownership: cold-only release, peers, live-resource refusal and readback");
+}
 int main() {
+    unusedTCBoot();
+    scaledBoot();
     prefixCertificates();
+    tcComposition();
     IO io;const auto before=io.regs;
     const auto r=Display13Boot::normalize(io,AlderLakeN::readDisplay(io,true),true,wiring,memory);
     assert(r.status==Display13Boot::Status::Complete && r.after==1 && r.stage==7 && r.writes==10);
@@ -170,7 +396,7 @@ int main() {
             if(dpMask&(1U<<port))dp(t,p,port,lanes,enhanced);
         }
         const auto boot=AlderLakeN::readDisplay(t,true);const auto before=t.regs;
-        assert(boot.version==2 && boot.count==139);
+        assert(boot.version==2 && boot.count==157);
         const auto result=Display13Boot::normalize(t,boot,true,mixed,memory);
         const bool parkDP=dpMask&(1U<<(1-a));
         assert(result.status==Display13Boot::Status::Complete && result.after==1 && result.writes==(parkDP?11U:10U));

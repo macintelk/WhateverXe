@@ -12,6 +12,7 @@
 #include "kern_alderlake_s.hpp"
 #include "kern_tgl_combo_dp.hpp"
 #include "kern_xelp_donor.hpp"
+#include "kern_display13_fb_topology.hpp"
 struct OSObject {virtual ~OSObject()=default;};
 struct OSData:OSObject {std::vector<uint8_t> data;void *getBytesNoCopy(){return data.data();}uint32_t getLength(){return data.size();}};
 struct IOService {OSObject *property {};unsigned reads {};OSObject *getProperty(const char *name){assert(!strcmp(name,"tgl-hdmi-wiring"));++reads;return property;}};
@@ -32,12 +33,15 @@ struct XE {
  struct {uint32_t fStolenMemorySize=0;} framebufferPatch;
  XELP::VBT::Ports firmwarePorts;
  // FIELDS
- uintptr_t orgTGLGetOSInformation {},orgTGLGMBus {},orgTGLComputeLanes {},tglHDMILaneCaller=0x100;
+ uintptr_t orgTGLGetOSInformation {},orgTGLGMBus {},orgFramebufferComputeLanes {},framebufferLaneCaller=0x100;
  uint64_t tglPlatformCopy[0x1C0/8] {};
  static void tglBeginTCColdProtection(void*){}
  static bool wrapTGLGetOSInformation(void *);
  static uint32_t wrapTGLGMBus(void *,uint32_t,uint32_t,void *);
- static bool wrapTGLComputeLanes(void *,const void *,uint32_t,uint32_t,uint32_t *);
+ static bool wrapFramebufferComputeLanes(void *,const void *,uint32_t,uint32_t,uint32_t *);
+ bool display13FramebufferRequested=false;
+ bool framebufferHDMIEligible(const uint32_t *) const;
+ void *adlnPlatform {};Display13OutputWiring adlnOutputWiring;
 };
 XE object,*callbackXE=&object;
 // OBSERVATIONS
@@ -50,7 +54,7 @@ uint32_t nativeGMBus(void*,uint32_t,uint32_t,void*){++nativeGMBusCalls;edidSelec
  for(auto &o:tglGMBusObservations)if(o.thread==1)edidSelected=o.edid;return 0x91;}
 uint8_t *&platform(){return *reinterpret_cast<uint8_t **>(controller+0xD40);}
 void setup(){
- object=XE{};object.orgTGLGetOSInformation=(uintptr_t)nativeOS;object.orgTGLComputeLanes=(uintptr_t)nativeLanes;object.orgTGLGMBus=(uintptr_t)nativeGMBus;
+ object=XE{};object.orgTGLGetOSInformation=(uintptr_t)nativeOS;object.orgFramebufferComputeLanes=(uintptr_t)nativeLanes;object.orgTGLGMBus=(uintptr_t)nativeGMBus;
  memset(controller,0,sizeof(controller));memset(original,0x5a,sizeof(original));platform()=original;original[0x12]=9;
  for(unsigned d=0;d<9;++d){uint32_t cfg[]={d,d+1,1,d>=3?1u:0u,0x400,0x201};memcpy(original+0x20+24*d,cfg,24);}
  const uint32_t panel[]={0,0,0,0,2,0x18};memcpy(original+0x20,panel,24);
@@ -104,15 +108,39 @@ int main(){
  const auto page=static_cast<size_t>(sysconf(_SC_PAGESIZE));
  void *inaccessible=mmap(nullptr,page,PROT_NONE,MAP_PRIVATE|MAP_ANON,-1,0);
  assert(inaccessible!=MAP_FAILED);
- testCaller=0x101;
- for(bool native:{false,true}){
-  nativeLanesResult=native;uint32_t lanes=4;
-  assert(XE::wrapTGLComputeLanes(inaccessible,nullptr,24,20,&lanes)==native);
-  assert(lanes==4);
+ for(bool display13:{false,true}) {
+  object.display13FramebufferRequested=display13;auto wrapper=XE::wrapFramebufferComputeLanes;
+  testCaller=0x101;nativeLanesCalls=0;
+  for(bool native:{false,true}){
+   nativeLanesResult=native;uint32_t lanes=4;
+   assert(wrapper(inaccessible,nullptr,24,20,&lanes)==native);
+   assert(lanes==4);
+  }
+  object.framebufferLaneCaller=0;testCaller=0;
+  assert(wrapper(inaccessible,nullptr,24,20,nullptr));
+  assert(nativeLanesCalls==3);
+  object.framebufferLaneCaller=0x100;
  }
- object.tglHDMILaneCaller=0;testCaller=0;
- assert(XE::wrapTGLComputeLanes(inaccessible,nullptr,24,20,nullptr));
- assert(nativeLanesCalls==3);assert(munmap(inaccessible,page)==0);
+ assert(munmap(inaccessible,page)==0);
+ // The production Display13 wrapper keeps HDMI correction and DP pass-through
+ // under the exact validator, across both Combo and TC topology records.
+ for(unsigned d:{0U,1U,3U,4U,5U,6U})for(bool hdmi:{false,true}) {
+  setup();object.display13FramebufferRequested=true;Display13OutputWiring w;w.valid=true;
+  original[0x13]=3;
+  for(unsigned i=3;i<9;++i)reinterpret_cast<uint32_t *>(original+0x20+24*i)[1]=i+6;
+  if(hdmi){w.hdmi=1U<<d;w.ddc[d]=d<2?d+1:d+6;}else w.dp=1U<<d;
+  alignas(8) uint8_t out[Display13FBTopology::Bytes] {};
+  assert(Display13FBTopology::apply(out,sizeof(out),original,w));
+  object.adlnPlatform=out;object.adlnOutputWiring=w;
+  auto config=reinterpret_cast<uint32_t *>(out+0x20+24*d);
+  memcpy(port+0x548,&config,sizeof(config));
+  for(bool native:{false,true})for(unsigned available:{0U,20U})for(unsigned lanes:{0U,4U}) {
+   nativeLanesResult=native;auto before=lanes;
+   assert(XE::wrapFramebufferComputeLanes(port,nullptr,24,available,&lanes)==
+          (native || (hdmi && !available && !lanes)));
+   assert(lanes==before);
+  }
+ }
  setup();auto current=property(2,0,2,0);IOService absent{&current};assert(XE::tglLoadHDMIWiring(&absent));assert(XE::wrapTGLGetOSInformation(controller));
  const auto p=platform();assert(p!=original&&object.tglHDMIWiringApplied&&object.tglHDMIWiring.ddc[1]==2);
  expectUnchangedExcept(p,{0x40,0x48,0x4C}); // HDMI protocol/type/flags; panel unchanged
@@ -170,11 +198,11 @@ int main(){
   expectUnchangedExcept(platform(),{0x3C,0x40,0x48,0x4C});
   auto cfg=reinterpret_cast<uint32_t *>(platform()+0x38);assert(cfg[1]==pin&&object.tglHDMIEligible(cfg));
   *reinterpret_cast<void **>(port+0x548)=cfg;
-  uint32_t lanes=0;assert(XE::wrapTGLComputeLanes(port,nullptr,32,0,&lanes)&&lanes==0&&nativeLanesCalls==1);
-  testCaller=0x101;assert(!XE::wrapTGLComputeLanes(port,nullptr,32,0,&lanes));testCaller=0x100;
-  lanes=1;assert(!XE::wrapTGLComputeLanes(port,nullptr,32,0,&lanes));lanes=0;
-  assert(!XE::wrapTGLComputeLanes(port,nullptr,32,1,&lanes));
-  auto saved=cfg[1];cfg[1]=pin==1?2:1;assert(!XE::wrapTGLComputeLanes(port,nullptr,32,0,&lanes));cfg[1]=saved;
+  uint32_t lanes=0;assert(XE::wrapFramebufferComputeLanes(port,nullptr,32,0,&lanes)&&lanes==0&&nativeLanesCalls==1);
+  testCaller=0x101;assert(!XE::wrapFramebufferComputeLanes(port,nullptr,32,0,&lanes));testCaller=0x100;
+  lanes=1;assert(!XE::wrapFramebufferComputeLanes(port,nullptr,32,0,&lanes));lanes=0;
+  assert(!XE::wrapFramebufferComputeLanes(port,nullptr,32,1,&lanes));
+  auto saved=cfg[1];cfg[1]=pin==1?2:1;assert(!XE::wrapFramebufferComputeLanes(port,nullptr,32,0,&lanes));cfg[1]=saved;
   for(unsigned bus=0;bus<=14;++bus)for(unsigned fault=0;fault<5;++fault){
    uint32_t request[16] {};request[1]=1;request[3]=0xA0;request[14]=128;
    uint32_t speed=fault==1?1:0;if(fault==2)request[1]=0;if(fault==3)request[3]=0xA2;if(fault==4)request[14]=64;

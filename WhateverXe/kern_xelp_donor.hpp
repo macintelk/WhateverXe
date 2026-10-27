@@ -3,7 +3,21 @@
 #define KERN_XELP_DONOR_HPP
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 namespace XELPDonor {
+// Exact C004FC1A disablePowerWellDDI incorrectly derives C's request from
+// TC1's refs/mode. Match the whole producer block and use C's own counter,
+// as enablePowerWellDDI already does. Hardware/domain selection belongs to
+// callers; do not discard an actually referenced DDI C on capable hardware.
+constexpr uint32_t DDIReleaseOffset=0x5AD86;
+static constexpr uint8_t DDIReleaseBefore[] {0x83,0x7b,0x3c,0x00,0x74,0x37,0x48,0xff,0x05,0x3d,0x6c,0x08,0x00,0x48,0xff,0x05,0xd6,0x70,0x08,0x00,0xbf,0x03,0x00,0x00,0x00,0xe8,0x46,0x04,0xfc,0xff,0x48,0x85,0xc0,0x74,0x1e,0x48,0xff,0x05,0xd0,0x70,0x08,0x00,0x48,0xff,0x05,0xa9,0x75,0x08,0x00,0x83,0xb8,0x50,0x05,0x00,0x00,0x02,0x0f,0x94,0xc0,0xeb,0x06,0x31,0xc0,0xeb,0x1b,0x31,0xc0,0x0f,0xb6,0xc0,0x48,0x01,0x05,0xa5,0x70,0x08,0x00,0x34,0x01,0x0f,0xb6,0xc0,0x48,0x01,0x05,0xe9,0x6b,0x08,0x00,0xc1,0xe0,0x05};
+// xor eax,eax; cmp dword [rbx+38h],0; setne al; shl eax,5;
+// jmp 5ADE2 (native union of all other DDI requests).
+static constexpr uint8_t DDIReleaseAfter[] {0x31,0xc0,0x83,0x7b,0x38,0,0x0f,0x95,0xc0,0xc1,0xe0,5,0xe9,0x4b,0,0,0};
+inline bool ddiReleaseSite(const uint8_t *image,size_t size) {
+ return image && size>=DDIReleaseOffset+sizeof(DDIReleaseBefore) &&
+  !memcmp(image+DDIReleaseOffset,DDIReleaseBefore,sizeof(DDIReleaseBefore));
+}
 inline bool displayPoolRequest(uint32_t enabled,uint32_t bytes) {
     return enabled && bytes && !(bytes&4095) && bytes<=0x4000000;
 }
@@ -41,6 +55,15 @@ template<class IO> Poll waitEDIDReady(IO &io,uint32_t initial) {
         io.delayUs(10);r.elapsedUs+=10;r.value=io.readStatus();++r.reads;
     }
     return r;
+}
+// computeLaneCount ignores arg0: setupOptimalLaneCount passes port+0x124,
+// while the HDMI validator passes the actual port. Qualify the caller before
+// even reading config; correcting only the result does not protect this ABI.
+inline const uint32_t *hdmiLaneConfig(const void *argument,uintptr_t caller,uintptr_t validator) {
+    if(!argument || !validator || caller!=validator)return nullptr;
+    const uint32_t *config {};
+    memcpy(&config,static_cast<const uint8_t *>(argument)+0x548,sizeof(config));
+    return config;
 }
 inline bool skipHDMIDPLanes(bool selected,bool exactCaller,bool native,uint32_t available,uint32_t lanes) {
     return selected && exactCaller && !native && !available && !lanes;

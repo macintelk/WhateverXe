@@ -25,6 +25,13 @@ Source attribution, licenses and reproducible test fixtures remain here.
 Keep release notes in CHANGELOG.md under an exact version heading. Release CI
 extracts that section; do not maintain a separate release-note template.
 
+README describes the current state, not release-by-release changes. Recommend
+latest component releases instead of accumulating per-version dependency tables.
+Use GPU family names rather than internal display-generation labels in README
+prose. CHANGELOG describes the affected behavior and OS range; applications used
+for validation are not the scope of a general fix. Credit reference repositories
+when their work informed a change.
+
 ## Build and test
 
 Build with `python3 tools/build.py`; run CPU tests with `python3 tools/test.py`.

@@ -61,7 +61,16 @@ int main(){
  assert(!object.tglRegisterLegacyHPD(4,4,0x1234));object.tglAUXParentMask=0x18;
  assert(object.tglRegisterLegacyHPD(4,4,0x1234));
  assert(object.tglLegacyTCEligible(4)&&object.tglTCModeAllowed(4,4));
- assert(!object.tglTCModeAllowed(4,2)&&!object.tglTCModeAllowed(4,3));
+ assert(!object.tglTCModeAllowed(4,2)&&object.tglTCModeAllowed(4,3));
+ // Fixed DP and DP-alt share the exact AUX mapping and native TC1..4 limit.
+ for(unsigned d=3;d<=8;++d) {
+  reset();const uint32_t aux[]={0x30,0x50,0x60,0x70,0x80,0x90};
+  object.firmwarePorts.status=XELP::VBT::Status::Valid;object.firmwarePorts.present=1U<<d;
+  object.firmwarePorts.port[d]={0x60d6,0,0,aux[d-3],0xc0,3};
+  assert(XE::tglLoadTCWiring(&absent));const auto expected=d<=6?1U<<d:0;
+  assert(object.tglTCAutoCandidates==expected && object.tglDPAltCandidates==expected);
+  if(expected){assert(object.tglTCModeAllowed(d,3));object.tglDPAltCandidates=0;assert(!object.tglTCModeAllowed(d,3));}
+ }
  // Present-invalid must never fall back to the known machine's preset.
  OSObject wrongType;auto good=property(1u<<4,0,0);
  for(unsigned kind=0;kind<5;++kind){

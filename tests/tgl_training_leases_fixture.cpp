@@ -1,4 +1,5 @@
 #include "kern_alderlake_s.hpp"
+#include "kern_framebuffer_donor.hpp"
 template<class... T>void tglTransitionRecord(T...){ }
 // Native boundaries are mocks; LEASE_FUNCTIONS is extracted unchanged from production.
 #include <algorithm>
@@ -45,11 +46,14 @@ template<class... T> void tglObserveResource(T...) {}
 void tglAUXPublish() {}
 void tglDPCDPublish() {}
 struct XE {
+ static bool display13RetirementHealthy(){return true;}
+ static bool retireDisplay13Controller(void*){return true;}
  bool adlsDisplaySelected=false;AlderLakeS::Wiring adlsWiring;
  // TC_WIRING_FIELDS
  // LEASE_FIELDS
  IORecursiveLock *tglPathPoolLock;
  bool tglTrainingLeaseReady = true;
+ bool framebufferStartInProgress=false;uint32_t framebufferProtocolCalls=0;void *framebufferStartedController=nullptr;
  void *tglObservationController;
  uintptr_t tglPortByDDI, orgTGLPathLookup, orgTGLAllocatePathAny, orgTGLAllocatePathFixed, orgTGLFreePath;
  uintptr_t tglEnablePG, tglDisablePG, tglDisablePort, tglDisableClocks, orgTGLControllerStop;
@@ -244,6 +248,25 @@ void shutdownStatus() {
  setup();auto &end=reserve(4);mmio.at<uint32_t>(0x64400)=0;
  assert(!XE::tglReleaseTrainingLease(end,false) && end.path && end.powerOwned);
  mmio.at<uint32_t>(0x64400)=0x80;assert(XE::tglReleaseTrainingLease(end,false));clean();
+ // Controller stop must not turn the same failed release into pool destruction.
+ setup();auto &held=reserve(4);bufferIdlePending=true;
+ XE::wrapTGLControllerStop(ctl.data(),nullptr);
+ assert(!stopCalled&&held.path&&held.powerOwned&&!held.busy&&obj.tglStopRetained&&retained[ctl.data()]==1);
+ bufferIdlePending=false;XE::wrapTGLControllerStop(ctl.data(),nullptr);
+ assert(stopCalled&&obj.tglStopComplete&&!obj.tglStopRetained);clean();
+ // The real unselected Begin wrapper also participates in the drain.
+ setup();uint32_t noPort[20]={0};nativeBoundary=[&]{
+  XE::wrapTGLControllerStop(ctl.data(),nullptr);assert(!stopCalled&&obj.tglStopRetained);
+ };
+ assert(!XE::wrapTGLTrainingBegin(ctl.data(),noPort));nativeBoundary={};
+ XE::wrapTGLControllerStop(ctl.data(),nullptr);assert(stopCalled&&!obj.tglStopRetained);clean();
+ // Unselected protocol calls are drained too, not just per-port busy leases.
+ setup();{
+  FramebufferDonor::Call active(obj.framebufferProtocolCalls);assert(active);
+  XE::wrapTGLControllerStop(ctl.data(),nullptr);assert(!stopCalled&&obj.tglStopRetained);
+  FramebufferDonor::Call rejected(obj.framebufferProtocolCalls);assert(!rejected);
+ }
+ XE::wrapTGLControllerStop(ctl.data(),nullptr);assert(stopCalled&&!obj.tglStopRetained);clean();
  puts("shutdown status: buffer idle missing / pipe enable or active / allones retain resources; no premature clock teardown; explicit retry succeeds on all 3 pipes");
 }
 void trainingRouteRestoration() {

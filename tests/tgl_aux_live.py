@@ -3,13 +3,15 @@
 from pathlib import Path
 import re,subprocess,tempfile
 r=Path(__file__).resolve().parents[1];s=(r/'WhateverXe/kern_xe.cpp').read_text()
-bodies='\n'.join(re.search(p,s,re.S).group() for p in [r'void tglAUXRecord\(.*?\n\}',r'static bool tglAUXControlSerialize\(.*?\n\}',r'void tglDPCDRecord\(.*?\n\}',r'static bool tglDPCDSerialize\(.*?\n\}',r'static bool tglAUXLiveSerialize\(.*?\n\}'])
+bodies='\n'.join(re.search(p,s,re.S).group() for p in [r'static void tglComboAUXDecisionRecord\(uint32_t \*word\) \{.*?\n\}',r'static bool tglComboAUXDecisionSerialize\(void \*,void \*,OSSerialize \*serializer\) \{.*?\n\}',r'void tglAUXRecord\(.*?\n\}',r'static bool tglAUXControlSerialize\(.*?\n\}',r'void tglDPCDRecord\(.*?\n\}',r'static bool tglDPCDSerialize\(.*?\n\}',r'static bool tglAUXLiveSerialize\(.*?\n\}'])
 f=r'''#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <cassert>
 #include <vector>
 #include <sys/mman.h>
+struct TGLComboAUXDecision {uint64_t ns;uint32_t word[14];};
+TGLComboAUXDecision tglComboAUXFirst[64]{},tglComboAUXLast[64]{};uint32_t tglComboAUXCount{};
 struct TGLAUXRecord { uint64_t ns,thread;uint32_t word[28]; };
 TGLAUXRecord tglAUXFirst[9][256]{},tglAUXLast[9][128]{},tglAUXControl[9][64]{};
 uint32_t tglAUXCounts[9]{},tglAUXControlCounts[9]{};
@@ -37,6 +39,17 @@ struct OSData {
 };
 // BODIES
 int main(){
+ {OSSerialize out;uint32_t w[14]{};
+  for(unsigned i=0;i<160;++i){w[1]=i;tglComboAUXDecisionRecord(w);}
+  assert(tglComboAUXDecisionSerialize(nullptr,nullptr,&out));
+  assert(out.bytes.size()==16+128*sizeof(TGLComboAUXDecision));
+  uint32_t h[4];memcpy(h,out.bytes.data(),16);assert(h[0]==1&&h[1]==160&&h[2]==64&&h[3]==64);
+  for(unsigned i=0;i<64;++i){TGLComboAUXDecision v;memcpy(&v,&out.bytes[16+i*64],64);assert(v.word[0]==i+1&&v.word[1]==i);}
+  for(unsigned i=96;i<160;++i){TGLComboAUXDecision v;memcpy(&v,&out.bytes[16+4096+(i%64)*64],64);assert(v.word[0]==i+1&&v.word[1]==i);}
+  failAlloc=true;assert(!tglComboAUXDecisionSerialize(nullptr,nullptr,&out));failAlloc=false;
+  failData=true;assert(!tglComboAUXDecisionSerialize(nullptr,nullptr,&out));failData=false;
+ }
+
  alignas(8) uint8_t port[0x600]{};uint32_t config[]={4};
  *reinterpret_cast<uint32_t**>(port+0x548)=config;
  auto noRead=mmap(nullptr,4096,PROT_NONE,MAP_PRIVATE|MAP_ANON,-1,0);assert(noRead!=MAP_FAILED);

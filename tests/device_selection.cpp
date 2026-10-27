@@ -21,11 +21,11 @@ int main() {
   // TGL/ADL-N explicit override semantics remain unchanged.
   auto f=select(0x12348086,revision,true,&value,4);
   assert(f.overridden() && f.identity==0x12348086 && f.effectiveIdentity==pci);
-  assert(f.admitted()==(p.admitted() && !display12SmallGT(entry.backend)));
+  assert(f.admitted()==(p.admitted() && !display12SmallGT(entry.backend) && entry.backend!=GT::ADLPMobile));
   assert(!strcmp(model(f),entry.model));
   auto nonIntel=select(0x123410DE,0,true,&value,4);assert(!nonIntel.admitted());
  }
- assert(implemented==27); // Recognition of other table rows adds no native backend.
+ assert(implemented==41); // Recognition of other table rows adds no native backend.
  uint32_t id=0x46D2;
  assert(select(0x12348086,0,true,&id,4).admitted());
  assert(select(0x12348086,1,true,&id,4).admitted());
@@ -36,10 +36,13 @@ int main() {
  assert(!select(0x9A498086,0,true,nullptr,4).admitted());
  for(uint32_t bad:{0U,0xFFFFU,0x808646D2U,0x1234U})
   assert(!select(0x9A498086,0,true,&bad,4).admitted());
- auto p=select(0x46A68086,0,true,&id,4);assert(p.admitted() && p.family==Family::AlderLakeN);
- assert(!strcmp(model(p),"Intel Iris Xe Graphics")); // Name is physical, backend is overridden.
+ auto p=select(0x46A68086,0,true,&id,4);assert(!p.admitted() && !p.displayAdmitted() && p.family==Family::AlderLakeP);
+ assert(!strcmp(model(p),"Intel Iris Xe Graphics")); // Physical ADL-P never becomes an ADL-N render backend.
  auto q=p;q.effectiveIdentity=0x46D18086;assert(!same(p,q));
- ProbeConfig c;c.profile=p;c.combo=c.comboBackend=3;assert(c.valid());
+ ProbeConfig c;c.profile=p;c.combo=c.comboBackend=3;assert(!c.valid());
+ id=0x9A49;p=select(0x46A68086,12,true,&id,4);
+ assert(p.displayAdmitted() && p.admitted() && p.mobileDisplay13());
+ c={};c.profile=p;c.comboBackend=3;c.legacy=8;c.legacyBackend=0x78;assert(c.valid());
  c.abi=2;assert(!c.valid());c.abi=3;c.profile.gt=GT::TGLGT2;assert(!c.valid());
  puts("PASS device table, physical/effective identity, strict override bytes/vendor/revision, model choice and ABI3");
 }

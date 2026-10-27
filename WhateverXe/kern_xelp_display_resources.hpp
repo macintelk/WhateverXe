@@ -8,12 +8,14 @@ namespace XELP {
 // v6.12 intel_display_device.c binds ADL-S and RPL-S to adl_s_desc; intel_bios.c
 // consequently uses the same PHY-based VBT mapping for both. This selector
 // grants no physical identity, stepping, fuse or donor qualification.
-enum class DisplayAdapter : uint32_t { Unknown, TGL, ADLS, ADLN };
+enum class DisplayAdapter : uint32_t { Unknown, TGL, ADLS, ADLN, ADLP };
 constexpr DisplayAdapter displayAdapter(Family family) {
     switch(family) {
         case Family::TigerLake:return DisplayAdapter::TGL;
         case Family::AlderLakeS:
         case Family::RaptorLakeS:return DisplayAdapter::ADLS;
+        case Family::AlderLakeP:
+        case Family::RaptorLakeP:return DisplayAdapter::ADLP;
         case Family::AlderLakeN:return DisplayAdapter::ADLN;
         default:return DisplayAdapter::Unknown;
     }

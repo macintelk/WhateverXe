@@ -70,20 +70,21 @@ struct DisplayContract {
   AUX13=1ULL<<60,
   DPProbe13=1ULL<<61,
   DPBoot13=1ULL<<62,
+  DonorRuntime=1ULL<<63,
  };
  Mask required {},available {};
  Mask missing() const {return required&~available;}
  bool ready() const {return !missing();}
- static constexpr Mask Base12=Surface|NVRAM|IRQ|Probe|Framebuffer|Topology|PanelPower|PanelTranscoder|Dekel;
+ static constexpr Mask Base12=DonorRuntime|Surface|NVRAM|IRQ|Probe|Framebuffer|Topology|PanelPower|PanelTranscoder|Dekel;
  static constexpr Mask Training12=Lease|PowerGet|PowerPut|PortLookup|PathLookup|PathAdd|PathFree|TrainingEnd|Training|TrainingBegin|PathAllocate|ClockOrder;
  static constexpr Mask Combo12=Framing|ComboSignal|ComboAUX|ComboAUXGate|TCNative|MMIORead|MMIOWrite;
  static constexpr Mask Fixed12=AUXParent|TCNative|Mode|HPDCaller;
  static constexpr Mask Alt12=TCNative|Mode|ModeLock|AltFIA|NativeFIA;
- static constexpr Mask PlatformADLS=ClockAdapter|PowerAdapter|PortInit|EnableCombo|PortLookup|OSInformation|MMIORead|MMIOWrite|HPD;
+ static constexpr Mask PlatformADLS=DonorRuntime|ClockAdapter|PowerAdapter|PortInit|EnableCombo|PortLookup|OSInformation|MMIORead|MMIOWrite|HPD;
  static constexpr Mask Power13=PowerRefs13|Engine13|Lifecycle13|DBUF13|WM13;
  static constexpr Mask Clock13=ClockRead13|ClockSet13|Lifecycle13;
  static constexpr Mask MemoryGroup13=Memory13|GTT13|ABI13|Handoff13;
- static constexpr Mask Backend13=Power13|Clock13|MemoryGroup13|IRQ13|WMLayout13|Output13|Topology13;
+ static constexpr Mask Backend13=DonorRuntime|Power13|Clock13|MemoryGroup13|IRQ13|WMLayout13|Output13|Topology13;
  struct Routes {
   bool hdmi {},panel {},combo {},legacy {},alt {},leaseRequested {};
  };
@@ -96,7 +97,7 @@ struct DisplayContract {
   if(r.panel||r.combo)required|=Combo12;
   if(r.panel)required|=PanelDepth|PanelTiming|PowerGet|PowerPut;
   if(r.combo)required|=AUXParent;
-  if(r.legacy)required|=Fixed12;
+  if(r.legacy)required|=Fixed12|AltFIA|NativeFIA; // Fixed TC also needs topology-aware FIA lanes/ownership.
   if(r.legacy||r.alt)required|=Framing|ModeLock;
   if(r.alt)required|=Alt12;
   return {required,installed};
@@ -105,10 +106,11 @@ struct DisplayContract {
   return {PlatformADLS|(dp?Training12|Combo12|Fixed12:0)|
    (panel?Combo12|PanelDepth|PanelTiming|PanelPWM|AUXParent|PowerGet|PowerPut:0),installed};
  }
- static constexpr Mask DP13=SST13|AUX13|DPProbe13|DPBoot13;
+ static constexpr Mask DP13=SST13|AUX13|DPProbe13|DPBoot13|Training12|Framing;
  static DisplayContract display13(Mask installed,bool dp=false) {return {Backend13|(dp?DP13:0),installed};}
  static const char *name(Mask bit) {
   switch(bit) {
+   case DonorRuntime:return "DonorRuntime";
    case Surface:return "Surface";
    case NVRAM:return "NVRAM";
    case IRQ:return "IRQ";

@@ -36,7 +36,7 @@ struct HandlerScopes {
 };
 constexpr uint32_t Driver=0x45404, Master=0x44200, GfxMaster=0x190010;
 constexpr uint32_t Enable=1U<<31, PipeOwned=0x8060E00D, PCHOwned=3U<<16;
-constexpr uint32_t PCHTypeC=0x3F000000;
+constexpr uint32_t PCHTypeC=0x3F000000, PCHCombo=7U<<16;
 constexpr uint32_t TCControl=0xC4034;
 constexpr uint32_t DDIControl=0xC4030, DDIStatus=0x33, DDIEnable=0x88;
 constexpr uint32_t PipeIIR(unsigned pipe) {return 0x44408+16*pipe;}
@@ -82,6 +82,13 @@ inline uint32_t nativePipe(uint32_t raw,unsigned pipe) {
     return result;
 }
 inline uint32_t pchOwned(const State &s) {return ((s.ports&7)<<16)|((s.ports>>3)<<24);}
+// Linux GEN11_DE_HPD: TC1..6 at bits16..21, TBT1..6 at bits0..5.
+// Apply the same connector exclusion to both PCH and north HPD banks.
+// Reference: samranahmad09/WhateverXe-RaptorLakeP, 2195924, this header.
+constexpr uint32_t HPDBank=0x44478;
+constexpr uint32_t hpdExcluded(uint32_t excludedPCH) {
+    const uint32_t ports=(excludedPCH>>24)&0x3FU;return ports|(ports<<16);
+}
 inline uint32_t ddiMask(const State &s,uint32_t value) {
     uint32_t m=0;for(unsigned p=0;p<3;++p)if(s.ports&(1U<<p))m|=value<<(4*p);return m;
 }
@@ -121,7 +128,7 @@ template<class IO> Status enable(IO &io,State &s,uint32_t excludedPCH=0,uint32_t
     if(s.faulted)return Status::Faulted;
     if(!ports || (ports&~0x7FU) || (s.begun && ports!=s.ports))return fail(io,s,Status::Topology);
     s.ports=ports;
-    if((excludedPCH&pchOwned(s)) || (excludedPCH&~PCHTypeC) || (sharedGT && sharedGT!=NativeGT) || !expectedPipes || (expectedPipes&~7U))return fail(io,s,Status::Topology);
+    if((excludedPCH&pchOwned(s)) || (excludedPCH&~(PCHTypeC|PCHCombo)) || (sharedGT && sharedGT!=NativeGT) || !expectedPipes || (expectedPipes&~7U))return fail(io,s,Status::Topology);
     if(!available(io) || ((ports&0x78) && !io.readable(TCControl)))return Status::Unavailable;
     // Native repeated enable is idempotent. Do not drop a pending flip/DSB
     // completion or undo hwSetInterruptForTransaction's VBL mask.
@@ -142,9 +149,15 @@ template<class IO> Status enable(IO &io,State &s,uint32_t excludedPCH=0,uint32_t
         configured|=1U<<p;
     }
     if(active!=expectedPipes)return fail(io,s,Status::Topology);
-    constexpr uint32_t otherBanks[] {0x44448,0x44468,0x44478,0x44488};
+    // This backend owns fixed legacy TC via PCH HPD. North TC/TBT
+    // interrupts describe DP-alt/TBT transports, even on the same physical
+    // connector. Mask those firmware enables for selected fixed ports too.
+    // Linux adlp_tc_phy_hpd_live_status separates these from PCH legacy HPD.
+    const uint32_t excludedHPD=hpdExcluded(excludedPCH|((ports&0x78)<<21));
+    constexpr uint32_t otherBanks[] {0x44448,0x44468,HPDBank,0x44488};
     for(auto iir : otherBanks) {
-        const auto pending=io.read(iir+4)&~io.read(iir-4);
+        auto pending=io.read(iir+4)&~io.read(iir-4);
+        if(iir==HPDBank)pending&=~excludedHPD;
         if(pending)return fail(io,s,Status::ForeignIRQ,iir+4,pending);
     }
     const auto pchIER=io.read(0xC400C),pchIMR=io.read(0xC4004);
@@ -165,6 +178,13 @@ template<class IO> Status enable(IO &io,State &s,uint32_t excludedPCH=0,uint32_t
         io.write(0xC4004,pchIMR|excludedPCH);
         io.write(0xC400C,pchIER&~excludedPCH);
         if((io.read(0xC400C)&excludedPCH) || (~io.read(0xC4004)&excludedPCH))
+            return fail(io,s,Status::Readback);
+    }
+    if(excludedHPD) {
+        // Keep pending north status and every unrelated source intact.
+        io.write(HPDBank-4,io.read(HPDBank-4)|excludedHPD);
+        io.write(HPDBank+4,io.read(HPDBank+4)&~excludedHPD);
+        if((io.read(HPDBank+4)&excludedHPD) || (~io.read(HPDBank-4)&excludedHPD))
             return fail(io,s,Status::Readback);
     }
     s.excludedPCH=excludedPCH;

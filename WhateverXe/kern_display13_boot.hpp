@@ -1,29 +1,109 @@
-// Combo multi-GOP bootstrap: preserve pipe A, park other GOPs before native
+// Multi-GOP bootstrap: preserve pipe A, park other GOPs before native
 // ownership exists. This does not pretend both GOPs were adopted by the donor.
 #ifndef KERN_DISPLAY13_BOOT_HPP
 #define KERN_DISPLAY13_BOOT_HPP
 #include "kern_alderlake_n.hpp"
+#include "kern_xelp_gop_stop.hpp"
 #include "kern_display13_fb_irq.hpp"
 #include "kern_display13_fb_topology.hpp"
 #include "kern_xelp_memory_layout.hpp"
+#include "kern_display13_tc_clock.hpp"
 namespace Display13Boot {
-// Certificate for the existing linear TMDS boot path. Render qualification is
+// Certificate for the linear boot memory. Render qualification is
 // separate; callers must also qualify the physical owner, BAR and memory layout.
-// DP/other-pipe adoption requires a separate boot contract, not a wider default.
+// DP requires an explicit source certificate; native link adoption remains a
+// separate contract. Existing runtime callers retain their TMDS default.
 template<class IO> bool reservedPrefix(IO &io,const AlderLakeN::DisplayReadout &display,
-                                      bool bootstrapReady,unsigned ddi,const XELPMemory::Layout &memory) {
+                                      bool bootstrapReady,unsigned ddi,const XELPMemory::Layout &memory,
+                                      const Display13TC::Boot *tc=nullptr,
+                                      AlderLakeN::GOPProtocol protocol=AlderLakeN::GOPProtocol::TMDS) {
     AlderLakeN::LinearPlan plan;
-    if(!bootstrapReady || AlderLakeN::linearPlan(display,plan,ddi)!=AlderLakeN::LinearStatus::Ready ||
+    if(!bootstrapReady || AlderLakeN::linearPlan(display,plan,ddi,protocol,tc)!=AlderLakeN::LinearStatus::Ready ||
        plan.pipe!=0 || !memory.range(plan.surface,AlderLakeN::ScanoutBytes,true))return false;
+    const auto stable=[&] {
+        return AlderLakeN::bootGeometryUnchanged(io,display,plan.pipe) &&
+            (ddi<3 || (tc && tc->unchanged(io))) &&
+            (protocol!=AlderLakeN::GOPProtocol::DP || AlderLakeN::dpSourceUnchanged(io,display,plan.pipe,ddi,0,tc));
+    };
+    if(!stable())return false;
     for(unsigned i=0;i<memory.bytes/4096;++i)
         if(io.readPTE(0x800000+8*i)!=memory.pte(uint64_t(i)*4096))return false;
-    return true;
+    return stable();
+}
+// Establish the native linear-GGTT prerequisites only after the controller
+// startup contract is ready.
+// Ownership/power/link drift and the stolen prefix are checked before mutation.
+template<class IO> AlderLakeN::LinearResult prepareLinear(IO &io,const AlderLakeN::DisplayReadout &boot,
+    bool admitted,unsigned ddi,const XELPMemory::Layout &memory,const Display13TC::Boot *tc=nullptr,
+    AlderLakeN::GOPProtocol protocol=AlderLakeN::GOPProtocol::TMDS) {
+    using namespace AlderLakeN;
+    LinearResult r;
+    if(!admitted)return r;
+    if(!reservedPrefix(io,boot,true,ddi,memory,tc,protocol)){r.status=LinearStatus::StateChanged;return r;}
+    return reinitializeLinear(io,boot,true,ddi,protocol,tc);
 }
 enum class Status : uint32_t {Unavailable,Complete,Topology,Readback,Timeout,PeerChanged};
 struct Result {
     uint32_t version {1};Status status {Status::Unavailable};
     uint32_t stage {},writes {},before {},after {},lastReg {},expected {},observed {},framesBefore {},framesAfter {};
 };
+// Firmware can leave ownership on a selected fixed TC port that has no GOP.
+// Linux intel_tc_port_sanitize_mode disconnects unused PHYs. Here admit only
+// the already-cold case: disabled/idle buffer, stopped/gated PLL and clocks,
+// no transcoder route and no AUX command. Do not stop an unclassified link.
+struct UnusedTCResult {
+    uint32_t version {1};Status status {Status::Unavailable};
+    uint32_t cleared {},writes {},ddi {},buffer {},ready {},clock {},pll {},gate {};
+};
+template<class IO> UnusedTCResult releaseUnusedTC(IO &io,const AlderLakeN::DisplayReadout &boot,
+                                                bool admitted,const Display13HDMIWiring &w) {
+    UnusedTCResult r;
+    if(!admitted)return r;
+    r.status=Status::Topology;
+    if(boot.status!=AlderLakeN::ReadoutStatus::Complete || boot.activePipes!=1 ||
+       !(boot.poweredPipes&1) || !Display13FBTopology::multiOutputWiring(w))return r;
+    uint32_t power=0,auxPower=0;
+    if(!AlderLakeN::value(boot,0x45404,power) || (power&5)!=5 ||
+       !AlderLakeN::value(boot,0x45444,auxPower))return r;
+    const auto stable=[&] {
+        for(unsigned i=0;i<boot.count;++i) {
+            const auto x=boot.registers[i];
+            if(x.offset==0x4500C || x.offset==0x70040 || x.offset==0x71040 || x.offset==0x72040)continue;
+            if(io.read(x.offset)!=x.value)return false;
+        }
+        return true;
+    };
+    for(unsigned d=3;d<7;++d)if(w.selected()&(1U<<d)) {
+        bool routed=false;
+        for(unsigned p=0;p<3;++p)if(boot.poweredPipes&(1U<<p)) {
+            uint32_t trans=0,clock=0;
+            if(!AlderLakeN::value(boot,0x60400+0x1000*p,trans) ||
+               !AlderLakeN::value(boot,0x46140+4*p,clock))return r;
+            // A selector left on an inactive pipe is also a resource consumer.
+            if(((trans>>27)&15)==d+1 || (clock>>28)==d+3)routed=true;
+        }
+        if(routed)continue;
+        Display13TC::Port port;Display13TC::Port::resolve(d,port);
+        r.ddi=d;r.buffer=io.read(port.buffer);
+        if(r.buffer==UINT32_MAX){r.status=Status::Readback;return r;}
+        if(!(r.buffer&64))continue;
+        r.ready=io.read(port.ready);r.clock=io.read(port.clock);r.pll=io.read(port.pll);
+        r.gate=io.read(Display13TC::Clock::Gate);
+        const auto aux=0x64310+0x100*(d-3);
+        if((r.buffer&0x800000C0U)!=0xC0 || r.ready==UINT32_MAX || (r.ready&7)!=4 ||
+           r.clock==UINT32_MAX || (r.clock&0xF0000000U) || r.pll==UINT32_MAX || (r.pll&0xCC000000U) ||
+           r.gate==UINT32_MAX || !(r.gate&Display13TC::Clock::gateBit(d-3)) ||
+           ((auxPower&(1U<<(2*d))) && (!io.readable(aux) || (io.read(aux)&0x80000000U))))return r;
+        if(!stable() || io.read(port.buffer)!=r.buffer || io.read(port.ready)!=r.ready ||
+           io.read(port.clock)!=r.clock || io.read(port.pll)!=r.pll) {r.status=Status::PeerChanged;return r;}
+        io.write(port.buffer,r.buffer&~64U);++r.writes;
+        if(io.read(port.buffer)!=(r.buffer&~64U) || !stable() || io.read(port.clock)!=r.clock ||
+           io.read(port.pll)!=r.pll) {r.status=Status::Readback;return r;}
+        r.cleared|=1U<<d;
+    }
+    r.status=Status::Complete;return r;
+}
+
 template<class IO> Result normalize(IO &io,const AlderLakeN::DisplayReadout &boot,bool admitted,
                                     const Display13HDMIWiring &w,const XELPMemory::Layout &memory) {
     Result r;r.before=boot.activePipes;
@@ -33,6 +113,11 @@ template<class IO> Result normalize(IO &io,const AlderLakeN::DisplayReadout &boo
     if(!memory.valid || !Display13FBTopology::multiOutputWiring(w) || boot.status!=AlderLakeN::ReadoutStatus::Complete ||
        !(active&1) || active==1 || (active&~7U) || (active&~boot.poweredPipes))return r;
     uint32_t ports[3] {},clocks[3] {},transport[3] {},used=0,dpPipes=0;
+    Display13TC::Boot tc[3];
+    uint32_t power=0,ddiPower=0,auxPower=0,gate=0;
+    if(!AlderLakeN::value(boot,0x45404,power) || !AlderLakeN::value(boot,0x45454,ddiPower) ||
+       !AlderLakeN::value(boot,0x45444,auxPower) ||
+       !AlderLakeN::value(boot,Display13TC::Clock::Gate,gate))return r;
     // Every active firmware pipe must be a distinct selected linear GOP.
     // Pipe identity and physical DDI are independent. No foreign cursor/plane/DSB.
     for(unsigned p=0;p<3;++p)if(boot.poweredPipes&(1U<<p)) {
@@ -51,9 +136,19 @@ template<class IO> Result normalize(IO &io,const AlderLakeN::DisplayReadout &boo
         uint32_t ctl=0,trans=0,surface=0,live=0;
         if(!AlderLakeN::value(boot,0x70180+bank,ctl) || !AlderLakeN::value(boot,0x60400+bank,trans))return r;
         const auto port=Display13FBTopology::bootDDI(w,trans,true);
-        if(port>=3 || (used&(1U<<port)))return r;
-        if(((trans>>24)&7)==2) {
-            if(!AlderLakeN::dpSource(boot,p,port))return r;
+        if(port>=7 || (used&(1U<<port)))return r;
+        const bool dp=((trans>>24)&7)==2;
+        if(port>=3) {
+            tc[p]=Display13TC::Boot::capture(io,true,port,p,dp);
+            if(!tc[p].valid() || tc[p].power!=power || tc[p].ddiPower!=ddiPower)return r;
+            // A powered AUX controller must be idle before its PHY can be
+            // returned. An unpowered controller cannot have an active command.
+            const auto aux=0x64310+0x100*(port-3);
+            if((auxPower&(1U<<(2*port))) &&
+               (!io.readable(aux) || (io.read(aux)&0x80000000U)))return r;
+        }
+        if(dp) {
+            if(!AlderLakeN::dpSource(boot,p,port,port>=3?&tc[p]:nullptr))return r;
             dpPipes|=1U<<p;AlderLakeN::value(boot,0x60540+bank,transport[p]);
         }
         ports[p]=port;used|=1U<<port;
@@ -65,20 +160,26 @@ template<class IO> Result normalize(IO &io,const AlderLakeN::DisplayReadout &boo
            (conf&0xC0000000)!=0xC0000000 || !AlderLakeN::value(boot,0x7019C+bank,surface) ||
            (surface&4095) || !AlderLakeN::value(boot,0x701AC+bank,live) || live!=surface)return r;
         const auto geometry=XELPGeometry::linear(ctl,stride,size,position,offset);
-        if(!XELPGeometry::timing(geometry,ht,vt) || uint64_t(surface)+geometry.bytes>memory.usable())return r;
+        if(!AlderLakeN::bootGeometry(boot,p,geometry,ht,vt) || uint64_t(surface)+geometry.bytes>memory.usable())return r;
         const auto clock=0x46140+4*p,buf=0x64000+0x100*port;
         if(!io.readable(clock) || !io.readable(buf) || !(io.read(buf)&0x80000000) ||
            !io.readable(0x60404+bank) || io.read(0x60404+bank))return r;
         clocks[p]=io.read(clock);
-        if(clocks[p]==UINT32_MAX || (clocks[p]>>28)!=port+1)return r;
+        if(clocks[p]==UINT32_MAX || (clocks[p]>>28)!=port+(port>=3?3:1))return r;
     }
     for(unsigned i=0;i<boot.count;++i) {
         const auto pair=boot.registers[i];
         if(pair.offset==0x70040 || pair.offset==0x71040 || pair.offset==0x72040)continue;
         if(io.read(pair.offset)!=pair.value) {r.status=Status::Readback;return r;}
     }
-    uint32_t parked=0,current=0;
+    for(unsigned p=0;p<3;++p)if((active&(1U<<p)) && ports[p]>=3 && !tc[p].unchanged(io)) {
+        r.status=Status::Readback;return r;
+    }
+    uint32_t parked=0,current=0,stoppingTC=0;
     const auto peer=[&] {
+        // These are borrowed firmware requests. Keep them unchanged, including
+        // the stopped output's requests; native leases own subsequent changes.
+        if(io.read(0x45404)!=power || io.read(0x45454)!=ddiPower || io.read(0x45444)!=auxPower)return false;
         for(unsigned p=0;p<3;++p)if((active&(1U<<p)) && !(parked&(1U<<p)) && p!=current)
             if(io.read(0x46140+4*p)!=clocks[p])return false;
         for(unsigned i=0;i<boot.count;++i) {
@@ -90,26 +191,32 @@ template<class IO> Result normalize(IO &io,const AlderLakeN::DisplayReadout &boo
             for(unsigned p=1;p<3;++p)if((active&(1U<<p)) && (p==current || (parked&(1U<<p)))) {
                 const auto bank=0x1000*p;
                 if((reg>=0x60000+bank && reg<0x61000+bank) ||
-                   (reg>=0x70000+bank && reg<0x71000+bank) || reg==0x64000+0x100*ports[p] ||
+                   (reg>=0x70000+bank && reg<0x71000+bank) ||
+                   (reg>=0x68170+0x800*p && reg<=0x68280+0x800*p) || reg==0x64000+0x100*ports[p] ||
                    reg==0x46140+4*p)mutableReg=true;
             }
             if(reg==0x70040 || reg==0x71040 || reg==0x72040)continue;
-            if(!mutableReg && io.read(reg)!=pair.value) {
-                r.lastReg=reg;r.expected=pair.value;r.observed=io.read(reg);return false;
+            const auto expected=reg==Display13TC::Clock::Gate?gate:pair.value;
+            if(!mutableReg && io.read(reg)!=expected) {
+                r.lastReg=reg;r.expected=expected;r.observed=io.read(reg);return false;
             }
+        }
+        for(unsigned p=0;p<3;++p)if((active&(1U<<p)) && ports[p]>=3 && !(stoppingTC&(1U<<p))) {
+            if(p!=current) {if(!tc[p].unchanged(io))return false;}
+            else if(io.read(tc[p].port.ready)!=tc[p].ready || io.read(tc[p].port.clock)!=tc[p].clock ||
+                    io.read(tc[p].port.pll)!=tc[p].pll)return false;
         }
         return true;
     };
-    const auto write=[&](uint32_t reg,uint32_t value) {io.write(reg,value);++r.writes;io.read(reg);};
+    const auto write=[&](uint32_t reg,uint32_t value) {
+        io.write(reg,value);++r.writes;
+        if(reg==Display13TC::Clock::Gate)gate=value;
+        io.read(reg);return true;
+    };
     const auto wait=[&](uint32_t reg,uint32_t mask,uint32_t expected) {
         r.lastReg=reg;r.expected=expected;
-        for(unsigned n=0;n<1000;++n) {
-            r.observed=io.read(reg);
-            if(r.observed==UINT32_MAX || !peer()) {r.status=Status::PeerChanged;return false;}
-            if((r.observed&mask)==expected)return true;
-            io.delay();
-        }
-        r.status=Status::Timeout;return false;
+        return XELPGOP::poll(io,peer,[&](uint32_t v){return (v&mask)==expected;},
+            reg,r.observed,r.status,Status::PeerChanged);
     };
     for(unsigned p=1;p<3;++p)if(active&(1U<<p)) {
         current=p;const auto bank=p*0x1000,bufReg=0x64000+0x100*ports[p];
@@ -118,30 +225,82 @@ template<class IO> Result normalize(IO &io,const AlderLakeN::DisplayReadout &boo
         AlderLakeN::value(boot,0x70008+bank,conf);AlderLakeN::value(boot,0x60400+bank,trans);buf=io.read(bufReg);
         r.stage=1;r.framesBefore=io.read(0x70040+bank);
         write(0x70180+bank,plane&~0x80000000U);write(0x7019C+bank,surface);
-        for(unsigned n=0;n<1000;++n) {
-            r.framesAfter=io.read(0x70040+bank);
-            if(r.framesAfter==UINT32_MAX || !peer()) {r.status=Status::PeerChanged;return r;}
-            if(uint32_t(r.framesAfter-r.framesBefore)>=2 && uint32_t(r.framesAfter-r.framesBefore)<0x10000000)break;
-            if(n==999) {r.status=Status::Timeout;return r;}io.delay();
-        }
+        if(!XELPGOP::poll(io,peer,[&](uint32_t v){return uint32_t(v-r.framesBefore)>=2 && uint32_t(v-r.framesBefore)<0x10000000U;},
+            0x70040+bank,r.framesAfter,r.status,Status::PeerChanged,false))return r;
         if(!wait(0x70180+bank,0x80000000,0))return r;
         // Real frame latch, STOP_ACK and buffer idle precede DDB release.
-        // Shared PLL/PHY/PW and predecessor mapping remain held.
+        // Keep link resources until consumers stop. The TC PLL/ownership is
+        // then returned below; shared power and predecessor memory stay held.
         r.stage=2;write(0x70008+bank,conf&~0x80000000U);
         if(!wait(0x70008+bank,0xC0000000,0))return r;
+        // Detach only enabled scalers on the stopped secondary pipe. Keep the
+        // primary pipe's firmware scaling untouched until native ownership.
+        for(unsigned scaler=0;scaler<2;++scaler) {
+            const auto base=0x68170+0x800*p+0x100*scaler;
+            uint32_t ctl=0;
+            if(AlderLakeN::value(boot,base+0x10,ctl) && (ctl&0x80000000U)) {
+                write(base+0x10,0);write(base,0);write(base+4,0);
+                if(!wait(base+0x10,UINT32_MAX,0) || !wait(base,UINT32_MAX,0) || !wait(base+4,UINT32_MAX,0))return r;
+            }
+        }
         r.stage=3;write(0x60404+bank,0);write(0x60400+bank,trans&~(0x80000000U|(15U<<27)|(7U<<24)));
         if(!wait(0x60400+bank,0x80000000,0))return r;
-        r.stage=4;write(bufReg,buf&~0x80000000U);
-        // Display12/13 disable_ddi_buf: buffer off, transport off, then idle.
-        // Stop only this transcoder; preserve the adopted GOP's M/N and link.
-        if(dpPipes&(1U<<p)) {
-            write(0x60540+bank,transport[p]&~0x80000000U);
-            if(!wait(0x60540+bank,0x80000000U,0))return r;
-        }
-        if(!wait(bufReg,0x80000080,0x80))return r;
+        r.stage=4;
+        if(!XELPGOP::stopBuffer(write,wait,bank,bufReg,buf,transport[p],dpPipes&(1U<<p)))return r;
         r.stage=5;write(0x46140+4*p,clocks[p]&0x0FFFFFFF);
         if(!wait(0x46140+4*p,UINT32_MAX,clocks[p]&0x0FFFFFFF))return r;
         if(!Display13FBIRQ::consumersStopped(io,1U<<p)) {r.status=Status::Readback;return r;}
+        if(ports[p]>=3) {
+            // The live GOP certificate authorized this bootstrap transaction.
+            // Reuse the runtime ownership and PLL operations after consumers
+            // stop. Leaving the firmware ownership bit set would make the
+            // later native Mode::connect reject this now-cold connector.
+            stoppingTC|=1U<<p;
+            struct TCIO {
+                IO &io;const Display13TC::Boot &boot;Result &result;
+                decltype(peer) &peers;decltype(write) &store;
+                Display13TC::Ownership ownership {};
+                bool readable(uint32_t reg){return io.readable(reg);}
+                uint32_t read(uint32_t reg) {
+                    if(!peers()){result.status=Status::PeerChanged;return UINT32_MAX;}
+                    const auto v=io.read(reg);result.lastReg=reg;result.observed=v;return v;
+                }
+                void write(uint32_t reg,uint32_t value) {
+                    if(!peers()){result.status=Status::PeerChanged;return;}store(reg,value);
+                }
+                // Early bootstrap is serialized, before native clock clients
+                // and IRQ handlers exist. Preserve other ports' gate bits.
+                unsigned lock(){return 0;}void unlock(unsigned){}
+                void delayUs(unsigned us){io.delayUs(us);}
+                bool powerHeld(){return peers();}
+                bool powerHeld(uintptr_t owner,uintptr_t object,unsigned d) {
+                    return owner==reinterpret_cast<uintptr_t>(&io) && object==reinterpret_cast<uintptr_t>(&boot) &&
+                        d==boot.port.ddi && powerHeld();
+                }
+                bool quiescent(unsigned d) {
+                    const auto bank=boot.pipe*0x1000;
+                    return d==boot.port.ddi && !(read(0x70008+bank)&0xC0000000U) &&
+                        !(read(0x60400+bank)&0x80000000U) && !(read(0x60540+bank)&0x80000000U) &&
+                        !(read(0x46140+4*boot.pipe)&0xF0000000U) &&
+                        (read(boot.port.buffer)&0x80000080U)==0x80;
+                }
+                bool inheritedVerified(uintptr_t owner,uintptr_t object,unsigned d) {
+                    return powerHeld(owner,object,d) && quiescent(d);
+                }
+                bool owned(unsigned d){return d==boot.port.ddi && ownership.active;}
+                bool quiescent(uintptr_t owner,uintptr_t object,unsigned d) {
+                    return powerHeld(owner,object,d) && quiescent(d) &&
+                        !(read(boot.port.pll)&0xCC000000U) && !(read(boot.port.clock)&0xF0000000U) &&
+                        (read(Display13TC::Clock::Gate)&Display13TC::Clock::gateBit(boot.port.tc));
+                }
+            } access{io,tc[p],r,peer,write};
+            const auto owner=reinterpret_cast<uintptr_t>(&io),object=reinterpret_cast<uintptr_t>(&tc[p]);
+            if(access.ownership.acquire(access,owner,object,ports[p],true).status!=Display13TC::Status::Complete ||
+               !Display13TC::Clock::disable(access,tc[p].port) ||
+               access.ownership.release(access,owner,object,ports[p]).status!=Display13TC::Status::Complete) {
+                if(r.status!=Status::PeerChanged)r.status=Status::Readback;return r;
+            }
+        }
         r.stage=6;write(0x7027C+bank,0);write(0x7037C+bank,0);write(0x7017C+bank,0);
         if(!wait(0x7027C+bank,UINT32_MAX,0) || !wait(0x7037C+bank,UINT32_MAX,0) || !wait(0x7017C+bank,UINT32_MAX,0))return r;
         parked|=1U<<p;

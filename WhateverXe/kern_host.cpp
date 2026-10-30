@@ -76,7 +76,6 @@ void XeHost::processKernel(KernelPatcher &patcher) {
  }
  if(!active || resetFramebuffer==FB_DETECT){resetFramebuffer=FB_NONE;graphics.switchOff();}
  DeviceInfo::deleter(info);
-    nblu.processPatcher(patcher);
 }
 void XeHost::processKext(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
  if(!active)return;

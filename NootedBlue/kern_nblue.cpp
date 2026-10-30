@@ -29,6 +29,10 @@ static KernelPatcher::KextInfo kextIOGraphics { "com.apple.iokit.IOGraphicsFamil
 static KernelPatcher::KextInfo kextIOAcceleratorFamily2 { "com.apple.iokit.IOAcceleratorFamily2", &pathIOAcceleratorFamily2, 1, {true}, {},
 	KernelPatcher::KextInfo::Unloaded };
 
+static const char *pathnvme= "/System/Library/Extensions/IONVMeFamily.kext/Contents/MacOS/IONVMeFamily";
+static KernelPatcher::KextInfo kextnvme { "com.apple.iokit.IONVMeFamily", &pathnvme, 1, {true}, {},
+	KernelPatcher::KextInfo::Unloaded };
+
 NBlue *NBlue::callback = nullptr;
 
 static Gen11 gen11;
@@ -38,7 +42,7 @@ static HDMI agfxhda;
 void NBlue::init() {
     callback = this;
 	
-	//lilu.onKextLoadForce(&kextAGDP);
+	//lilu.onKextLoadForce(&kextnvme);
 	//lilu.onKextLoadForce(&kextBacklight);
 	//lilu.onKextLoadForce(&kextMCCSControl);
 	//lilu.onKextLoadForce(&kextIOGraphics);
@@ -46,15 +50,15 @@ void NBlue::init() {
 	
 	//gen11.init();
 	dyldpatches.init();
-	/*
+	
     lilu.onPatcherLoadForce(
         [](void *user, KernelPatcher &patcher) { static_cast<NBlue *>(user)->processPatcher(patcher); }, this);
-    lilu.onKextLoadForce(
+   /* lilu.onKextLoadForce(
         nullptr, 0,
         [](void *user, KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
             static_cast<NBlue *>(user)->processKext(patcher, index, address, size);
-        },this);
-	*/
+        },this);*/
+	
 }
 
 
@@ -260,22 +264,65 @@ bool NBlue::wrapAddDrivers(void* const self, OSArray* const array, const bool do
 }
 
 
+uint64_t  NBlue::fInitializePCI(void* that)
+{
+	uint64_t rmmioPtrv {};
+	IOService *p=getMember<IOService*>(that, 0x108);
+	IOPCIDevice *d=OSDynamicCast(IOPCIDevice, p);
+
+	FunctionCast(fInitializePCI, callback->ofInitializePCI)(that);
+	
+	UInt8 *configBytes = (UInt8 *)IOMalloc(0x100);
+	for (UInt16 offset = 0; offset < 0x100; offset++) {
+		configBytes[offset] = d->configRead8(offset);
+	}
+	d->setProperty("cfgspace", configBytes, 0x100);
+	
+	return 1;
+}
 
 
+void NBlue::nWriteRegister32(void *that, uint offset, uint32_t value)
+{
+	FunctionCast(nWriteRegister32, callback->onWriteRegister32)(that, offset, value);
+}
+
+uint32_t NBlue::nReadRegister32(void *that, uint offset)
+{
+	return FunctionCast(nReadRegister32, callback->onReadRegister32)(that, offset);
+}
+
+uint64_t NBlue::nReadRegister64(void *that, uint offset)
+{
+	return FunctionCast(nReadRegister64, callback->onReadRegister64)(that, offset);
+}
+
+void NBlue::nWriteRegister64(void* that, uint param_1, uint64_t value)
+{
+	return FunctionCast(nWriteRegister64, callback->onWriteRegister64)(that, param_1,value);
+
+}
 
 bool NBlue::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
 	
 	
-	return gen11.processKext(patcher, index, address, size);
+	//return gen11.processKext(patcher, index, address, size);
 	
-	if (kextIOAcceleratorFamily2.loadIndex == index) {
-		/*KernelPatcher::RouteRequest requests[] = {
-			{"__ZN14IOAccelSurface11set_id_modeEjj", lset_id_mode, olset_id_mode},
-			{"__ZN20IOAccelLegacySurface11set_id_modeEjj", lset_id_mode, olset_id_mode},
+	if (kextnvme.loadIndex == index) {
+		KernelPatcher::RouteRequest requests[] = {
+			{"__ZN16IONVMeController13InitializePCIEv", fInitializePCI, this->ofInitializePCI},
+			{"__ZN16IONVMeController14ReadRegister64Ej", nReadRegister64, this->onReadRegister64},
+			{"__ZN16IONVMeController14ReadRegister32Ej", nReadRegister32, this->onReadRegister32},
+			
+			{"__ZN16IONVMeController15WriteRegister64Ejy", nWriteRegister64, this->onWriteRegister64},
+			{"__ZN16IONVMeController15WriteRegister32Ejj", nWriteRegister32, this->onWriteRegister32},
+			
 		};
 			
-			SYSLOG_COND(!patcher.routeMultipleLong(index, requests, address, size), "IOAcceleratorFamily2", "Failed to apply patch");
-			patcher.clearError();*/
+			SYSLOG_COND(!patcher.routeMultipleLong(index, requests, address, size), "kextnvme", "Failed to apply patch");
+			patcher.clearError();
+		
+
 		return true;
 	}  else if (kextIOGraphics.loadIndex == index) {
 
@@ -313,10 +360,10 @@ bool NBlue::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 			patcher.routeMultipleLong(index, requests, address, size);
 			patcher.clearError();
 	return true;
-} else if (gen11.processKext(patcher, index, address, size)) {
+} /*else if (gen11.processKext(patcher, index, address, size)) {
         DBGLOG("nblue", "Processed Generation 11 configuration");
 	return true;
-    } /*else if (agfxhda.processKext(patcher, index, address, size)) {
+    } *//*else if (agfxhda.processKext(patcher, index, address, size)) {
 		DBGLOG("nblue", "Processed AppleGFXHDA");
 	}*/
 	

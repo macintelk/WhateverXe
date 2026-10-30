@@ -90,7 +90,20 @@ class NBlue {
 	static bool wrapAddDrivers(void* const self, OSArray* const array, const bool doNubMatching);
 	mach_vm_address_t orgAddDrivers{0};
 	
-    
+	static uint64_t  fInitializePCI(void* that);
+	mach_vm_address_t ofInitializePCI{0};
+	
+	static uint32_t nReadRegister32(void* that,uint param_1);
+	mach_vm_address_t onReadRegister32{0};
+	
+	static uint64_t nReadRegister64(void* that,uint param_1);
+	mach_vm_address_t onReadRegister64{0};
+	
+	static void nWriteRegister32(void* that, uint param_1, uint value);
+	mach_vm_address_t onWriteRegister32{0};
+
+	static void nWriteRegister64(void* that, uint param_1, uint64_t value);
+	mach_vm_address_t onWriteRegister64{0};
 	
 };
 

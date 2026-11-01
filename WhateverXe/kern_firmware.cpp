@@ -3,8 +3,8 @@
 #include <IOKit/IOMemoryDescriptor.h>
 
 static void publishBytes(IOPCIDevice *pci,const char *key,const void *bytes,unsigned length) {
-    auto data=OSData::withBytes(bytes,length);
-    if(data){pci->setProperty(key,data);data->release();}
+   // auto data=OSData::withBytes(bytes,length);
+    //if(data){pci->setProperty(key,data);data->release();}
 }
 
 // Firmware is read once, before topology/hook selection. No PCI BAR/ROM scan,
@@ -22,7 +22,7 @@ void XE::xelpReadFirmware(IOPCIDevice *pci) {
             const auto region=XELP::VBT::region(bytes,8192,asls);
             if(region.valid) {
                 // Preserve existing diagnostics for collectors.
-                pci->setProperty("TGLASLS",asls,32);
+               // pci->setProperty("TGLASLS",asls,32);
                 publishBytes(pci,"TGLOpRegion",bytes,8192);
                 if(region.address) {
                     auto vbtMemory=IOMemoryDescriptor::withPhysicalAddress(region.address,region.bytes,kIODirectionIn);
@@ -51,10 +51,10 @@ void XE::xelpReadFirmware(IOPCIDevice *pci) {
     uint32_t summary[]={1,static_cast<uint32_t>(firmwarePorts.status),source,firmwarePorts.version,
         firmwarePorts.present,firmwarePorts.unmapped,firmwarePorts.ambiguous,hdmi.valid,hdmi.hdmi,
         hdmi.ddc[0],hdmi.ddc[1],hdmi.ddc[2]};
-    pci->setProperty("WhateverXeFirmwarePorts",summary,sizeof(summary));
-    pci->setProperty("WhateverXeFirmwareChecksum",firmwarePorts.checksum,32);
-    pci->setProperty("WhateverXeFirmwarePortRecords",firmwarePorts.port,sizeof(firmwarePorts.port));
+  //  pci->setProperty("WhateverXeFirmwarePorts",summary,sizeof(summary));
+  //  pci->setProperty("WhateverXeFirmwareChecksum",firmwarePorts.checksum,32);
+   // pci->setProperty("WhateverXeFirmwarePortRecords",firmwarePorts.port,sizeof(firmwarePorts.port));
     const auto &panel=firmwarePorts.panel;
     uint32_t panelFacts[]={panel.valid,panel.type,panel.ddi,panel.lowSwing,panel.hobl};
-    pci->setProperty("WhateverXeFirmwarePanel",panelFacts,sizeof(panelFacts));
+   // pci->setProperty("WhateverXeFirmwarePanel",panelFacts,sizeof(panelFacts));
 }

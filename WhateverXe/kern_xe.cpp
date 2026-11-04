@@ -4374,6 +4374,20 @@ void XE::processKernel(KernelPatcher &patcher, DeviceInfo *info) {
 }
 
 bool XE::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
+	
+	
+	if (index==kextIntelTGLFb.loadIndex){
+		tglInstallSonomaSurfaceABI(patcher,index,address,size,true);
+		NBlue::callback->framel=&kextIntelTGLFb;
+		return NBlue::callback->processKext(patcher,  index,  address,  size);
+	}
+	
+	if (index==kextIntelTGL.loadIndex){
+		return processTGLAccelerator(patcher, index, address, size);
+	}
+	
+	
+	
     // No full donor patch set or native display/GT dispatcher in this stage.
     if(adlpLoadOnly) {
         if(index==kextIntelTGL.loadIndex || index==kextIntelTGLFb.loadIndex)

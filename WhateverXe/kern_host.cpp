@@ -6,7 +6,6 @@
 #include <Headers/kern_api.hpp>
 #include <Headers/kern_iokit.hpp>
 #include <IOKit/pci/IOPCIDevice.h>
-#include "kern_nblue.hpp"
 
 XeHost *XeHost::callbackHost;
 
@@ -74,6 +73,7 @@ void XeHost::processKernel(KernelPatcher &patcher) {
    if(v){consoleVinfo=*v;gotConsoleVinfo=true;}else patcher.clearError();
   }
  }
+	nblu.iGPU=gpu;
  if(!active || resetFramebuffer==FB_DETECT){resetFramebuffer=FB_NONE;graphics.switchOff();}
  DeviceInfo::deleter(info);
 }

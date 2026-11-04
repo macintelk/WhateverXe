@@ -44,7 +44,7 @@ void NBlue::init() {
 	//lilu.onKextLoadForce(&kextIOGraphics);
 	//lilu.onKextLoadForce(&kextIOAcceleratorFamily2);
 	
-	//gen11.init();
+	gen11.init();
 	dyldpatches.init();
 	
     lilu.onPatcherLoadForce(
@@ -263,7 +263,7 @@ bool NBlue::wrapAddDrivers(void* const self, OSArray* const array, const bool do
 bool NBlue::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
 	
 	
-	//return gen11.processKext(patcher, index, address, size);
+	return gen11.processKext(patcher, index, address, size);
 	
 	if (kextIOGraphics.loadIndex == index) {
 

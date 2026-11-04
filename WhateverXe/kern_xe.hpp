@@ -30,6 +30,7 @@
 #include <Headers/kern_disasm.hpp>
 #include <IOKit/IOService.h>
 #include <IOKit/IOLocks.h>
+#include "kern_nblue.hpp"
 
 class IOPCIDevice;
 class IOInterruptEventSource;

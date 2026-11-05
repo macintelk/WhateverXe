@@ -1,10 +1,11 @@
 #include "kern_xe.hpp"
+#include "kern_dsi_math.hpp"
 #include <IOKit/pci/IOPCIDevice.h>
 #include <IOKit/IOMemoryDescriptor.h>
 
 static void publishBytes(IOPCIDevice *pci,const char *key,const void *bytes,unsigned length) {
-   // auto data=OSData::withBytes(bytes,length);
-    //if(data){pci->setProperty(key,data);data->release();}
+    auto data=OSData::withBytes(bytes,length);
+    if(data){pci->setProperty(key,data);data->release();}
 }
 
 // Firmware is read once, before topology/hook selection. No PCI BAR/ROM scan,
@@ -22,7 +23,7 @@ void XE::xelpReadFirmware(IOPCIDevice *pci) {
             const auto region=XELP::VBT::region(bytes,8192,asls);
             if(region.valid) {
                 // Preserve existing diagnostics for collectors.
-               // pci->setProperty("TGLASLS",asls,32);
+                pci->setProperty("TGLASLS",asls,32);
                 publishBytes(pci,"TGLOpRegion",bytes,8192);
                 if(region.address) {
                     auto vbtMemory=IOMemoryDescriptor::withPhysicalAddress(region.address,region.bytes,kIODirectionIn);
@@ -51,10 +52,28 @@ void XE::xelpReadFirmware(IOPCIDevice *pci) {
     uint32_t summary[]={1,static_cast<uint32_t>(firmwarePorts.status),source,firmwarePorts.version,
         firmwarePorts.present,firmwarePorts.unmapped,firmwarePorts.ambiguous,hdmi.valid,hdmi.hdmi,
         hdmi.ddc[0],hdmi.ddc[1],hdmi.ddc[2]};
-  //  pci->setProperty("WhateverXeFirmwarePorts",summary,sizeof(summary));
-  //  pci->setProperty("WhateverXeFirmwareChecksum",firmwarePorts.checksum,32);
-   // pci->setProperty("WhateverXeFirmwarePortRecords",firmwarePorts.port,sizeof(firmwarePorts.port));
+    pci->setProperty("WhateverXeFirmwarePorts",summary,sizeof(summary));
+    pci->setProperty("WhateverXeFirmwareChecksum",firmwarePorts.checksum,32);
+    pci->setProperty("WhateverXeFirmwarePortRecords",firmwarePorts.port,sizeof(firmwarePorts.port));
     const auto &panel=firmwarePorts.panel;
     uint32_t panelFacts[]={panel.valid,panel.type,panel.ddi,panel.lowSwing,panel.hobl};
-   // pci->setProperty("WhateverXeFirmwarePanel",panelFacts,sizeof(panelFacts));
+    pci->setProperty("WhateverXeFirmwarePanel",panelFacts,sizeof(panelFacts));
+    if(checkKernelArgument("-wex-dsi-audit")) {
+        // Synchronous audit of the existing copied firmware property. Never
+        // retain borrowed sequence pointers, acquire power, or authorize IO.
+        const auto vbt=OSDynamicCast(OSData,pci->getProperty("TGLVBT"));
+        const auto profile=XELP::DSI::parseProfile({vbt?static_cast<const uint8_t *>(vbt->getBytesNoCopy()):nullptr,
+            vbt?vbt->getLength():0U},true);
+        const auto link=XELP::DSI::linkPlan(profile);
+        uint32_t audit[]={1,static_cast<uint32_t>(profile.status),profile.bdbTailQuirk,
+            profile.version,profile.checksum,profile.panel,profile.lanes,
+            profile.mode.width,profile.mode.height,profile.mode.clockKHz,profile.mode.htotal(),profile.mode.vtotal(),
+            profile.pwmHz,profile.minimum,profile.brightness,profile.precision,
+            profile.sequences.packets,profile.sequences.delays,profile.sequences.gpios,
+            uint32_t(profile.sequences.delayUs),uint32_t(profile.sequences.delayUs>>32),
+            profile.ppsUs[0],profile.ppsUs[1],profile.ppsUs[2],profile.ppsUs[3],profile.ppsUs[4],
+            link.valid,link.afeKHz,link.portKHz,link.escapeDivider,link.phyEscapeDivider,
+            link.clockTiming,link.dataTiming};
+        publishBytes(pci,"WEXDSIFirmwareAudit",audit,sizeof(audit));
+    }
 }

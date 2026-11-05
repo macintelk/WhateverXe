@@ -13,7 +13,8 @@ struct PanelPower {
   const auto &p=v.panel;
   const auto adapter=displayAdapter(family);
   const bool backend=(adapter==DisplayAdapter::TGL && p.ddi<2) ||
-                     (adapter==DisplayAdapter::ADLS && p.ddi==0);
+                     (adapter==DisplayAdapter::ADLS && p.ddi==0) ||
+                     ((adapter==DisplayAdapter::ADLP || adapter==DisplayAdapter::ADLN) && p.ddi<2);
   if(!backend || !v.valid() || v.unmapped || !p.valid ||
      !p.backlightValid || !p.pwmPresent || p.backlightType!=2 || p.controller)return false;
   const auto &port=v.port[p.ddi];const auto aux=p.ddi?0x10U:0x40U;

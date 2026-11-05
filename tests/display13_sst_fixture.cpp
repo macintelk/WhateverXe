@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 #include "kern_display13_power_bridge.hpp"
 #include "kern_tgl_combo_signal.hpp"
+#include "kern_vbt.hpp"
 #include "kern_xelp_sst_program.hpp"
 // NATIVE_OBJECTS
 std::map<void *,unsigned> objectRefs;
@@ -33,7 +34,7 @@ struct Map {
 struct Context {
  Display13Power::NativeBridge bridge;void *lock=reinterpret_cast<void *>(1),*controller=nullptr,*access=nullptr;
  Display13Power::MainLinkAUX mainLink[2];alignas(void *) uint8_t powerBytes[0x80]{};void *power=powerBytes;
- Map *map=nullptr;bool clockFaulted=false,memoryFaulted=false,clockStopped=false;
+ Map *map=nullptr;bool panelFaulted=false,clockFaulted=false,memoryFaulted=false,clockStopped=false;
 }display13FBPower;
 struct Display13FBPowerIO {
  Map *map;bool tcAuxSupported(){return true;}bool prepareTCAux(unsigned tc){return tc<4;}bool tcAuxHealthy(unsigned tc){return tc<4;}
@@ -43,11 +44,12 @@ struct Display13FBPowerIO {
 // TC lifecycle itself is exercised by display13_tc_mode. This fixture
 // supplies the ownership witness and verifies the frontend does not borrow
 // Combo leases; false is the default for all existing Combo regressions.
-bool tcOwned=false,tcLinked=false;
+bool tcOwned=false,tcLinked=false,tcConnected=true;
 struct Display13FBTCIO {
  OSObject *object;unsigned tc;
- bool owned(unsigned d){return tcOwned && tc<4 && d==tc+3 && Display13FBMemory::field<unsigned>(object,0x550)==4;}
- bool linkHeld(){return tcLinked && owned(tc+3);}
+ bool retainedOwned(unsigned d){return tcOwned && tc<4 && d==tc+3 && (Display13FBMemory::field<unsigned>(object,0x550)==4 || Display13FBMemory::field<unsigned>(object,0x550)==3);}
+ bool owned(unsigned d){return tcConnected && retainedOwned(d);}
+ bool linkHeld(){return tcLinked && retainedOwned(tc+3);}
 };
 struct Display13FBSSTIO {
  Map *map;uint32_t read(uint32_t r){assert(locked);return map->read(r);}
@@ -56,6 +58,7 @@ struct Display13FBSSTIO {
 bool adlnWriterMappingBound(){return bound;}
 uintptr_t display13FBExpectedOwner(void*){return 0;}
 struct XE {
+ XELP::VBT::Ports firmwarePorts;bool tglSinkFramingReady=true;
  bool display13ClockOrderReady=false;
  static bool display13StopTranscoder(void*){assert(false);return false;}
  static bool display13TrainingPath(void*,uint32_t&,uint32_t&){return false;}
@@ -63,13 +66,14 @@ struct XE {
  Display13OutputWiring adlnOutputWiring;void *adlnPlatform=nullptr,*adlnTopologyController=nullptr;
  uintptr_t orgDisplay13TrainingPattern=0,orgDisplay13SignalLevels=0;
  uintptr_t orgDisplay13EnablePort=0,orgDisplay13DisablePort=0;
- static bool display13MainLinkAUX(void*,bool);
+ static bool display13MainLinkAUX(void*,bool,bool=false);
  static uint32_t wrapDisplay13EnablePort(void*);static uint32_t wrapDisplay13DisablePort(void*);
  static uint8_t *display13SSTPort(void*);static bool display13HDMIPort(void*);
  static uint32_t wrapDisplay13TCSignal(void*,uint32_t,uint32_t,void*){assert(false);return 1;}
  static uint32_t wrapDisplay13SignalLevels(void*,uint32_t,uint32_t,void*);
  static uint32_t wrapDisplay13TrainingPattern(void*,uint32_t);
 }state,*callbackXE=&state;
+uintptr_t dsiLogicalSurface(const void*){return 0;}
 // BINDING
 // FUNCTIONS
 unsigned nativeSignal(void*,unsigned,unsigned,void*){assert(!locked);++calls;return nativeResult;}
@@ -115,15 +119,16 @@ unsigned nativePattern(void *path,unsigned pattern){
  if(loseAfterNative)display13FBPower.map->regs[0x45454]=0;
  return nativeResult;
 }
-void setup(Fixture &f,Map &map,unsigned ddi,unsigned pipe,unsigned lanes,unsigned rate){
+void setup(Fixture &f,Map &map,unsigned ddi,unsigned pipe,unsigned lanes,unsigned rate,bool panel=false){
  display13FBPower.~Context();new(&display13FBPower)Context;state={};calls=nativeResult=0;bound=true;loseAfterNative=false;
- tcOwned=tcLinked=false;assert(objectRefs.empty());linkCalls=linkResult=0;changeBuffer=bufferIdle=true;loseLinkPower=false;
+ tcOwned=tcLinked=false;tcConnected=true;assert(objectRefs.empty());linkCalls=linkResult=0;changeBuffer=bufferIdle=true;loseLinkPower=false;
  auto &c=display13FBPower;c.controller=f.ctl;c.access=f.access;c.map=&map;
  currentPath=f.path;
  put(f.ctl,0xC8,c.power);put(c.power,0x10,static_cast<void *>(f.ctl));put(c.power,0x78,static_cast<void *>(f.access));
  const unsigned peer=ddi>=3?0:1-ddi;
  f.wiring.hdmi=1U<<peer;f.wiring.dp=1U<<ddi;for(unsigned d=0;d<3;++d)f.wiring.ddc[d]=(f.wiring.hdmi&(1U<<d))?d+1:0;
  if(ddi>=3){put(f.donor,0x20+24*ddi+4,ddi+6);put(f.donor,0x20+24*ddi+12,1U);}
+ if(panel){f.wiring.panel=1U<<ddi;f.wiring.dp=0;}
  assert(Display13FBTopology::apply(f.platform,sizeof(f.platform),f.donor,f.wiring));
  state.adlnOutputWiring=f.wiring;state.adlnPlatform=f.platform;state.adlnTopologyController=f.ctl;state.xeProfile.display=XELP::Display::XeLPD;
  state.orgDisplay13TrainingPattern=reinterpret_cast<uintptr_t>(nativePattern);state.orgDisplay13SignalLevels=reinterpret_cast<uintptr_t>(nativeSignal);
@@ -162,6 +167,24 @@ int main(int argc,char **argv){
   jump(image+0x5E344,reinterpret_cast<uintptr_t>(nativeRead));jump(image+0x91BCA,reinterpret_cast<uintptr_t>(firstPath));
   for(unsigned at:{0x5FA33U,0x5FAC4U,0x5FBEBU,0x5FC4EU})redirect(image,at,0x300000,reinterpret_cast<uintptr_t>(nativeLog));
   for(unsigned at:{0x5FBCBU,0x5FC99U})redirect(image,at,0x300020,reinterpret_cast<uintptr_t>(nativeDelay));
+ }
+ // eDP uses the same real path/power graph with a native internal connector.
+ // Replay native training patterns for all pipe/DDI/lane/polarity combinations.
+ for(unsigned ddi=0;ddi<2;++ddi)for(unsigned pipe=0;pipe<3;++pipe)
+ for(unsigned lanes:{1U,2U,4U})for(unsigned rate:{6U,10U,20U,30U})
+ for(bool low:{false,true})for(unsigned sr=0;sr<2;++sr) {
+  Fixture f(0,pipe,ddi);Map map;setup(f,map,ddi,pipe,lanes,rate,true);
+  state.firmwarePorts.panel.lowSwing=low;f.port[0x118]=sr;
+  assert(!XE::wrapDisplay13SignalLevels(f.port,0,0,nullptr));
+  XELP::ComboPolicy expected;assert(expected.select(XELP::ComboPolicy::Platform::ADLP,rate,true,low,false,0,0));
+  assert(((map.regs[map.base+0x89c]>>24)&0x7f)==expected.coefficients.scalar);
+  for(unsigned enhanced=0;enhanced<2;++enhanced)for(unsigned pattern=0;pattern<6;++pattern) {
+   const uint32_t patterns[]={0x200,0,0x100,0x400,0x500,0x300};
+   f.port[0x11A]=enhanced;assert(!XE::wrapDisplay13TrainingPattern(f.path,pattern));
+   assert(map.regs[0x60540+0x1000*pipe]==(0x80000000|patterns[pattern]|(enhanced<<18)|(sr<<6)));
+  }
+  assert(!XE::wrapDisplay13EnablePort(f.port));assert(!XE::wrapDisplay13DisablePort(f.port));assert(objectRefs.empty());
+  display13FBPower.panelFaulted=true;assert(!XE::display13SSTPort(f.port));
  }
  unsigned count=0,replays=0;
  for(unsigned ddi=0;ddi<2;++ddi)for(unsigned pipe=0;pipe<3;++pipe)for(unsigned lanes:{1U,2U,4U})
@@ -212,8 +235,9 @@ int main(int argc,char **argv){
  // TC SST frontend: real graph/bridge and native pattern replay. The
  // separate lifecycle suite proves the ownership witness supplied here.
  for(unsigned ddi=3;ddi<=6;++ddi)for(unsigned pipe=0;pipe<3;++pipe)
- for(unsigned lanes:{1U,2U,4U})for(unsigned rate:{6U,10U,20U,30U}){
+ for(unsigned lanes:{1U,2U,4U})for(unsigned rate:{6U,10U,20U,30U})for(bool alt:{false,true}){
   Fixture f(2-pipe,pipe,ddi);Map map;setup(f,map,ddi,pipe,lanes,rate);
+  if(alt){state.adlnOutputWiring.typeC=1U<<ddi;put(f.port,0x550,3U);}
   Display13FBPowerIO power{&map};auto &bridge=display13FBPower.bridge;
   Display13Power::Lease modeAUX;
   assert(Display13Power::acquire(power,bridge.state,modeAUX,Display13Power::auxDomain(ddi)).status==Display13Power::Status::Complete);
@@ -224,6 +248,8 @@ int main(int argc,char **argv){
   assert(map.regs[0x60400+0x1000*pipe]==(((ddi+1)<<27)|0x02000000|((lanes-1)<<1)));
   assert(!XE::wrapDisplay13EnablePort(f.port));
   assert(!XE::wrapDisplay13TrainingPattern(f.path,0));
+  tcConnected=false; // HPD/assignment disappeared before native disable.
+  assert(XE::wrapDisplay13EnablePort(f.port)==kIOReturnNotReady);
   assert(!XE::wrapDisplay13DisablePort(f.port));
   assert(objectRefs.empty() && Display13Power::held(power,bridge.state,Display13Power::auxDomain(ddi)));
   assert(!bridge.nativeAUXRefs(ddi));

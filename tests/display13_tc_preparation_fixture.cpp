@@ -30,6 +30,7 @@ struct MMIO {
  }
 };
 struct Context {
+ AlderLakeN::DisplayReadout displayScratch;
  Display13Power::NativeBridge bridge;Display13TC::Mode tcMode[4];
  bool tcSupported=true,tcBankFaulted=false,clockFaulted=false;unsigned tcBusy[4]{};OSObject*tcObject[4]{};
  void *lock=(void*)1,*controller=(void*)2,*access=(void*)3;MMIO*map=nullptr;
@@ -45,6 +46,7 @@ struct Display13FBTCIO:Display13FBPowerIO {
  bool tcAuxSupported(){return true;}bool prepareTCAux(unsigned t){return t==tc && accessHeld() && (read(0x64300+256*t)&64);}
  bool tcAuxHealthy(unsigned){return true;}
  bool quiescent(unsigned d){return !(read(0x64000+256*d)&0x80000000);}
+ // MODE_QUIESCENCE
 };
 struct XE {
  bool display13FramebufferRequested=true,display13FBTCHooksReady=true;XELP::Profile xeProfile;
@@ -54,15 +56,25 @@ struct XE {
  static XELP::LinkRequirements framebufferLinkRequirements(void*,uint32_t);
  static unsigned display13TCTarget(OSObject*,bool=false);
  static uint32_t wrapDisplay13TCMode(OSObject*,uint32_t);
+ static uint32_t setDSIPortMode(OSObject*,uint32_t){assert(false && "TC must not enter DSI");return kIOReturnNotReady;}
 } instance,*callbackXE=&instance;
 // FUNCTIONS
 alignas(8) uint8_t portBytes[0x700];
 template<class T>void put(unsigned o,T v){memcpy(portBytes+o,&v,sizeof(v));}
 unsigned nativeCalls=0;
-unsigned base(OSObject*p,unsigned mode){assert(!locked);++nativeCalls;memcpy(reinterpret_cast<uint8_t*>(p)+0x550,&mode,4);return 0;}
+unsigned base(OSObject*p,unsigned mode){
+ assert(!locked);++nativeCalls;
+ // Model native reentry borrowing the owner's scratch after Mode drops its
+ // lock. No reference to the old snapshot may be consumed after this call.
+ IOLockLock(display13FBPower.lock);
+ memset(&display13FBPower.displayScratch,0xa5,sizeof(display13FBPower.displayScratch));
+ IOLockUnlock(display13FBPower.lock);
+ memcpy(reinterpret_cast<uint8_t*>(p)+0x550,&mode,4);return 0;
+}
 int main(){
  unsigned cases=0;
- for(unsigned ddi=3;ddi<=6;++ddi)for(bool dp:{false,true})for(unsigned fault=0;fault<6;++fault){
+ for(unsigned ddi=3;ddi<=6;++ddi)for(unsigned protocol=0;protocol<3;++protocol)for(unsigned fault=0;fault<6;++fault){
+  const bool dp=protocol!=0,alt=protocol==2;if(alt && fault==1)continue;
   display13FBPower.~Context();new(&display13FBPower)Context;auto &c=display13FBPower;
   instance=XE{};instance.xeProfile=XELP::identify(0x46a68086,3);instance.display13TCBaseMode=(uintptr_t)base;
   MMIO map;c.map=&map;map.regs[0x42000]=0x8e380000;
@@ -71,6 +83,10 @@ int main(){
   Display13FBPowerIO power{&map};assert(Display13Power::initialize(power,c.bridge.state,Display13Power::nativeDomains(0x7b)));
   c.bridge.begun=true;c.bridge.selectedPorts=0x78;c.bridge.bootPort=ddi;
   auto &w=instance.adlnOutputWiring;w.valid=true;if(dp)w.dp=1u<<ddi;else{w.hdmi=1u<<ddi;w.ddc[ddi]=ddi+6;}
+  if(alt){w.typeC=w.dp;map.regs[0x161500+4*(ddi-3)]=0x1d;
+   map.regs[0xc4000]=0;map.regs[0x44470]=1U<<(16+ddi-3);
+   Display13TC::Port phy;Display13TC::Port::resolve(ddi,phy);
+   map.regs[phy.laneAssignment()]=3U<<(8*(phy.tc&1));map.regs[phy.pinAssignment()]=4U<<(4*(phy.tc&1));}
   auto cfg=reinterpret_cast<unsigned*>(reinterpret_cast<uint8_t*>(instance.adlnPlatform)+0x20+24*ddi);
   unsigned values[]={ddi,ddi+6,dp?1u:2u,1u,dp?0x400u:0x800u,dp?0x201u:0x202u};memcpy(cfg,values,24);
   memset(portBytes,0,sizeof(portBytes));auto p=new(portBytes)OSObject;
@@ -87,7 +103,7 @@ int main(){
   if(fault==3)instance.display13FBTCHooksReady=false;
   if(fault==4)map.failOwner=true;
   if(fault==5)cfg[4]=1;
-  const auto before=map.regs;auto result=XE::wrapDisplay13TCMode(p,4);
+  const auto before=map.regs;auto result=XE::wrapDisplay13TCMode(p,alt?3:4);
   if((result==0)!=(fault<=1))fprintf(stderr,"case ddi=%u dp=%u fault=%u phase=%u buffer=%x power=%x aux=%x\n",ddi,dp,fault,unsigned(c.tcMode[ddi-3].phase),map.regs[0x64000+256*ddi],map.regs[0x45404],map.regs[0x45444]);
   assert((result==0)==(fault<=1));assert(nativeCalls==(fault<=1?1u:0u));
   if(result==0){assert(c.tcMode[ddi-3].ownership.active && c.tcMode[ddi-3].auxLease.owner);if(fault==1)assert(map.regs[0x64000+256*ddi]==before.at(0x64000+256*ddi));}

@@ -5,7 +5,7 @@ import re,subprocess,tempfile
 r=Path(__file__).resolve().parents[1]
 s=(r/'WhateverXe/kern_xe.cpp').read_text()
 a=s.index('\t// Display dispatch is independent')
-b=s.index('\nstatic bool adlnWriterMappingBound();',a)
+b=s.index('\n}',a)+2
 body=s[a:b].rstrip()[:-1]
 kernel_start=s.index('\tif (adlnDetected || display13FramebufferRequested) {')
 kernel_end=s.index('\n\tif (tglRequested) {',kernel_start)
@@ -36,7 +36,7 @@ struct XE {
  bool processTGLAccelerator(KernelPatcher&,size_t,mach_vm_address_t,size_t){call=Render;return true;}
  bool processAlderLakeNRejectedAccelerator(KernelPatcher&,size_t,mach_vm_address_t,size_t){call=Rejected;return true;}
  bool processAlderLakeNLoadOnly(KernelPatcher&,size_t,mach_vm_address_t,size_t){call=LoadOnly;return true;}
- bool processKextFull(KernelPatcher&,size_t,mach_vm_address_t,size_t){call=Display12;return true;}
+ bool processKextFull(KernelPatcher&,size_t,mach_vm_address_t,size_t){assert(false && "dispatcher entered framebuffer installer");return false;}
  int firmware=0,pool=0,bootstrap=0,vm=0,mmio=0;
  unsigned tglDeviceId=0;
  struct {bool enabled=true;}tglVM;
@@ -121,10 +121,22 @@ int main() {
   x.adlnNativeReady=x.tglActive=render>=2;loadOnly=render==3;
   const bool result=x.dispatch(patcher,index,0x1000,0x2000);
   if(display && framebuffer && index==1)assert(result && x.call==XE::Display13);
-  else if(!render)assert(result && x.call==XE::Display12);
+  else if(!render)assert(!result && x.call==XE::None);
   else if(index!=2)assert(!result && x.call==XE::None);
   else assert(result && x.call==(render==1?XE::Rejected:render==2?XE::Render:XE::LoadOnly));
   ++cases;
+ }
+ // TGL Render dispatch stays outside the framebuffer installer, including
+ // inactive/unknown kexts and absent graphics/framebuffer objects.
+ for(bool requested:{false,true})for(bool active:{false,true})
+ for(bool framebuffer:{false,true})for(bool accelerator:{false,true})
+ for(unsigned index=1;index<=3;++index) {
+  XE x;x.tglRequested=requested;x.tglActive=active;
+  x.currentFramebuffer=framebuffer?&fb:nullptr;x.currentGraphics=accelerator?&graphics:nullptr;
+  const auto expected=!requested||!active?XE::None:
+   index==1&&framebuffer?XE::Display12:index==2&&accelerator?XE::Render:XE::None;
+  assert(x.dispatch(patcher,index,0x1000,0x2000)==(expected!=XE::None));
+  assert(x.call==expected);++cases;
  }
  for(bool render:{false,true})for(bool display:{false,true})for(bool ready:{false,true})for(bool gt:{false,true}) {
   XE x;x.adlnDetected=render;x.display13FramebufferRequested=display;

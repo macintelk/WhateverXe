@@ -38,6 +38,13 @@ struct KernelPatcher {
 };
 struct XE {
  static XE*callbackXE;
+ bool display13FramebufferRequested=false,display13PanelPWMReady=false;
+ struct {unsigned panel=0;}adlnOutputWiring;
+ static bool display13PanelHealthy(){assert(false);return false;}
+ static bool display13PanelCapture(void*){assert(false);return false;}
+ static uint32_t display13PanelBrightness(void*,uint32_t){assert(false);return 1;}
+ static void display13PanelPWMEnable(void*){assert(false);}
+
  bool adlsDisplaySelected=true,adlsPanelPWMReady=true,tglActive=true;XELP::PanelPWM adlsPanelPWM;
  XELP::VBT::Ports firmwarePorts;AlderLakeS::Wiring adlsWiring;
  struct {XELP::Family family=XELP::Family::AlderLakeS;}xeProfile;

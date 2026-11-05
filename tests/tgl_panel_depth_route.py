@@ -29,6 +29,7 @@ end=s.index('uint32_t XE::wrapTGLPortDDC(',start)
 code=r'''
 #include "kern_tgl_panel_depth.hpp"
 #include "kern_alderlake_s.hpp"
+#include "kern_display13_fb_topology.hpp"
 #include <cassert>
 #include <cstring>
 #include <cstdio>
@@ -41,6 +42,10 @@ void *tglAUXLock=&root;
 void IOSimpleLockLock(void *){} void IOSimpleLockUnlock(void *){}
 struct Ports {struct Port {bool internal(){return true;}bool dp(){return true;}} port[2];unsigned present=1;bool valid(){return true;}};
 struct XE {
+ bool display13FramebufferRequested=false;
+ Display13OutputWiring adlnOutputWiring;void *adlnPlatform=nullptr;
+ static void cachePanelDepth(void*,uint32_t,const uint8_t*,uint32_t);
+
  bool tglActive=true,tglPanelDepthReady=true,adlsDisplaySelected=false;
  AlderLakeS::Wiring adlsWiring;alignas(8) uint8_t tglPlatformCopy[0x1c0]{};
  void *tglObservationController=nullptr;

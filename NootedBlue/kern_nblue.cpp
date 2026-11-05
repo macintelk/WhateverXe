@@ -44,7 +44,7 @@ void NBlue::init() {
 	//lilu.onKextLoadForce(&kextIOGraphics);
 	//lilu.onKextLoadForce(&kextIOAcceleratorFamily2);
 	
-	gen11.init();
+	//gen11.init();
 	dyldpatches.init();
 	
     lilu.onPatcherLoadForce(

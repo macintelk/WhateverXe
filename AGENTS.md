@@ -14,8 +14,14 @@ Keep README.md and README_ja.md synchronized in the same change, including
 requirements, compatibility, links and examples. Do not add personal names or
 private identifying information to user documentation without explicit consent.
 
-Document required and optional boot arguments in both READMEs. Do not add
-migration instructions for unreleased internal revisions.
+Keep setup essentials prominent in both READMEs. Do not append hardware internals,
+diagnostic boot arguments or per-change validation details. MIPI DSI needs only
+its user-facing scope and limitations in README. Consolidate common regression
+coverage and describe only configuration-specific differences in the table.
+Preserve concise GPU-family lists grouped as hardware-tested, expected but untested,
+further implementation required, and no support planned. Reference a distant table
+by its section link rather than saying "below".
+Do not add migration instructions for unreleased internal revisions.
 Public docs describe current settings and requirements. Keep
 investigation notes, implementation diaries, internal diagnostic layouts,
 experimental procedures and live machine evidence in the maintainer's private
@@ -35,6 +41,11 @@ when their work informed a change.
 ## Build and test
 
 Build with `python3 tools/build.py`; run CPU tests with `python3 tools/test.py`.
+The builder checks each generated Compat plist, including both DEBUG and RELEASE
+in CI. Existing output can be checked with `python3 tools/check_compat_version.py`
+and its build directory. Compat's release version and oldest compatible ABI are independent;
+do not raise the compatibility floor during an ordinary version bump. An ABI
+break requires coordinated Graphics client updates and final-pkg validation.
 Lilu.kext and MacKernelSDK are local ignored dependencies. Optional native replay
 requires the exact Apple drivers accepted by the tests. Do not commit generated
 payloads, Apple driver files, credentials or local machine state.

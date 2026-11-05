@@ -16,6 +16,7 @@ code=r'''
 using C=XELP::DisplayContract;
 struct State {
 FIELDS
+ bool display13PanelPowerReady=false,display13PanelProbeReady=false;
  bool display13FBDPHooksReady=false,display13TCDPProbeReady=false,display13ClockOrderReady=true;
  struct Native {bool valid=true;bool complete()const{return valid;}}tglTCNativeFunctions;
  bool tglHDMIB=false,adlsDisplaySelected=false,tglTrainingLeaseRequested=true;
@@ -33,7 +34,7 @@ int main() {
  assert(C::display13(s.display13Available()).missing()==C::DonorRuntime);
  s.framebufferDonorRuntimeReady=true;
  assert(s.display12Available()==((1ULL<<39)-1|C::ClockOrder|C::ComboAUXGate|C::PanelDepth|C::PanelTiming|C::PanelPWM|C::DonorRuntime));
- assert(s.display13Available()==(C::Backend13|C::SST13|C::AUX13|C::DPProbe13|C::Training12|C::Framing));
+ assert(s.display13Available()==(C::Backend13|C::SST13|C::AUX13|C::DPProbe13|C::Training12|C::Framing|C::PanelTranscoder|C::PanelDepth|C::PanelTiming|C::PanelPWM));
  assert(C::display13(s.display13Available(),true).missing()==C::DPBoot13);
  s.display13DPProbeReady=false;
  assert(C::display13(s.display13Available()).ready()); // Existing provider/HDMI stays valid.
@@ -51,6 +52,12 @@ int main() {
  s.display13ClockOrderReady=true;s.display13FramingReady=false;
  assert(C::display13(s.display13Available(),true).missing()==C::Framing);s.display13FramingReady=true;
  s.display13FBDPHooksReady=false;assert(C::display13(s.display13Available(),true).missing()==C::DPBoot13);
+ // Panel admission requires the new provider capability and complete panel hooks.
+ assert(C::display13(s.display13Available(),false,true).missing()==C::PanelPower);
+ s.display13PanelPowerReady=true;assert(C::display13(s.display13Available(),false,true).missing()==C::PanelPower);
+ s.display13PanelProbeReady=true;assert(C::display13(s.display13Available(),false,true).ready());
+ s.display13PanelPWMReady=false;assert(C::display13(s.display13Available(),false,true).missing()==C::PanelPWM);
+ s.display13PanelPWMReady=true;s.display13PanelPowerReady=s.display13PanelProbeReady=false;
  // TGL: candidate not yet registered, native donor setup is complete.
  // Missing framing, AUX, mode lock or cleanup must fail before any hotplug.
  s.tglTCAutoCandidates=8;assert(s.start().ready());

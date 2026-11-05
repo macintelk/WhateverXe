@@ -249,6 +249,26 @@ int main() {
     auto rb=AlderLakeN::readDisplay(b,true);
     assert(rb.status==AlderLakeN::ReadoutStatus::Complete && rb.activePipes==2 && rb.hdmiBPipes==2);
     for(auto offset:b.reads)assert(offset!=0x60400 && offset!=0x62400);
+    // Bootstrap reuses one snapshot. A new pipe, rejected admission, and an
+    // unreadable BAR must each discard the preceding certificate completely.
+    auto reused=ra;
+    AlderLakeN::readDisplay(b,true,reused);
+    assert(reused.version==2 && reused.status==rb.status && reused.count==rb.count);
+    assert(reused.poweredPipes==2 && reused.activePipes==2 && reused.hdmiBPipes==2);
+    for(unsigned i=0;i<160;++i) {
+        assert(reused.registers[i].offset==rb.registers[i].offset);
+        assert(reused.registers[i].value==rb.registers[i].value);
+    }
+    AlderLakeN::readDisplay(absent,false,reused);
+    assert(absent.reads.empty() && reused.status==AlderLakeN::ReadoutStatus::NotAdmitted);
+    assert(!reused.count && !reused.poweredPipes && !reused.activePipes && !reused.hdmiBPipes);
+    for(auto reg:reused.registers)assert(!reg.offset && !reg.value);
+    AlderLakeN::readDisplay(a,true,reused);
+    IO badReuse;badReuse.regs[0x45404]=UINT32_MAX;
+    AlderLakeN::readDisplay(badReuse,true,reused);
+    assert(reused.status==AlderLakeN::ReadoutStatus::Unavailable && reused.count==1);
+    assert(!reused.poweredPipes && !reused.activePipes && !reused.hdmiBPipes);
+    for(unsigned i=1;i<160;++i)assert(!reused.registers[i].offset && !reused.registers[i].value);
     IO dp;dp.regs[0x45404]=0x1005;dp.regs[0x61400]=0x92000000;
     assert(AlderLakeN::readDisplay(dp,true).hdmiBPipes==0);
     IO unavailable;unavailable.regs[0x45404]=UINT32_MAX;

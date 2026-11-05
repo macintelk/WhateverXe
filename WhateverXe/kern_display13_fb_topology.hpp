@@ -15,15 +15,17 @@ inline bool selectedWiring(const Display13OutputWiring &w) {
 inline bool adlnWiring(const Display13OutputWiring &w) {return selectedWiring(w) && !(w.selected()&~3U);}
 // DP topology is composable, but runtime admission stays closed until its
 // complete signal/training/bootstrap operation contract is installed.
-inline bool supportedWiring(const Display13OutputWiring &w,bool fixedTC=false) {
+inline bool supportedWiring(const Display13OutputWiring &w,bool fixedTC=false,bool dsiAdoption=false) {
     // Fixed HDMI is composable across the physical Combo A/B and TC1..4.
     // TC provider capability, legacy mode and clock hooks are checked separately.
-    return !(w.dp&~0x78U) && w.described() && !(w.selected()&~(fixedTC ? Display13OutputWiring::Physical : 3U));
+    // DSI requires explicit GOP adoption selection. Native start separately
+    // checks its mode, writer, probe, cache and disposal hooks.
+    return (!w.dsi || dsiAdoption) && !(w.dp&~0x78U) && w.described() && !(w.selected()&~(fixedTC ? Display13OutputWiring::Physical : 3U));
 }
 // A TC route uses the same validated handoff regardless of the GT family.
 // Keep the established Combo-only ADL-N startup ordering unchanged.
 inline bool deferredBootPrepare(const Display13OutputWiring &w,bool mobile) {
-    return mobile || (w.selected()&0x78);
+    return w.internal() || mobile || (w.selected()&0x78);
 }
 inline bool multiOutputWiring(const Display13OutputWiring &w) {
     return selectedWiring(w) && (w.selected()&(w.selected()-1));
@@ -47,7 +49,7 @@ inline uint32_t bootDDI(const Display13OutputWiring &w,uint32_t trans,bool dpSou
     const auto mode=(trans>>24)&7;
     // Selection is not an adoption certificate. The DP caller must also prove
     // source state, physical TC ownership/power, memory and native handoff.
-    if(dpSource && mode==2 && (port<2 || port>=3) && (w.dp&(1U<<port)))return port;
+    if(dpSource && mode==2 && (port<2 || port>=3) && (w.links()&(1U<<port)))return port;
     if(mode>1)return UINT32_MAX;
     return (w.hdmi&(1U<<port)) ? port : UINT32_MAX;
 }
@@ -113,8 +115,8 @@ inline uint32_t excludedHotplug(const void *platform,uint32_t bytes,const Displa
         const auto config=reinterpret_cast<const uint32_t *>(p+0x20+24*d);
         if(config[0]!=d || (!(w.selected()&(1U<<d)) && (config[4]!=1 || config[5])))return 0;
     }
-    return (0x3F000000 & ~((w.selected()>>3)<<24)) |
-        ((7U & ~w.selected())<<16);
+    return (0x3F000000 & ~((w.hotplug()>>3)<<24)) |
+        ((7U & ~w.hotplug())<<16);
 }
 }
 #endif

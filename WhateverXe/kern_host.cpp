@@ -7,10 +7,9 @@
 #include <Headers/kern_iokit.hpp>
 #include <IOKit/pci/IOPCIDevice.h>
 
-XeHost *XeHost::callbackHost;
-
 static NBlue nblu;
 
+XeHost *XeHost::callbackHost;
 struct FramebufferViewer : public IOFramebuffer {
  static IOMemoryMap *&getVramMap(IOFramebuffer *fb) { return static_cast<FramebufferViewer *>(fb)->fVramMap; }
 };
@@ -28,7 +27,7 @@ void XeHost::init() {
  lilu.onKextLoadForce(&backlight);
  xe.init();
  XeDataAccess::init();
-    nblu.init();
+	nblu.init();
 }
 void XeHost::processKernel(KernelPatcher &patcher) {
  auto info=DeviceInfo::create();if(!info)return;
@@ -40,7 +39,8 @@ void XeHost::processKernel(KernelPatcher &patcher) {
  // hooks even when the selected profile deliberately has no Render backend.
  active=profile.displayAdmitted();
  const auto display=XELP::displayAdapter(profile.family);
- backlightEnabled=active && (display==XELP::DisplayAdapter::TGL || display==XELP::DisplayAdapter::ADLS) &&
+ backlightEnabled=active && (display==XELP::DisplayAdapter::TGL || display==XELP::DisplayAdapter::ADLS ||
+  display==XELP::DisplayAdapter::ADLP || display==XELP::DisplayAdapter::ADLN) &&
   info->firmwareVendor!=DeviceInfo::FirmwareVendor::Apple;
  backlightGPU=backlightEnabled ? gpu : nullptr;
  if(published) {
@@ -73,7 +73,6 @@ void XeHost::processKernel(KernelPatcher &patcher) {
    if(v){consoleVinfo=*v;gotConsoleVinfo=true;}else patcher.clearError();
   }
  }
-	nblu.iGPU=gpu;
  if(!active || resetFramebuffer==FB_DETECT){resetFramebuffer=FB_NONE;graphics.switchOff();}
  DeviceInfo::deleter(info);
 }

@@ -43,6 +43,7 @@ struct KernelPatcher {
  bool routeMultiple(size_t,RouteRequest*,unsigned,mach_vm_address_t,size_t){return true;}
  void clearError(){}
 };
+// The optional observer is inactive in this host-publication fixture.
 namespace XeDataAccess {bool processKext(KernelPatcher&,size_t,mach_vm_address_t,size_t){return false;}void processKernel(KernelPatcher &){assert(published);events.push_back(7);}}
 struct Graphics {size_t loadIndex=4;bool off=false;void switchOff(){off=true;}} graphics;
 struct {size_t loadIndex=5;}backlight;
@@ -69,7 +70,7 @@ for(unsigned firmware=0;firmware<2;++firmware)for(unsigned me=0;me<5;++me)for(un
  events.clear();published=false;publish=test!=1;identity=(test==2 || test>=4)?0x12348086:0x9a498086;deviceProperty=test>=4?&fake:nullptr;fake.value=test==4?0x46D2:0xFFFF;graphics.off=false;
  hasModel=test==3;modelWrites=0;
  DeviceInfo::value.videoBuiltin=test==0?nullptr:&gpu;XeHost host;host.processKernel(patcher);
- assert(host.backlightEnabled==(test==3 && !firmware));
+ assert(host.backlightEnabled==((test==3 || test==4) && !firmware));
  const bool normalize=(test==3 || test==4) && me!=4;
  assert(mei.renames==(normalize && me!=1?1U:0U));
  if(normalize)assert(mei.name && !strcmp(mei.name,"IMEI"));
@@ -96,7 +97,7 @@ for(unsigned rev:{0U,12U,255U})for(bool override:{false,true}) {
  DeviceInfo::value.videoBuiltin=&gpu;DeviceInfo::value.managementEngine=nullptr;
  publish=true;published=false;deviceProperty=override?&fake:nullptr;fake.value=0x9A49;identity=0x46A68086;revision=rev;events.clear();graphics.off=false;
  XeHost host;host.processKernel(patcher);
- assert(host.active && !graphics.off && !host.backlightEnabled);
+ assert(host.active && !graphics.off && host.backlightEnabled==(DeviceInfo::value.firmwareVendor!=DeviceInfo::FirmwareVendor::Apple));
  assert(events[events.size()-2]==8);
  const auto profile=XELP::identify(identity,revision,0x9A498086);
  assert(profile.displayAdmitted() && profile.admitted());

@@ -39,10 +39,10 @@ void *testPort;void *testLookup(void*p){return p==testPort?currentPath:nullptr;}
 void *testByDDI(unsigned ddi){return Display13FBMemory::field<unsigned>(testPort,0x120)==ddi?testPort:nullptr;}
 unsigned nativeTrain(void*p,void*){assert(p==testPort&&!locked);return XE::wrapDisplay13TrainingPattern(currentPath,1);}
 int main(){IORecursiveLock pool;
- for(unsigned ddi=3;ddi<7;++ddi)for(unsigned pipe=0;pipe<3;++pipe)for(unsigned cap=0;cap<2;++cap)for(unsigned wanted=0;wanted<2;++wanted){
-  Fixture f(2-pipe,pipe,ddi);Map map;setup(f,map,ddi,pipe,4,6);testPort=f.port;
+ for(unsigned ddi:{0U,1U,3U,4U,5U,6U})for(unsigned pipe=0;pipe<3;++pipe)for(unsigned cap=0;cap<2;++cap)for(unsigned wanted=0;wanted<2;++wanted){
+  Fixture f(2-pipe,pipe,ddi);Map map;setup(f,map,ddi,pipe,4,6,ddi<2);testPort=f.port;
   state.display13TrainingReady=state.display13FramingReady=state.display13ClockOrderReady=true;
-  state.trainingLeaseDP13Mask=0x78;state.tglPathPoolLock=&pool;state.display13DPImage=0x100000;
+  state.trainingLeaseDP13Mask=0x7b;state.tglPathPoolLock=&pool;state.display13DPImage=0x100000;
   state.orgTGLPathLookup=(uintptr_t)testLookup;state.tglPortByDDI=(uintptr_t)testByDDI;state.orgDisplay13PortTraining=(uintptr_t)nativeTrain;
   put(f.path,0x32c8,static_cast<void*>(nullptr));put(f.path,0x3644,1U);f.port[0x115]=1;f.port[0x10]=cap;f.port[0x11a]=wanted;
   auto &lease=state.tglTrainingLeases[ddi];lease.path=f.path;lease.port=f.port;lease.fb=f.fb;lease.power=display13FBPower.power;
@@ -53,11 +53,11 @@ int main(){IORecursiveLock pool;
   put(f.fb,0x49e8,1U);assert(!XE::display13TrainingPath(f.path,d,p));put(f.fb,0x49e8,0U);
   assert(!XE::wrapDisplay13PortTraining(f.port,nullptr));assert(f.port[0x11a]==(cap&wanted));
   assert((map.regs[0x60540+0x1000*pipe]&0x40000U)==((cap&wanted)<<18));
-  const auto clock=0x46140+4*pipe;assert(map.regs[clock]==((ddi+3)<<28));
+  const auto clock=0x46140+4*pipe;assert(map.regs[clock]==((ddi+(ddi>=3?3:1))<<28));
   assert(!XE::display13DeferClock(f.access,clock,0,state.display13DPImage+0x4d991));
-  assert(XE::display13DeferClock(f.access,clock,0,state.display13DPImage+0x4d990));assert(map.regs[clock]==((ddi+3)<<28));
+  assert(XE::display13DeferClock(f.access,clock,0,state.display13DPImage+0x4d990));assert(map.regs[clock]==((ddi+(ddi>=3?3:1))<<28));
   map.regs[0x70008+0x1000*pipe]=0;map.regs[0x64000+0x100*ddi]=0x80000000;
-  assert(!XE::display13StopTranscoder(f.port)&&map.regs[clock]==((ddi+3)<<28));
+  assert(!XE::display13StopTranscoder(f.port)&&map.regs[clock]==((ddi+(ddi>=3?3:1))<<28));
   map.regs[0x64000+0x100*ddi]=0x80;map.regs[0x60540+0x1000*pipe]&=~0x80000000U;
   assert(XE::display13StopTranscoder(f.port)&&map.regs[clock]==0&&!display13DeferredClocks[pipe].pending);
  }

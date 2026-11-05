@@ -7,14 +7,24 @@
 //  Copyright © 2018 vit9696. All rights reserved.
 //
 
+#include "kern_dsi_native_cache.hpp"
+#include "kern_dsi_native_backing.hpp"
+#include "kern_dsi_native_mode.hpp"
 #include "kern_xe.hpp"
 #include "kern_framebuffer_donor.hpp"
 #include "kern_xelp_os.hpp"
+#include "kern_xelp_call_target.hpp"
+#include "kern_xelp_native_placement.hpp"
+#include <Headers/kern_disasm.hpp>
 #include "kern_alderlake_n.hpp"
 #include "kern_xelp_device.hpp"
 #include "kern_xelp_memory_layout.hpp"
 #include "kern_xelp_forcewake_irq.hpp"
 #include "kern_display13_boot.hpp"
+#include "kern_display13_dsi_trial.hpp"
+#include "kern_dsi_readout.hpp"
+#include "kern_dsi_attributes.hpp"
+#include "kern_dsi_apple_timing.hpp"
 #include "kern_display13_firmware.hpp"
 #include "kern_display13_tc_aux.hpp"
 #include "kern_display13_tc_mode.hpp"
@@ -44,6 +54,7 @@
 #include "kern_tgl_combo_signal.hpp"
 #include "kern_tgl_panel_depth.hpp"
 #include "kern_xelp_panel_power.hpp"
+#include "kern_display13_panel.hpp"
 #include "kern_tgl_pcode_gate.hpp"
 #include "kern_tgl_pcode_edram.hpp"
 #include "kern_tgl_tc_cold.hpp"
@@ -85,8 +96,6 @@
 #include <IOKit/IOBufferMemoryDescriptor.h>
 #include <libkern/c++/OSSerialize.h>
 #include <libkern/c++/OSData.h>
-
-#define dobs(...)
 
 extern "C" const char version[];
 extern "C" void tglHangPreStopWake(void *,bool,unsigned,unsigned,void *);
@@ -243,9 +252,10 @@ static XELPMemory::Layout xelpPhysicalMemory(IOPCIDevice *pci) {
         pci->configRead32(0xC4),aperture->getLength()) : XELPMemory::Layout {};
 }
 static bool xelpMemoryMatches(IOPCIDevice *pci) {return xelpMemory.reservationKnown && XELPMemory::samePhysical(xelpMemory,xelpPhysicalMemory(pci));}
-// Normal dual-output profile uses native accelerator surfaces. Fixed FBMemMgr
-// slot1/2 scatter backing is unqualified and must not reserve task aperture.
-static constexpr bool adlnFixedSysMemEnabled=false;
+// Native server-state transitions can request aperture backing even after
+// accelerator binding. Protect slot1/2 through the existing registration
+// contract before admitting their owned scatter mappings.
+static bool adlnFixedSysMemEnabled=true; // Latched from the native layout before accelerator registration.
 static bool tglPcodeGateSerialize(void *,void *,OSSerialize *);
 static bool tglPcodeEDRAMSerialize(void *,void *,OSSerialize *);
 static bool tglTCBootstrapSerialize(void *,void *,OSSerialize *);
@@ -732,7 +742,7 @@ static OSObject *adlnInitialRCSFactory(void *task,const void *params,uint8_t opt
   r[7]=Display13FBMemory::field<uintptr_t>(reinterpret_cast<void *>(r[6]),0x20);
   r[8]=Display13FBMemory::field<uintptr_t>(result,0x50);r[9]=adlnInitialRCSParams;r[10]=adlnInitialRCSGLParams;
   r[11]=1;adlnInitialRCSReceipt[3]|=1U<<i;
-  dobs("N97InitialRCSNoPOCSTrial",adlnInitialRCSReceipt,sizeof(adlnInitialRCSReceipt));
+  IORegistryEntry::getRegistryRoot()->setProperty("N97InitialRCSNoPOCSTrial",adlnInitialRCSReceipt,sizeof(adlnInitialRCSReceipt));
  }
  if(runtime && result) {
   if(Display13FBMemory::field<uint8_t>(result,0x6E)!=0x0C || Display13FBMemory::field<void *>(result,0xA0))
@@ -745,13 +755,13 @@ static OSObject *adlnInitialRCSFactory(void *task,const void *params,uint8_t opt
    r[5]=Display13FBMemory::field<uintptr_t>(result,0xA0);r[6]=Display13FBMemory::field<uintptr_t>(result,0x98);
    r[7]=reinterpret_cast<uintptr_t>(params);r[8]=adlnInitialRCSGLParams;r[9]=options;
    r[10]=reinterpret_cast<uintptr_t>(tglHost.owner);r[11]=1;
-   dobs("N97RuntimeRCSNoPOCSTrial",adlnRuntimeRCSReceipt,sizeof(adlnRuntimeRCSReceipt));
+   IORegistryEntry::getRegistryRoot()->setProperty("N97RuntimeRCSNoPOCSTrial",adlnRuntimeRCSReceipt,sizeof(adlnRuntimeRCSReceipt));
   }
  }
  return result;
 }
 static void adlnKernelReusePublish() {
- dobs("N97KernelReuseTrial",adlnKernelReuseReceipt,sizeof(adlnKernelReuseReceipt));
+ IORegistryEntry::getRegistryRoot()->setProperty("N97KernelReuseTrial",adlnKernelReuseReceipt,sizeof(adlnKernelReuseReceipt));
 }
 static __attribute__((noinline)) void adlnRunKernelContextTrial(IOService *owner);
 static bool adlnKernelReuseCopy(void *context,void **image,void **posh) {
@@ -802,7 +812,7 @@ static bool adlnKernelReuseCopy(void *context,void **image,void **posh) {
    // PRM: bit0 queue invalid, bit7 active, bits3/4 valid, bit30 pending.
    s[10]=(uint32_t(s[1])&0x4000009FU)==1 && (s[7]&2) && s[8]==3;
    idleCopy[3]=i+1;
-   dobs("N97InitialRCSImageIdleTrial",idleCopy,sizeof(idleCopy));
+   IORegistryEntry::getRegistryRoot()->setProperty("N97InitialRCSImageIdleTrial",idleCopy,sizeof(idleCopy));
    return s[10]!=0;
   };
   const unsigned delays[] {0,1,9,90};bool idle=false;
@@ -819,7 +829,7 @@ static bool adlnKernelReuseCopy(void *context,void **image,void **posh) {
   wake(owner,false,1);
   if(!r[7] || !stillIdle)PANIC("igfx","AlderLakeN initial no-POCS idle image copy mismatch");
   *image=copy;*posh=nullptr;result=true;r[8]=1;r[9]=3;r[10]=stampIndex;
-  dobs("N97InitialRCSImageCopyTrial",r,sizeof(adlnInitialRCSCopyReceipt));
+  IORegistryEntry::getRegistryRoot()->setProperty("N97InitialRCSImageCopyTrial",r,sizeof(adlnInitialRCSCopyReceipt));
  } else result=FunctionCast(adlnKernelReuseCopy,adlnKernelReuseCopyOriginal)(context,image,posh);
  // Normal profile preserves native cleanup. It neither retains startup
  // contexts for a diagnostic nor injects another GPU request.
@@ -846,7 +856,7 @@ static bool adlnKernelReuseCopy(void *context,void **image,void **posh) {
 }
 static void adlnCaptureKernelWaitReturn(uint8_t *owner);
 static void adlnKernelContextPublish() {
- dobs("N97KernelContextTrial",adlnKernelContextReceipt,sizeof(adlnKernelContextReceipt));
+ IORegistryEntry::getRegistryRoot()->setProperty("N97KernelContextTrial",adlnKernelContextReceipt,sizeof(adlnKernelContextReceipt));
 }
 static __attribute__((noinline)) void adlnRunKernelContextTrial(IOService *owner) {
  if(!adlnKernelContextReady || !__sync_bool_compare_and_swap(&adlnKernelContextEntered,false,true))return;
@@ -923,7 +933,7 @@ static __attribute__((noinline)) void adlnRunKernelContextTrial(IOService *owner
   if(!(w[10]&2)) {
    wake(owner,false,wakeDomain);recordWake(14);w[2]=4;w[19]=1;
    clock_get_uptime(&ticks);absolutetime_to_nanoseconds(ticks,w+18);
-   dobs("N97KernelWakeTrial",w,sizeof(adlnKernelWakeReceipt));
+   IORegistryEntry::getRegistryRoot()->setProperty("N97KernelWakeTrial",w,sizeof(adlnKernelWakeReceipt));
    q[20]=5;
    if(!reuseTrial) {context->release();adlnKernelContextOwned=nullptr;q[16]=0;q[21]=1;}
    adlnKernelContextPublish();return;
@@ -961,7 +971,7 @@ static __attribute__((noinline)) void adlnRunKernelContextTrial(IOService *owner
    r[13]=*reinterpret_cast<volatile uint32_t *>(base+0xD84);
    idleGap[3]=i+1;
   }
-  dobs("N97KernelIdleGapTrial",idleGap,sizeof(idleGap));
+  IORegistryEntry::getRegistryRoot()->setProperty("N97KernelIdleGapTrial",idleGap,sizeof(idleGap));
  }
  // Exactly the startup channel sequence. Its virtual slot is the native
  // caller's begin operation; submitStampCommand supplies all GPU commands.
@@ -976,7 +986,7 @@ static __attribute__((noinline)) void adlnRunKernelContextTrial(IOService *owner
   if(renderWakeTrial)adlnCaptureKernelWaitReturn(reinterpret_cast<uint8_t *>(owner));
   recordWake(11);wake(owner,false,wakeDomain);recordWake(14);w[2]=3;
   clock_get_uptime(&ticks);absolutetime_to_nanoseconds(ticks,w+18);
-  dobs("N97KernelWakeTrial",w,sizeof(adlnKernelWakeReceipt));
+  IORegistryEntry::getRegistryRoot()->setProperty("N97KernelWakeTrial",w,sizeof(adlnKernelWakeReceipt));
  }
  // notifyComplete(NULL) only checks that the stamp index is valid. It is not
  // execution proof: require the actual stamp wait before retiring ownership.
@@ -1056,7 +1066,7 @@ static __attribute__((noinline)) void adlnPrepareRCSProfile(KernelPatcher &patch
     ready=ready && !memcmp(reinterpret_cast<void *>(address+0xB0BC0),params,sizeof(params)) &&
      !memcmp(reinterpret_cast<void *>(address+0x2FD76),runtimeFactory,sizeof(runtimeFactory));
     if(ready) {adlnRuntimeRCSCaller=address+0x2FD88;adlnRuntimeRCSParams=address+0xB0BC0;}
-    dobs("N97RuntimeRCSNoPOCSReady",ready);
+    IORegistryEntry::getRegistryRoot()->setProperty("N97RuntimeRCSNoPOCSReady",ready);
    }
    if(ready) {
     adlnInitialRCSCallers[0]=address+0x25DA6;adlnInitialRCSCallers[1]=address+0x25DCA;
@@ -1064,7 +1074,7 @@ static __attribute__((noinline)) void adlnPrepareRCSProfile(KernelPatcher &patch
     KernelPatcher::RouteRequest route[] {{symbols[0],adlnInitialRCSFactory,adlnInitialRCSFactoryOriginal}};
     ready=patcher.routeMultiple(index,route,arrsize(route),address,size);
    }
-   dobs("N97InitialRCSNoPOCSReady",ready);
+   IORegistryEntry::getRegistryRoot()->setProperty("N97InitialRCSNoPOCSReady",ready);
   }
   if(normalProfile || checkKernelArgument("-wex-adln-kernel-reuse")) {
    const char *copy="__ZNK17IGHardwareContext16copyContextImageEPP24IOBufferMemoryDescriptorS2_";
@@ -1083,7 +1093,7 @@ static __attribute__((noinline)) void adlnPrepareRCSProfile(KernelPatcher &patch
    }
    adlnKernelReuseReady=ready;
    if(!normalProfile) {
-    dobs("N97KernelReuseTrialReady",ready);
+    IORegistryEntry::getRegistryRoot()->setProperty("N97KernelReuseTrialReady",ready);
     adlnKernelReusePublish();
    }
   }
@@ -1095,8 +1105,8 @@ static __attribute__((noinline)) void adlnPrepareRCSProfile(KernelPatcher &patch
    // failed. A normal boot must not silently revert to the failing profile.
    ready=ready && !checkKernelArgument("-wex-adln-kernel-ctx");
    adlnNativeRCSProfileReady=ready;
-   dobs("N97NativeRCSProfileReady",ready);
-   dobs("N97KernelContextTrialReady",false);
+   IORegistryEntry::getRegistryRoot()->setProperty("N97NativeRCSProfileReady",ready);
+   IORegistryEntry::getRegistryRoot()->setProperty("N97KernelContextTrialReady",false);
    patcher.clearError();return;
   }
   patcher.clearError();adlnKernelContextReady=ready;
@@ -1104,12 +1114,12 @@ static __attribute__((noinline)) void adlnPrepareRCSProfile(KernelPatcher &patch
    adlnKernelContextFactory=address+offsets[0];adlnKernelContextStamp=address+offsets[1];
    adlnKernelContextSleep=address+offsets[2];adlnKernelContextNotify=address+offsets[3];
    adlnKernelContextParams=address+(glProfile || initialNoPOCS?0xBF350:0xB09A4);
-   dobs("N97KernelContextTrialParameters",
+   IORegistryEntry::getRegistryRoot()->setProperty("N97KernelContextTrialParameters",
     reinterpret_cast<void *>(adlnKernelContextParams),sizeof(params));
   }
-  dobs("N97KernelContextTrialProfile",checkKernelArgument("-wex-adln-kernel-new-ctx")?"new-native-no-POCS-RCS":checkKernelArgument("-wex-adln-kernel-reuse")?"retained-startup-RCS":glProfile?"native-GL-RCS":"native-graphics-RCS");
-  dobs("N97KernelContextTrialPlacement",checkKernelArgument("-wex-adln-kernel-early")?"startup-copy-return":"start-return");
-  dobs("N97KernelContextTrialReady",ready);
+  IORegistryEntry::getRegistryRoot()->setProperty("N97KernelContextTrialProfile",checkKernelArgument("-wex-adln-kernel-new-ctx")?"new-native-no-POCS-RCS":checkKernelArgument("-wex-adln-kernel-reuse")?"retained-startup-RCS":glProfile?"native-GL-RCS":"native-graphics-RCS");
+  IORegistryEntry::getRegistryRoot()->setProperty("N97KernelContextTrialPlacement",checkKernelArgument("-wex-adln-kernel-early")?"startup-copy-return":"start-return");
+  IORegistryEntry::getRegistryRoot()->setProperty("N97KernelContextTrialReady",ready);
 }
 // Two immutable read-only captures of the owned native golden source and
 // the clone just after native restore, before our pointer repair and the
@@ -1872,7 +1882,7 @@ static void tglCheckMMIOMap(IOMemoryMap *mapping) {
   ok=ok && !r.status && r.physical==tglVM.pciBAR+offsets[i] && r.shift==12 && r.patIndex==3;
  }
  tglMMIOUCReady=ok;
- dobs("TGLMMIOStrongUCPreflight",ok);
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLMMIOStrongUCPreflight",ok);
 }
 // r115: the donor reuses a pre-hook writable mapping. Use native protection
 // and TLB handling on that same IOKit map, before driver engine initialization.
@@ -1892,10 +1902,10 @@ static void tglUpdateMMIOMap(IOMemoryMap *mapping) {
   q[3]=tglProtectCacheMode(reinterpret_cast<void *>(tglKernelMap),q[1],mapping->getLength(),options);
   tglCheckMMIOMap(mapping);
   tglMMIOUCReady=tglMMIOUCReady && q[3]==0;
-  dobs("TGLMMIOStrongUCPreflight",tglMMIOUCReady);
+  IORegistryEntry::getRegistryRoot()->setProperty("TGLMMIOStrongUCPreflight",tglMMIOUCReady);
  }
  q[5]=tglMMIOMapEvidence[7];q[6]=tglMMIOUCReady;q[7]=tglPmapUpdateEvidence[0];
- dobs("TGLMMIOCacheUpdate",q,sizeof(tglMMIOCacheUpdate));
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLMMIOCacheUpdate",q,sizeof(tglMMIOCacheUpdate));
 }
 // Bind the pmap interval to this GPU's contiguous PCI BAR, before installing hooks.
 static bool tglPrepareMMIOBAR(IOMemoryDescriptor *bar) {
@@ -1949,9 +1959,9 @@ static void tglPrepareMontereyMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
   }
  }
  tglMMIOUCRouted=ok;patcher.clearError();
- auto root=IORegistryEntry::getRegistryRoot();dobs("TGLMMIOStrongUCRouted",ok);
+ auto root=IORegistryEntry::getRegistryRoot();root->setProperty("TGLMMIOStrongUCRouted",ok);
  auto evidence=OSSerializer::forTarget(nullptr,tglMMIOEvidenceSerialize);
- if(evidence) {dobs("TGLMMIOMappingEvidence",evidence);evidence->release();}
+ if(evidence) {root->setProperty("TGLMMIOMappingEvidence",evidence);evidence->release();}
 }
 static void tglPrepareVenturaMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
  tglMMIOUCReady=false;
@@ -1996,9 +2006,23 @@ static void tglPrepareVenturaMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
   }
  }
  tglMMIOUCRouted=ok;patcher.clearError();
- auto root=IORegistryEntry::getRegistryRoot();dobs("TGLMMIOStrongUCRouted",ok);
+ auto root=IORegistryEntry::getRegistryRoot();root->setProperty("TGLMMIOStrongUCRouted",ok);
  auto evidence=OSSerializer::forTarget(nullptr,tglMMIOEvidenceSerialize);
- if(evidence) {dobs("TGLMMIOMappingEvidence",evidence);evidence->release();}
+ if(evidence) {root->setProperty("TGLMMIOMappingEvidence",evidence);evidence->release();}
+}
+static size_t tglNativeInstructionSize(const uint8_t *bytes,size_t length) {
+ // HDE may read ahead by 32 bytes. Decode a padded local copy, then require
+ // the complete instruction to lie in the nofault-read native span.
+ uint8_t code[32] {};memcpy(code,bytes,length<sizeof(code)?length:sizeof(code));
+ Disassembler::hde_t ins {};
+ const auto size=Disassembler::hdeDisasm(reinterpret_cast<uintptr_t>(code),&ins);
+ return !(ins.flags&F_ERROR) && size<=length ? size : 0;
+}
+static bool tglNativeProtectCall(uintptr_t protect,uintptr_t pmap,bool tahoe) {
+ uint8_t code[512] {};
+ return tglVM.nofault && protect && pmap &&
+  tglVM.nofault(protect,reinterpret_cast<uint64_t>(code),sizeof(code))==sizeof(code) &&
+  XELPNative::protectCall(code,sizeof(code),protect,pmap,tahoe,tglNativeInstructionSize);
 }
 static void tglPrepareTahoeMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
  tglMMIOUCReady=false;
@@ -2014,7 +2038,7 @@ static void tglPrepareTahoeMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
  const uint8_t create[] {0x8B,0x75,0xB4,0x89,0xF1,0x83,0xE1,0x01,0x48,0x09,0xD1,0x40,0xF6,0xC6,0x02};
  const uint8_t update[] {0x8B,0x55,0xB4,0x89,0xD0,0x83,0xE0,0x01,0x48,0x09,0xC8,0xF6,0xC2,0x02};
  const uint8_t protectFrame[] {0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xEC,0x28};
- const uint8_t protectCall[] {0xE8,0x2F,0xF3,0x02,0x00};
+ const bool protectCallReady=tglNativeProtectCall(protect,fn,true);
  uint32_t lo,hi;asm volatile("rdmsr" : "=a"(lo),"=d"(hi) : "c"(0x277));
  const uint64_t pat=static_cast<uint64_t>(hi)<<32|lo;
  bool ok=tglVM.enabled && tglPrepareMMIOBAR(bar) &&
@@ -2027,17 +2051,18 @@ static void tglPrepareTahoeMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
   !memcmp(reinterpret_cast<void *>(fn+0x10C1),create,sizeof(create)) &&
   !memcmp(reinterpret_cast<void *>(fn+0x1197),update,sizeof(update)) &&
   !memcmp(reinterpret_cast<void *>(protect),protectFrame,sizeof(protectFrame)) &&
-  !memcmp(reinterpret_cast<void *>(protect+0xCC),protectCall,sizeof(protectCall)) &&
+  protectCallReady &&
   tglVMRead(kernelMap,tglKernelMap) && (tglKernelMap>>47)==0x1FFFF;
  uint64_t guard[20] {1,tglVM.enabled,tglVM.pciBAR,bar ? bar->getLength() : 0,pat,bool(fn),bool(protect),bool(kernelMap)};
  if(fn && protect) {
-  const uintptr_t sites[] {fn,fn+0x15A,fn+0x44,fn+0x61,fn+0xAA,fn+0x10C1,fn+0x1197,protect,protect+0xCC};
-  const uint8_t *bytes[] {frame,flags,args,protection,nonEPT,create,update,protectFrame,protectCall};
-  const size_t lengths[] {sizeof(frame),sizeof(flags),sizeof(args),sizeof(protection),sizeof(nonEPT),sizeof(create),sizeof(update),sizeof(protectFrame),sizeof(protectCall)};
-  for(unsigned i=0;i<9;++i)guard[8+i]=!memcmp(reinterpret_cast<void *>(sites[i]),bytes[i],lengths[i]);
+  const uintptr_t sites[] {fn,fn+0x15A,fn+0x44,fn+0x61,fn+0xAA,fn+0x10C1,fn+0x1197,protect};
+  const uint8_t *bytes[] {frame,flags,args,protection,nonEPT,create,update,protectFrame};
+  const size_t lengths[] {sizeof(frame),sizeof(flags),sizeof(args),sizeof(protection),sizeof(nonEPT),sizeof(create),sizeof(update),sizeof(protectFrame)};
+  for(unsigned i=0;i<8;++i)guard[8+i]=!memcmp(reinterpret_cast<void *>(sites[i]),bytes[i],lengths[i]);
+  guard[16]=protectCallReady;
  }
  guard[17]=kernelMap && tglVMRead(kernelMap,tglKernelMap);guard[18]=tglKernelMap;guard[19]=ok;
- dobs("TGLTahoeMMIOGuard",guard,sizeof(guard));
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLTahoeMMIOGuard",guard,sizeof(guard));
  if(ok) {
   tglProtectCacheMode=reinterpret_cast<decltype(tglProtectCacheMode)>(protect);
   tglPmapNewResume=fn+0x10D0;tglPmapUpdateResume=fn+0x11A5;
@@ -2052,9 +2077,9 @@ static void tglPrepareTahoeMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
   }
  }
  tglMMIOUCRouted=ok;patcher.clearError();
- auto root=IORegistryEntry::getRegistryRoot();dobs("TGLMMIOStrongUCRouted",ok);
+ auto root=IORegistryEntry::getRegistryRoot();root->setProperty("TGLMMIOStrongUCRouted",ok);
  auto evidence=OSSerializer::forTarget(nullptr,tglMMIOEvidenceSerialize);
- if(evidence) {dobs("TGLMMIOMappingEvidence",evidence);evidence->release();}
+ if(evidence) {root->setProperty("TGLMMIOMappingEvidence",evidence);evidence->release();}
 }
 static void tglPrepareSequoiaMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
  tglMMIOUCReady=false;
@@ -2070,7 +2095,7 @@ static void tglPrepareSequoiaMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
  const uint8_t create[] {0x8B,0x75,0xB4,0x89,0xF1,0x83,0xE1,0x01,0x48,0x09,0xD1,0x40,0xF6,0xC6,0x02};
  const uint8_t update[] {0x8B,0x55,0xB4,0x89,0xD0,0x83,0xE0,0x01,0x48,0x09,0xC8,0xF6,0xC2,0x02};
  const uint8_t protectFrame[] {0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xEC,0x28};
- const uint8_t protectCall[] {0xE8,0x71,0xCB,0x02,0x00};
+ const bool protectCallReady=tglNativeProtectCall(protect,fn,false);
  uint32_t lo,hi;asm volatile("rdmsr" : "=a"(lo),"=d"(hi) : "c"(0x277));
  const uint64_t pat=static_cast<uint64_t>(hi)<<32|lo;
  bool ok=tglVM.enabled && tglPrepareMMIOBAR(bar) &&
@@ -2083,17 +2108,18 @@ static void tglPrepareSequoiaMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
   !memcmp(reinterpret_cast<void *>(fn+0x1390),create,sizeof(create)) &&
   !memcmp(reinterpret_cast<void *>(fn+0x1030),update,sizeof(update)) &&
   !memcmp(reinterpret_cast<void *>(protect),protectFrame,sizeof(protectFrame)) &&
-  !memcmp(reinterpret_cast<void *>(protect+0xCA),protectCall,sizeof(protectCall)) &&
+  protectCallReady &&
   tglVMRead(kernelMap,tglKernelMap) && (tglKernelMap>>47)==0x1FFFF;
  uint64_t guard[20] {1,tglVM.enabled,tglVM.pciBAR,bar ? bar->getLength() : 0,pat,bool(fn),bool(protect),bool(kernelMap)};
  if(fn && protect) {
-  const uintptr_t sites[] {fn,fn+0x159,fn+0x35,fn+0x52,fn+0xB8,fn+0x1390,fn+0x1030,protect,protect+0xCA};
-  const uint8_t *bytes[] {frame,flags,args,protection,nonEPT,create,update,protectFrame,protectCall};
-  const size_t lengths[] {sizeof(frame),sizeof(flags),sizeof(args),sizeof(protection),sizeof(nonEPT),sizeof(create),sizeof(update),sizeof(protectFrame),sizeof(protectCall)};
-  for(unsigned i=0;i<9;++i)guard[8+i]=!memcmp(reinterpret_cast<void *>(sites[i]),bytes[i],lengths[i]);
+  const uintptr_t sites[] {fn,fn+0x159,fn+0x35,fn+0x52,fn+0xB8,fn+0x1390,fn+0x1030,protect};
+  const uint8_t *bytes[] {frame,flags,args,protection,nonEPT,create,update,protectFrame};
+  const size_t lengths[] {sizeof(frame),sizeof(flags),sizeof(args),sizeof(protection),sizeof(nonEPT),sizeof(create),sizeof(update),sizeof(protectFrame)};
+  for(unsigned i=0;i<8;++i)guard[8+i]=!memcmp(reinterpret_cast<void *>(sites[i]),bytes[i],lengths[i]);
+  guard[16]=protectCallReady;
  }
  guard[17]=kernelMap && tglVMRead(kernelMap,tglKernelMap);guard[18]=tglKernelMap;guard[19]=ok;
- dobs("TGLSequoiaMMIOGuard",guard,sizeof(guard));
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLSequoiaMMIOGuard",guard,sizeof(guard));
  if(ok) {
   tglProtectCacheMode=reinterpret_cast<decltype(tglProtectCacheMode)>(protect);
   tglPmapNewResume=fn+0x139F;tglPmapUpdateResume=fn+0x103E;
@@ -2108,9 +2134,9 @@ static void tglPrepareSequoiaMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
   }
  }
  tglMMIOUCRouted=ok;patcher.clearError();
- auto root=IORegistryEntry::getRegistryRoot();dobs("TGLMMIOStrongUCRouted",ok);
+ auto root=IORegistryEntry::getRegistryRoot();root->setProperty("TGLMMIOStrongUCRouted",ok);
  auto evidence=OSSerializer::forTarget(nullptr,tglMMIOEvidenceSerialize);
- if(evidence) {dobs("TGLMMIOMappingEvidence",evidence);evidence->release();}
+ if(evidence) {root->setProperty("TGLMMIOMappingEvidence",evidence);evidence->release();}
 }
 static void tglPrepareSonomaMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
  tglMMIOUCReady=false;
@@ -2149,7 +2175,7 @@ static void tglPrepareSonomaMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
   for(unsigned i=0;i<9;++i)guard[8+i]=!memcmp(reinterpret_cast<void *>(sites[i]),bytes[i],lengths[i]);
  }
  guard[17]=kernelMap && tglVMRead(kernelMap,tglKernelMap);guard[18]=tglKernelMap;guard[19]=ok;
- dobs("TGLSonomaMMIOGuard",guard,sizeof(guard));
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLSonomaMMIOGuard",guard,sizeof(guard));
  if(ok) {
   tglProtectCacheMode=reinterpret_cast<decltype(tglProtectCacheMode)>(protect);
   tglPmapNewResume=fn+0x1301;tglPmapUpdateResume=fn+0xFEF;
@@ -2164,9 +2190,9 @@ static void tglPrepareSonomaMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
   }
  }
  tglMMIOUCRouted=ok;patcher.clearError();
- auto root=IORegistryEntry::getRegistryRoot();dobs("TGLMMIOStrongUCRouted",ok);
+ auto root=IORegistryEntry::getRegistryRoot();root->setProperty("TGLMMIOStrongUCRouted",ok);
  auto evidence=OSSerializer::forTarget(nullptr,tglMMIOEvidenceSerialize);
- if(evidence) {dobs("TGLMMIOMappingEvidence",evidence);evidence->release();}
+ if(evidence) {root->setProperty("TGLMMIOMappingEvidence",evidence);evidence->release();}
 }
 static void tglPrepareMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
  if((XELP::kernelOS(version)==XELP::OS::Tahoe)) {
@@ -2223,13 +2249,13 @@ static void tglPrepareMMIOUC(KernelPatcher &patcher,IOPCIDevice *pci) {
  }
  tglMMIOUCRouted=ok;patcher.clearError();
  auto root=IORegistryEntry::getRegistryRoot();
- dobs("TGLMMIOStrongUCRouted",ok);
+ root->setProperty("TGLMMIOStrongUCRouted",ok);
  auto evidence=OSSerializer::forTarget(nullptr,tglMMIOEvidenceSerialize);
- if (evidence) {dobs("TGLMMIOMappingEvidence",evidence);evidence->release();}
+ if (evidence) {root->setProperty("TGLMMIOMappingEvidence",evidence);evidence->release();}
 }
 void tglVMPrepare(KernelPatcher &patcher,IOPCIDevice *pci) {
  // The only private pmap field used is root-table VA at+50. Verify the
- // matching native accessor at each exact admitted kernel, without calling
+ // native accessor contract, without calling
  // pmap_verify_noncacheable (it deliberately panics on a cacheable mapping).
  auto verify=patcher.solveSymbol(KernelPatcher::KernelID,"_pmap_verify_noncacheable");
  auto kp=patcher.solveSymbol(KernelPatcher::KernelID,"_kernel_pmap");
@@ -2238,19 +2264,30 @@ void tglVMPrepare(KernelPatcher &patcher,IOPCIDevice *pci) {
  auto nf=patcher.solveSymbol(KernelPatcher::KernelID,"_ml_nofault_copy");
  patcher.clearError();
  if (!verify || !kp || !pb || !pe || !nf) return;
- const uint8_t callPrefix[] {0x48,0x89,0xDE,0xE8};
- if (memcmp(reinterpret_cast<void *>(verify+0x10),callPrefix,sizeof(callPrefix))) return;
- int32_t displacement;memcpy(&displacement,reinterpret_cast<void *>(verify+0x14),4);
- const auto target=verify+0x18+displacement;
  const bool dp1=(XELP::kernelOS(version)==XELP::OS::Donor);
  const bool monterey=(XELP::kernelOS(version)==XELP::OS::Monterey);
  const bool ventura=(XELP::kernelOS(version)==XELP::OS::Ventura);
  const bool sonoma=(XELP::kernelOS(version)==XELP::OS::Sonoma);
  const bool sequoia=(XELP::kernelOS(version)==XELP::OS::Sequoia);
  const bool tahoe=(XELP::kernelOS(version)==XELP::OS::Tahoe);
- if (target!=verify-(dp1 ? 0x3930 : monterey ? 0x4190 : ventura ? 0x3D70 : sonoma ? 0x3EF0 : sequoia ? 0x3FE0 : tahoe ? 0x3D40 : 0x3AB0)) return;
- const uint8_t rootLoad[] {0x48,0x8B,0x47,0x50};
- if (memcmp(reinterpret_cast<void *>(target+0x20),rootLoad,sizeof(rootLoad))) return;
+ if(sequoia || tahoe) {
+  const auto store=patcher.solveSymbol(KernelPatcher::KernelID,"_kernel_pmap_store");
+  patcher.clearError();
+  uint8_t caller[96] {},accessor[64] {};
+  const auto copy=reinterpret_cast<decltype(tglVM.nofault)>(nf);
+  if(!store || copy(verify,reinterpret_cast<uint64_t>(caller),sizeof(caller))!=sizeof(caller))return;
+  const auto target=XELPNative::rootCall(caller,sizeof(caller),verify,store);
+  if((target>>47)!=0x1FFFF || copy(target,reinterpret_cast<uint64_t>(accessor),sizeof(accessor))!=sizeof(accessor) ||
+     !XELPNative::rootAccessor(accessor,sizeof(accessor)))return;
+ } else {
+  const uint8_t callPrefix[] {0x48,0x89,0xDE,0xE8};
+  if (memcmp(reinterpret_cast<void *>(verify+0x10),callPrefix,sizeof(callPrefix))) return;
+  int32_t displacement;memcpy(&displacement,reinterpret_cast<void *>(verify+0x14),4);
+  const auto target=verify+0x18+displacement;
+  if (target!=verify-(dp1 ? 0x3930 : monterey ? 0x4190 : ventura ? 0x3D70 : sonoma ? 0x3EF0 : 0x3AB0)) return;
+  const uint8_t rootLoad[] {0x48,0x8B,0x47,0x50};
+  if (memcmp(reinterpret_cast<void *>(target+0x20),rootLoad,sizeof(rootLoad))) return;
+ }
  tglVM.nofault=reinterpret_cast<decltype(tglVM.nofault)>(nf);
  if (!tglVMRead(kp,tglVM.kernelPmap) || !tglVMRead(pb,tglVM.directBase) ||
      !tglVMRead(pe,tglVM.directEnd)) return;
@@ -2332,10 +2369,10 @@ void tglFBIRQEnd(TGLHostRecord *r,uint64_t result) {
 void tglFBIRQPublish() {
  auto root=IORegistryEntry::getRegistryRoot();char key[40];
  for (unsigned k=0;k<7;++k) {
-  snprintf(key,sizeof(key),"TGLFBIRQCount%u",k);dobs(key,tglFBIRQCount[k],32);
+  snprintf(key,sizeof(key),"TGLFBIRQCount%u",k);root->setProperty(key,tglFBIRQCount[k],32);
   for (unsigned i=0;i<tglFBIRQCount[k] && i<16;++i) {
    auto &r=tglFBIRQ[k][i];if (__atomic_load_n(&r.ready,__ATOMIC_ACQUIRE)!=2) continue;
-   snprintf(key,sizeof(key),"TGLFBIRQ%u_%u",k,i);dobs(key,r.q,32*sizeof(uint64_t));
+   snprintf(key,sizeof(key),"TGLFBIRQ%u_%u",k,i);root->setProperty(key,r.q,32*sizeof(uint64_t));
   }
  }
 }
@@ -2945,19 +2982,19 @@ void tglHostPublish() {
  auto root=IORegistryEntry::getRegistryRoot();
  for (unsigned k=0;k<3;++k) {
   char key[40];snprintf(key,sizeof(key),"TGLHostIRQCount%u",k);
-  dobs(key,tglHost.irqCount[k],32);
+  root->setProperty(key,tglHost.irqCount[k],32);
   for (unsigned i=0;i<tglHost.irqCount[k] && i<32;++i) {
    auto &r=tglHost.irq[k][i];
    if (!__atomic_load_n(&r.ready,__ATOMIC_ACQUIRE)) continue;
    snprintf(key,sizeof(key),"TGLHostIRQ%u_%u",k,i);
-   dobs(key,r.q,16*sizeof(uint64_t));
+   root->setProperty(key,r.q,16*sizeof(uint64_t));
   }
  }
- dobs("TGLHostMapCount",tglHost.maps,32);
- dobs("TGLHostSubmitCount",tglHost.submits,32);
- dobs("TGLHostWaitCount",tglHost.waits,32);
- dobs("TGLHostCSBCount",tglHost.csbs,32);
- dobs("TGLHostLoadCount",tglHost.loads,32);
+ root->setProperty("TGLHostMapCount",tglHost.maps,32);
+ root->setProperty("TGLHostSubmitCount",tglHost.submits,32);
+ root->setProperty("TGLHostWaitCount",tglHost.waits,32);
+ root->setProperty("TGLHostCSBCount",tglHost.csbs,32);
+ root->setProperty("TGLHostLoadCount",tglHost.loads,32);
  struct Group {const char *name; TGLHostRecord *r; uint32_t count,limit,words;};
  const Group groups[] {{"Map",tglHost.map,tglHost.maps,256,16},
   {"Submit",tglHost.submit,tglHost.submits,16,64},{"Wait",tglHost.wait,tglHost.waits,16,32},
@@ -2965,7 +3002,7 @@ void tglHostPublish() {
  for (const auto &g:groups) for (uint32_t i=0;i<g.count && i<g.limit;++i) {
   const auto ready=__atomic_load_n(&g.r[i].ready,__ATOMIC_ACQUIRE); if (!ready) continue;
   char key[40];snprintf(key,sizeof(key),"TGLHost%s%u",g.name,i);
-  dobs(key,g.r[i].q,g.words*sizeof(uint64_t)*(ready==2 && (g.r==tglHost.submit || g.r==tglHost.wait) ? 2 : 1));
+  root->setProperty(key,g.r[i].q,g.words*sizeof(uint64_t)*(ready==2 && (g.r==tglHost.submit || g.r==tglHost.wait) ? 2 : 1));
  }
 }
 
@@ -2973,7 +3010,7 @@ void tglHostPublish() {
 // No added forcewake, sleeps, allocation, or registry work in the write bridge.
 void tglGuCDMABoundary(uint32_t stage, volatile uint8_t *base) {
 	auto &o=tglGuCObservation;
-	if (stage>1 || o.calls!=1 || o.thread!=reinterpret_cast<uintptr_t>(current_thread()) ||
+	if (stage>1 || o.calls!=1 || __atomic_load_n(&o.thread,__ATOMIC_ACQUIRE)!=reinterpret_cast<uintptr_t>(current_thread()) ||
 		!o.accelerator || !base || o.barSize<0x1000000 || o.boundary[stage][0]) return;
 	auto a=static_cast<uint8_t *>(o.accelerator);
 	if (base!=*reinterpret_cast<volatile uint8_t **>(a+0x1240)) return;
@@ -2992,7 +3029,7 @@ void tglGuCDMABoundary(uint32_t stage, volatile uint8_t *base) {
 // r15,r14,r13,r12,r11,r10,r9,r8,rdi,rsi,rdx,rcx,rax,RFLAGS (14 QWords).
 void tglGuCDMAPreStart(volatile uint8_t *base, const uint64_t *saved) {
 	auto &o=tglGuCObservation;
-	if (o.calls!=1 || o.thread!=reinterpret_cast<uintptr_t>(current_thread()) ||
+	if (o.calls!=1 || __atomic_load_n(&o.thread,__ATOMIC_ACQUIRE)!=reinterpret_cast<uintptr_t>(current_thread()) ||
 		!o.accelerator || !base || !saved || o.barSize<0x1000000 || o.preStart[0]) return;
 	if (base!=*reinterpret_cast<volatile uint8_t **>(static_cast<uint8_t *>(o.accelerator)+0x1240)) return;
 	auto r=o.preStart; uint64_t ticks;
@@ -3035,12 +3072,12 @@ void tglPublishCursorLifetime() {
 	for (uint32_t event = 0; event < 5; ++event) {
 		char key[48];
 		snprintf(key, sizeof(key), "TGLCursorLife%uCount", event);
-		dobs(key, __sync_fetch_and_add(&tglCursorLifetimeCounts[event], 0), 32);
+		root->setProperty(key, __sync_fetch_and_add(&tglCursorLifetimeCounts[event], 0), 32);
 		for (uint32_t i = 0; i < 16; ++i) {
 			auto &record = tglCursorLifetime[event][i];
 			if (!__sync_fetch_and_add(&record.ready, 0)) continue;
 			snprintf(key, sizeof(key), "TGLCursorLife%uFirst%u", event, i+1);
-			dobs(key, record.q, sizeof(record.q));
+			root->setProperty(key, record.q, sizeof(record.q));
 		}
 	}
 }
@@ -3115,12 +3152,12 @@ void tglProgramPublish() {
 		IOSimpleLockUnlockEnableInterrupt(tglProgramLock, state);
 		char key[40]; auto root = IORegistryEntry::getRegistryRoot();
 		snprintf(key, sizeof(key), "TGLProgram%uCount", group);
-		dobs(key, count, 32);
+		root->setProperty(key, count, 32);
 		if (!count) continue;
 		snprintf(key, sizeof(key), "TGLProgram%uFirst", group);
-		dobs(key, copy, (count < tglProgramCapacity ? count : tglProgramCapacity) * sizeof(TGLProgramRecord));
+		root->setProperty(key, copy, (count < tglProgramCapacity ? count : tglProgramCapacity) * sizeof(TGLProgramRecord));
 		snprintf(key, sizeof(key), "TGLProgram%uLast", group);
-		dobs(key, copy + part, part);
+		root->setProperty(key, copy + part, part);
 	}
 	IOFree(copy, size);
 }
@@ -3171,11 +3208,11 @@ void tglConnectionPublish() {
 		if (!count) continue;
 		char key[40]; auto root = IORegistryEntry::getRegistryRoot();
 		snprintf(key, sizeof(key), "TGLConnection%uCount", event);
-		dobs(key, count, 32);
+		root->setProperty(key, count, 32);
 		snprintf(key, sizeof(key), "TGLConnection%uFirst", event);
-		dobs(key, copy, (count < tglConnectionCapacity ? count : tglConnectionCapacity) * sizeof(TGLConnectionRecord));
+		root->setProperty(key, copy, (count < tglConnectionCapacity ? count : tglConnectionCapacity) * sizeof(TGLConnectionRecord));
 		snprintf(key, sizeof(key), "TGLConnection%uLast", event);
-		dobs(key, copy + part, part);
+		root->setProperty(key, copy + part, part);
 	}
 	IOFree(copy, size);
 }
@@ -3219,11 +3256,11 @@ void tglStreamPublish() {
 	memcpy(copy, tglStreamErrors, sizeof(tglStreamErrors));
 	IOSimpleLockUnlockEnableInterrupt(tglStreamLock, state);
 	auto root = IORegistryEntry::getRegistryRoot();
-	dobs("TGLStreamErrorCount", count, 32);
-	dobs("TGLStreamErrorRing", copy, sizeof(tglStreamErrors));
+	root->setProperty("TGLStreamErrorCount", count, 32);
+	root->setProperty("TGLStreamErrorRing", copy, sizeof(tglStreamErrors));
 	uint32_t counts[8];
 	for (uint32_t i=0; i<8; ++i) counts[i] = __sync_fetch_and_add(tglStreamAckCounts + i, 0);
-	dobs("TGLStreamAckCounts", counts, sizeof(counts));
+	root->setProperty("TGLStreamAckCounts", counts, sizeof(counts));
 	IOFree(copy, sizeof(tglStreamErrors));
 }
 struct TGLGMBusObservation {
@@ -3433,10 +3470,10 @@ void tglDPCDPublish() {
 	memcpy(copy + sizeof(tglDPCDFirst), tglDPCDLast, sizeof(tglDPCDLast));
 	IOSimpleLockUnlock(tglAUXLock);
 	auto root = IORegistryEntry::getRegistryRoot();
-	dobs("WhateverXeDPCDFirst", copy, firstCount * sizeof(TGLDPCDRecord));
-	dobs("WhateverXeDPCDLast", copy + sizeof(tglDPCDFirst), sizeof(tglDPCDLast));
-	dobs("WhateverXeDPCDCount", count, 32);
-	dobs("WhateverXeDPCDFirstCapacity", arrsize(tglDPCDFirst), 32);
+	root->setProperty("WhateverXeDPCDFirst", copy, firstCount * sizeof(TGLDPCDRecord));
+	root->setProperty("WhateverXeDPCDLast", copy + sizeof(tglDPCDFirst), sizeof(tglDPCDLast));
+	root->setProperty("WhateverXeDPCDCount", count, 32);
+	root->setProperty("WhateverXeDPCDFirstCapacity", arrsize(tglDPCDFirst), 32);
 	IOFree(copy, size);
 }
 
@@ -3553,11 +3590,11 @@ void tglAUXPublish() {
 		char key[40];
 		auto root = IORegistryEntry::getRegistryRoot();
 		snprintf(key, sizeof(key), "TGLAUX%uFirst", ddi);
-		dobs(key, copy, (count < 256 ? count : 256) * sizeof(TGLAUXRecord));
+		root->setProperty(key, copy, (count < 256 ? count : 256) * sizeof(TGLAUXRecord));
 		snprintf(key, sizeof(key), "TGLAUX%uLast", ddi);
-		dobs(key, copy + sizeof(tglAUXFirst[0]), sizeof(tglAUXLast[0]));
+		root->setProperty(key, copy + sizeof(tglAUXFirst[0]), sizeof(tglAUXLast[0]));
 		snprintf(key, sizeof(key), "TGLAUX%uCount", ddi);
-		dobs(key, count, 32);
+		root->setProperty(key, count, 32);
 	}
 	IOFree(copy, size);
 }
@@ -3602,11 +3639,11 @@ void tglMEIPublish() {
 	memcpy(copy + sizeof(tglMEIFirst), tglMEILast, sizeof(tglMEILast));
 	IOSimpleLockUnlock(tglMEILock);
 	auto root = IORegistryEntry::getRegistryRoot();
-	dobs("TGLMEIFirst", copy, sizeof(tglMEIFirst));
-	dobs("TGLMEILast", copy + sizeof(tglMEIFirst), sizeof(tglMEILast));
-	dobs("TGLMEICount", count, 32);
-	dobs("TGLMEIFilterCount", __sync_fetch_and_add(&tglMEIFilterCount, 0), 32);
-	dobs("TGLMEIMapping", tglMEIMapping, sizeof(tglMEIMapping));
+	root->setProperty("TGLMEIFirst", copy, sizeof(tglMEIFirst));
+	root->setProperty("TGLMEILast", copy + sizeof(tglMEIFirst), sizeof(tglMEILast));
+	root->setProperty("TGLMEICount", count, 32);
+	root->setProperty("TGLMEIFilterCount", __sync_fetch_and_add(&tglMEIFilterCount, 0), 32);
+	root->setProperty("TGLMEIMapping", tglMEIMapping, sizeof(tglMEIMapping));
 	IOFree(copy, size);
 }
 }
@@ -3797,6 +3834,7 @@ void XE::init() {
 
 void XE::selectProfile(const XELP::Profile &profile) {
     xeProfile=profile;
+    tglGT2Detected=profile.admitted() && !profile.overridden() && XELP::tigerLakeGT2Device(profile.identity);
     display12SmallGTDetected=profile.admitted() && XELP::display12SmallGT(profile.gt);
     adlsDisplaySelected=profile.admitted() && XELP::displayAdapter(profile.family)==XELP::DisplayAdapter::ADLS;
     adlnNativeRCSProfileRequested=false;
@@ -3850,13 +3888,34 @@ Display13OutputWiring XE::display13BoardWiring(IOService *provider) {
     if(!xeProfile.displayAdmitted() || xeProfile.display!=XELP::Display::XeLPD)return {};
     // Display13 physical capacity is shared by ADL-N and mobile ADL/RPL.
     // VBT chooses board routing; a family name must not exclude TC PHYs.
-    if(!property)return XELP::VBT::display13Fixed(firmwarePorts,Display13OutputWiring::Physical);
-    // Preserve the older ADL-N Combo property contract. It cannot select TC.
-    if(adlpDisplaySelected)return {};
-    auto wiring=OSDynamicCast(OSData,property);
-    return XELP::VBT::selectHDMI(true,wiring?wiring->getBytesNoCopy():nullptr,
-        wiring?wiring->getLength():0,firmwarePorts,3);
+    Display13OutputWiring board;
+    if(!property)board=XELP::VBT::display13Fixed(firmwarePorts,Display13OutputWiring::Physical,xeProfile.family);
+    else {
+        // Preserve the older ADL-N Combo property contract. It cannot select TC.
+        if(adlpDisplaySelected)return {};
+        auto wiring=OSDynamicCast(OSData,property);
+        board=XELP::VBT::selectHDMI(true,wiring?wiring->getBytesNoCopy():nullptr,
+            wiring?wiring->getLength():0,firmwarePorts,3);
+    }
+    if(checkKernelArgument("-wex-dsi-adopt")) {
+        // The old HDMI experiment tears down the firmware DSI link. Never
+        // combine that handoff with adoption, or replace an existing A route.
+        if(checkKernelArgument("-wex-dsi-hdmi-test") || !board.valid || board.panel ||
+           (board.selected()&1) || !prepareDSIFirmware(provider))return {};
+        board.dsi=1;
+        dsiPanelOnly=checkKernelArgument("-wex-dsi-panel-only");
+        dsiCommandTest=checkKernelArgument("-wex-dsi-command-test");
+        dsiHostTest=checkKernelArgument("-wex-dsi-host-test");
+        dsiStopTest=checkKernelArgument("-wex-dsi-stop-test");
+        dsiPowerTest=checkKernelArgument("-wex-dsi-power-test");
+        dsiPanelTest=checkKernelArgument("-wex-dsi-panel-test") || dsiHostTest;
+        IORegistryEntry::getRegistryRoot()->setProperty("WEXDSIPanelOnly",dsiPanelOnly);
+        if(!board.described())return {};
+    }
+    return board;
 }
+
+
 
 void XE::adlnBootstrap(IOPCIDevice *pci) {
 	pci->setProperty("N97BringupVersion", 1ULL, 32);
@@ -3876,9 +3935,10 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 	// Bootstrap runs before framebuffer start loads its board policy. Native
 	// GOP qualification must already use that physical port, not assume B.
     const auto board=display13BoardWiring(pci);adlnOutputWiring=board;
-    if(displayRequested && !Display13FBTopology::supportedWiring(board,xeProfile.display==XELP::Display::XeLPD)) {
+    if(displayRequested && !Display13FBTopology::supportedWiring(board,xeProfile.display==XELP::Display::XeLPD,checkKernelArgument("-wex-dsi-adopt"))) {
         pci->setProperty("N97NativeRoutingUnavailable",true);return;
     }
+    if(board.dsi && !prepareDSIFirmware(pci))return;
 	auto bootDDI=displayRequested ? UINT32_MAX : 1U;
 	uint64_t connector[] {1,displayRequested,pci->getProperty("xelp-hdmi-wiring")!=nullptr,board.valid,board.hdmi,bootDDI};
 	pci->setProperty("N97NativeBootConnector",connector,sizeof(connector));
@@ -3892,6 +3952,19 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 	auto map = pci->mapDeviceMemoryWithRegister(0x10,
 		(linearTest || gtTest ? 0 : kIOMapReadOnly) | kIOMapInhibitCache);
 	if (!map) return;
+    // All snapshots below are consumed synchronously; setProperty copies the
+    // bytes. Reuse one allocation rather than reserve every branch's snapshot
+    // (including return temporaries) in the DEBUG bootstrap stack frame.
+    struct BootstrapScratch {
+        AlderLakeN::DisplayReadout display;
+        Display13Boot::NormalizeScratch normalize;
+    };
+    auto snapshot=static_cast<BootstrapScratch *>(IOMalloc(sizeof(BootstrapScratch)));
+    if(!snapshot) {
+        pci->setProperty("WEXDisplay13BootstrapAllocationFailed",true);
+        map->release();return;
+    }
+    auto &result=snapshot->display;
 	struct ReadIO {
 		volatile uint8_t *base;
 		uint64_t length;
@@ -3920,8 +3993,47 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
     const bool reservationReady=XELPMemory::reservation(xelpMemory,reserved);
     uint64_t reservation[] {1,reservationReady,reserved,xelpMemory.usable()};
     pci->setProperty("N97StolenReservation",reservation,sizeof(reservation));
-	auto result = AlderLakeN::readDisplay(io, barReady);
+	AlderLakeN::readDisplay(io,barReady,result);
 	pci->setProperty("N97Display13Boot", &result, sizeof(result));
+    // Observe the separate DSI transcoder without treating it as a normal
+    // DDI GOP. Cached words only; no command FIFO or clear-on-read registers.
+    if(barReady && !result.activePipes && (result.poweredPipes&1)) {
+        static const uint32_t regs[] {0x7B008,0x7B808,0x6B000,0x6B004,0x6B008,0x6B00C,0x6B010,0x6B014,
+            0x6B030,0x6B034,0x6B090,0x6B094,0x6B0D8,0x6B400,0x6B404,0x6B894,0x6BC00,
+            0x46010,0x46014,0x164280,0x164284,0x164288,0x16428C,0x164290,
+            0xC7200,0xC7204,0xC8250,0xC8254,0xC8258,0x48400,0x51004,0x46070,0x46008,
+            0x44300,0x45008,0x4500C,0x45500,0x45504,0x7017C,0x7027C,0x7037C,
+            0x162028,0x6C028,0x6C100,0x6C104,0x6C10C,0x6C120,0x6C124,0x6C128,0x64C04,
+            0x6C804,0x6C014,0x6C894,0x6C888,0x6C890,0x6C89C,0x6C898};
+        auto words=static_cast<uint32_t *>(IOMalloc(sizeof(regs)*2));
+        if(words) {
+            for(unsigned i=0;i<arrsize(regs);++i){words[2*i]=regs[i];words[2*i+1]=io.read(regs[i]);}
+            pci->setProperty("WEXDisplay13DSIBoot",words,sizeof(regs)*2);
+            if(checkKernelArgument("-wex-dsi-audit")) {
+                // Decode only already collected words. Overlapping sources
+                // must agree; this summary is not a stable adoption certificate.
+                const auto cached=[&](uint32_t reg,uint32_t &value) {
+                    uint32_t bootValue=0;const bool found=AlderLakeN::value(result,reg,bootValue);
+                    for(unsigned i=0;i<arrsize(regs);++i)if(regs[i]==reg) {
+                        value=words[2*i+1];return !found || value==bootValue;
+                    }
+                    value=bootValue;return found;
+                };
+                uint32_t dssm=UINT32_MAX;cached(0x51004,dssm);
+                const uint32_t references[]={24000,19200,38400};const auto index=(dssm>>29)&7;
+                auto decoded=XELP::DSI::decodeReadout(cached,index<3?references[index]:0);
+                pci->setProperty("WEXDSIReadout",&decoded,sizeof(decoded));
+            }
+            IOFree(words,sizeof(regs)*2);
+        }
+    }
+    auditDSIBoot(pci,io.base,io.length,result,barReady && reservationReady);
+    if(checkKernelArgument("-wex-dsi-hdmi-test")) {
+        auto handoff=Display13DSITrial::transfer(io,barReady && xelpMemoryMatches(pci),result,xelpMemory,board.hdmi);
+        pci->setProperty("WEXDisplay13DSIHandoff",&handoff,sizeof(handoff));
+        AlderLakeN::readDisplay(io,barReady,result);
+        pci->setProperty("WEXDisplay13DSIAfter",&result,sizeof(result));
+    }
     // Bounded pre-native evidence for selected fixed TC ports, including ports
     // which firmware owns without routing a transcoder to them.
     uint32_t bootTC[1+4*8] {1},bootPower=0;
@@ -3936,22 +4048,26 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
         pci->setProperty("WEXDisplay13TCBootPorts",bootTC,sizeof(bootTC));
     }
 
-	bool bootstrapReady=true;
-	if(displayRequested && linearTest && (result.activePipes&(result.activePipes-1))) {
-		auto parked=Display13Boot::normalize(io,result,barReady && Display13FBTopology::multiOutputWiring(board) && xelpMemoryMatches(pci),board,xelpMemory);
+    if(displayRequested && board.dsi)
+        XELP::DSI::captureBoot(io,result,dsiProfile,xelpMemory,barReady && reservationReady,dsiBoot);
+	bool bootstrapReady=!board.dsi || dsiBoot.usable();
+	if(!board.dsi && displayRequested && linearTest && (result.activePipes&(result.activePipes-1))) {
+		auto parked=Display13Boot::normalize(io,result,barReady && Display13FBTopology::multiOutputWiring(board) && xelpMemoryMatches(pci),board,xelpMemory,snapshot->normalize);
 		pci->setProperty("N97DualGOPNormalize",&parked,sizeof(parked));
-		result=AlderLakeN::readDisplay(io,barReady);
+		AlderLakeN::readDisplay(io,barReady,result);
 		pci->setProperty("N97DualGOPAfter",&result,sizeof(result));
 		bootstrapReady=parked.status==Display13Boot::Status::Complete;
 	}
     if(displayRequested && linearTest && bootstrapReady && Display13FBTopology::multiOutputWiring(board)) {
-        auto unused=Display13Boot::releaseUnusedTC(io,result,barReady && xelpMemoryMatches(pci),board);
+        auto unused=Display13Boot::releaseUnusedTC(io,result,barReady && xelpMemoryMatches(pci),board,
+            board.dsi ? &dsiBoot.source : nullptr);
         pci->setProperty("WEXDisplay13UnusedTC",&unused,sizeof(unused));
         bootstrapReady=unused.status==Display13Boot::Status::Complete;
     }
 	if(displayRequested && bootstrapReady) {
 		uint32_t trans=UINT32_MAX;
-		if(AlderLakeN::value(result,0x60400,trans))bootDDI=Display13FBTopology::bootstrapDDI(board,
+        if(board.dsi)bootDDI=0;
+		else if(AlderLakeN::value(result,0x60400,trans))bootDDI=Display13FBTopology::bootstrapDDI(board,
 			result.status==AlderLakeN::ReadoutStatus::Complete,result.poweredPipes,result.activePipes,trans,true);
 		connector[5]=bootDDI;pci->setProperty("N97NativeBootConnector",connector,sizeof(connector));
 	}
@@ -3966,8 +4082,8 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 		auto linear=AlderLakeN::reinitializeLinear(io,result,barReady && xelpMemoryMatches(pci),bootDDI,
             AlderLakeN::GOPProtocol::TMDS,bootDDI>=3 ? &tc : nullptr);
 		pci->setProperty("N97Display13Linear",&linear,sizeof(linear));
-		auto after=AlderLakeN::readDisplay(io,barReady);
-		pci->setProperty("N97Display13After",&after,sizeof(after));
+		AlderLakeN::readDisplay(io,barReady,result);
+		pci->setProperty("N97Display13After",&result,sizeof(result));
 		SYSLOG("igfx", "AlderLakeN Display13 linear status=%u pipe=%u writes=%u frames=%u..%u restored=%u",
 			static_cast<uint32_t>(linear.status),linear.pipe,linear.writes,linear.framesBefore,linear.framesAfter,linear.restored);
 		if (checkKernelArgument("-wex-adln-scanout")) {
@@ -4007,7 +4123,7 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 				if (!predecessor) break;
 				bzero(addresses,addressBytes);
 				bzero(predecessor,addressBytes);
-				auto lease=AlderLakeN::leaseGOPGGTT(io,after,predecessor,barReady && xelpMemoryMatches(pci),xelpMemory);
+				auto lease=AlderLakeN::leaseGOPGGTT(io,result,predecessor,barReady && xelpMemoryMatches(pci),xelpMemory);
 				pci->setProperty("N97GGTTLease",&lease,sizeof(lease));
 				if (lease.status!=1) {scan.status=uint64_t(AlderLakeN::ScanoutStatus::BusyGGTT);break;}
 				for (unsigned b=0;b<2;++b) {
@@ -4041,8 +4157,8 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 				}
 				if (scan.buffers!=2) break;
 				allocation[0]=8;
-				auto state=AlderLakeN::readDisplay(io,barReady);
-				scan=AlderLakeN::testScanout(io,state,addresses,true,predecessor);
+				AlderLakeN::readDisplay(io,barReady,result);
+				scan=AlderLakeN::testScanout(io,result,addresses,true,predecessor);
 				scan.buffers=2;
 			} while(false);
 			scan.pciCommand=command;scan.descriptorOptions=descriptorOptions;
@@ -4080,7 +4196,7 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 			gt.resources.eus,gt.resources.l3Banks);
 	}
     if(displayRequested) {
-        auto display=AlderLakeN::readDisplay(io,barReady);
+        AlderLakeN::readDisplay(io,barReady,result);
         auto optionProperty=pci->getProperty("IOMemoryDescriptorOptions");
         auto opts=OSDynamicCast(OSNumber,optionProperty);
         const uint64_t mapperOptions=opts ? opts->unsigned64BitValue() : 0;
@@ -4088,17 +4204,20 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
         const bool physicalOptions=(opts && (mapperOptions&kIOMemoryMapperNone)) ||
             ((!optionProperty || opts) && !mapperOptions && !systemMapper);
         uint64_t mapperAdmission[] {1,mapperOptions,systemMapper,physicalOptions};
-        dobs("N97NativeMapperAdmission",mapperAdmission,sizeof(mapperAdmission));
-        const bool dp=bootDDI<7 && (board.dp&(1U<<bootDDI));
-        const auto protocol=dp?AlderLakeN::GOPProtocol::DP:AlderLakeN::GOPProtocol::TMDS;
+        IORegistryEntry::getRegistryRoot()->setProperty("N97NativeMapperAdmission",mapperAdmission,sizeof(mapperAdmission));
+        const bool dp=bootDDI<7 && (board.links()&(1U<<bootDDI));
+        const auto protocol=bootDDI<2 && (board.panel&(1U<<bootDDI)) ? AlderLakeN::GOPProtocol::EDP :
+            dp?AlderLakeN::GOPProtocol::DP:AlderLakeN::GOPProtocol::TMDS;
         auto tc=Display13TC::Boot::capture(io,barReady && bootDDI>=3 && xelpMemoryMatches(pci),bootDDI,0,dp);
         if(bootDDI>=3 && bootDDI<7)pci->setProperty("WEXDisplay13TCBoot",&tc,sizeof(tc));
         AlderLakeN::LinearPlan bootPlan;
         uint32_t sourceProof[]={1,bootDDI,uint32_t(protocol),uint32_t(AlderLakeN::linearPlan(
-            display,bootPlan,bootDDI,protocol,bootDDI>=3?&tc:nullptr)),tc.valid()};
-        pci->setProperty("N97NativeBootSource",sourceProof,sizeof(sourceProof));
-        const bool prefix=Display13Boot::reservedPrefix(io,display,bootstrapReady,bootDDI,xelpMemory,
-            bootDDI>=3 ? &tc : nullptr,protocol);
+            result,bootPlan,bootDDI,protocol,bootDDI>=3?&tc:nullptr)),tc.valid()};
+        if(!board.dsi)pci->setProperty("N97NativeBootSource",sourceProof,sizeof(sourceProof));
+        const bool prefix=board.dsi ? bootstrapReady && XELP::DSI::verifyBootPrefix(io,dsiBoot,xelpMemory) :
+            Display13Boot::reservedPrefix(io,result,bootstrapReady,bootDDI,xelpMemory,
+                bootDDI>=3 ? &tc : nullptr,protocol);
+        if(board.dsi)pci->setProperty("WEXDSIBootPrefix",&dsiBoot,sizeof(dsiBoot));
         auto aperture=pci->getDeviceMemoryWithRegister(0x18);
         const bool memoryReady=
             aperture && aperture->getLength()==0x10000000 && page_size==4096 &&
@@ -4132,8 +4251,8 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 			if (!aperture || aperture->getLength()!=0x10000000) break;
 			predecessor=static_cast<uint64_t *>(IOMalloc(bytes));
 			if (!predecessor) break;
-			auto state=AlderLakeN::readDisplay(io,true);
-			auto lease=AlderLakeN::leaseGOPGGTT(io,state,predecessor,true,xelpMemory);
+			AlderLakeN::readDisplay(io,true,result);
+			auto lease=AlderLakeN::leaseGOPGGTT(io,result,predecessor,true,xelpMemory);
 			pci->setProperty("N97GPULease",&lease,sizeof(lease));
 			if (lease.status!=1) {gpu.status=uint64_t(AlderLakeN::GPUStatus::BusyGGTT);break;}
 			buffer=IOBufferMemoryDescriptor::withOptions(kIODirectionInOut|kIOMemoryMapperNone,AlderLakeN::GPUBytes,4096);
@@ -4160,6 +4279,7 @@ void XE::adlnBootstrap(IOPCIDevice *pci) {
 			gpu.status,gpu.stage,gpu.engineWrites,gpu.head,gpu.tail,gpu.result,gpu.token,gpu.retained);
 	}
 
+    IOFree(snapshot,sizeof(*snapshot));
 	map->release();
 }
 
@@ -4176,15 +4296,21 @@ bool XE::xelpBindProbe(void *controller) {
         config.legacy=tglTCProbeMask();config.typeC=tglTCWiring.typeC;config.excluded=tglTCWiring.excluded;
         config.legacyBackend=tglAUXParentMask;
     } else {
+        auto external=adlnOutputWiring;external.dsi=0;
+        const bool dsi=adlnOutputWiring.dsi!=0;
         if(!display13FBTopologyHooksReady || controller!=adlnTopologyController ||
-            !Display13FBTopology::supportedWiring(adlnOutputWiring,xeProfile.display==XELP::Display::XeLPD) ||
+            (dsi && (!adlnOutputWiring.described() || !__atomic_load_n(&dsiResourcesReady,__ATOMIC_ACQUIRE))) ||
+            !Display13FBTopology::supportedWiring(dsi?external:adlnOutputWiring,xeProfile.display==XELP::Display::XeLPD) ||
             ((adlnOutputWiring.selected()&0x78) && (!display13TCProbeReady || !display13FBTCHooksReady)) ||
-            (adlnOutputWiring.dp && (!display13TCDPProbeReady || !display13FBSSTHooksReady || !display13FBAUXHooksReady)))return false;
-        config.combo=adlnOutputWiring.selected()&3;config.comboBackend=3;
-        config.legacy=adlnOutputWiring.selected()&0x78;config.legacyBackend=config.legacy?0x78:0;
+            (adlnOutputWiring.dp && (!display13TCDPProbeReady || !display13FBSSTHooksReady || !display13FBAUXHooksReady)) ||
+            (adlnOutputWiring.typeC && !display13DPAltProbeReady) ||
+            (adlnOutputWiring.panel && (!display13PanelProbeReady || !display13PanelPowerReady || !display13FBSSTHooksReady || !display13FBAUXHooksReady)))return false;
+        config.combo=(adlnOutputWiring.selected()&~adlnOutputWiring.dsi)&3;config.comboBackend=3;
+        config.typeC=adlnOutputWiring.typeC;
+        config.legacy=(adlnOutputWiring.selected()&0x78)&~config.typeC;config.legacyBackend=(config.legacy|config.typeC)?0x78:0;
     }
     const bool bound=config.valid() && reinterpret_cast<XELP::ConfigureProbe>(xelpProviderConfigureProbe)(controller,&config);
-    dobs("XELPSharedProbeBound",bound);
+    IORegistryEntry::getRegistryRoot()->setProperty("XELPSharedProbeBound",bound);
     return bound;
 }
 
@@ -4219,7 +4345,7 @@ void XE::processKernel(KernelPatcher &patcher, DeviceInfo *info) {
     adlpLoadOnly=physicalEntry && xeProfile.mobileDisplay13() &&
         XELP::hostOS(XELP::kernelOS(version)) && checkKernelArgument("-wex-adlp-load-only");
     if(adlpLoadOnly) {
-        dobs("ADLPLoadOnlyKernel",true);
+        IORegistryEntry::getRegistryRoot()->setProperty("ADLPLoadOnlyKernel",true);
         SYSLOG("igfx","ADL-P load-only: native FB/accelerator probes will be rejected; no GPU initialization");
         return;
     }
@@ -4255,8 +4381,12 @@ void XE::processKernel(KernelPatcher &patcher, DeviceInfo *info) {
             };
             for(auto &reg:registers)reg[1]=io.read(reg[0]);
             physicalGPU->setProperty("ADLPDisplayBoot",registers,sizeof(registers));
-            auto display=AlderLakeN::readDisplay(io,true);
-            physicalGPU->setProperty("ADLPScanoutBoot",&display,sizeof(display));
+            auto display=static_cast<AlderLakeN::DisplayReadout *>(IOMalloc(sizeof(AlderLakeN::DisplayReadout)));
+            if(display) {
+                AlderLakeN::readDisplay(io,true,*display);
+                physicalGPU->setProperty("ADLPScanoutBoot",display,sizeof(*display));
+                IOFree(display,sizeof(*display));
+            } else physicalGPU->setProperty("ADLPReadoutAllocationFailed",true);
             SYSLOG("igfx","ADL-P readout status=%u fuses=%x/%x/%x/%x/%x release=%x/%x; donor blocked",
                 static_cast<unsigned>(gt.status),gt.fuses[0],gt.fuses[1],gt.fuses[2],gt.fuses[3],gt.fuses[4],
                 gt.releasedMask,gt.releaseFailedMask);
@@ -4264,11 +4394,11 @@ void XE::processKernel(KernelPatcher &patcher, DeviceInfo *info) {
         if(map)map->release();
         return;
     }
-    if(display12SmallGTDetected && XELP::display12SmallGTDevice(xeProfile.identity) &&
+    if(((display12SmallGTDetected && XELP::display12SmallGTDevice(xeProfile.identity)) || tglGT2Detected) &&
        !xeProfile.overridden() && physicalGPU &&
-       XELP::hostOS(XELP::kernelOS(version)) && (physicalGPU->configRead16(4)&2)) {
+       (XELP::hostOS(XELP::kernelOS(version)) || (tglGT2Detected && XELP::kernelOS(version)==XELP::OS::Donor)) && (physicalGPU->configRead16(4)&2)) {
         // Gen12 forcewake/fuse coordinates are shared with the existing reader.
-        // Its ADL-N profile verdict is not used to admit Display12 GT1. No engine,
+        // Its ADL-N profile verdict is not used to admit Display12 GT1/GT2. No engine,
         // GGTT, display, PLL or reset programming is performed here.
         auto map=physicalGPU->mapDeviceMemoryWithRegister(0x10,kIOMapInhibitCache);
         if(map && map->getVirtualAddress() && map->getLength()==0x1000000) {
@@ -4281,12 +4411,17 @@ void XE::processKernel(KernelPatcher &patcher, DeviceInfo *info) {
             } io {reinterpret_cast<volatile uint8_t *>(map->getVirtualAddress())};
             uint32_t edram=UINT32_MAX;
             auto gt=AlderLakeN::readGT(io,true,&edram);
-            display12SmallGTReady=XELP::decodeSmallGT(gt.fuses,display12SmallGT) &&
-                (gt.status==AlderLakeN::GTStatus::Complete || gt.status==AlderLakeN::GTStatus::ProfileMismatch) &&
+            const bool readoutReady=(gt.status==AlderLakeN::GTStatus::Complete || gt.status==AlderLakeN::GTStatus::ProfileMismatch) &&
                 gt.requestedMask==3 && gt.releasedMask==3 && !gt.releaseFailedMask && edram==0;
-            physicalGPU->setProperty(adlsDisplaySelected?"ADLSGTQualified":"XELPSmallGTQualified",display12SmallGTReady);
-            physicalGPU->setProperty(adlsDisplaySelected?"ADLSGTBoot":"XELPSmallGTBoot",&gt,sizeof(gt));
-            physicalGPU->setProperty(adlsDisplaySelected?"ADLSEDRAM":"XELPSmallGTEDRAM",edram,32);
+            display12SmallGTReady=display12SmallGTDetected && readoutReady && XELP::decodeSmallGT(gt.fuses,display12SmallGT);
+            tglGT2Ready=tglGT2Detected && readoutReady && XELP::decodeTGLGT2(gt.fuses,tglGT2Resources);
+            if(tglGT2Detected) {
+                physicalGPU->setProperty("TGLGT2Qualified",tglGT2Ready);
+                physicalGPU->setProperty("TGLGT2Boot",&gt,sizeof(gt));
+			} else panic("xxx");
+            if(display12SmallGTDetected)physicalGPU->setProperty(adlsDisplaySelected?"ADLSGTQualified":"XELPSmallGTQualified",display12SmallGTReady);
+            if(display12SmallGTDetected)physicalGPU->setProperty(adlsDisplaySelected?"ADLSGTBoot":"XELPSmallGTBoot",&gt,sizeof(gt));
+            if(display12SmallGTDetected)physicalGPU->setProperty(adlsDisplaySelected?"ADLSEDRAM":"XELPSmallGTEDRAM",edram,32);
             if(adlsDisplaySelected) {
                 uint32_t registers[][2] {
                     {0x42000,0},{0x45404,0},{0x45450,0},{0x45454,0},
@@ -4302,7 +4437,7 @@ void XE::processKernel(KernelPatcher &patcher, DeviceInfo *info) {
                 for(auto &reg:registers)reg[1]=io.read(reg[0]);
                 physicalGPU->setProperty("ADLSDisplayBoot",registers,sizeof(registers));
             }
-            SYSLOG("igfx","Display12 small-GT boot readout status=%u fuses=%x/%x/%x/%x/%x release=%x/%x",
+            SYSLOG("igfx","Display12 GT boot readout status=%u fuses=%x/%x/%x/%x/%x release=%x/%x",
                 static_cast<unsigned>(gt.status),gt.fuses[0],gt.fuses[1],gt.fuses[2],gt.fuses[3],gt.fuses[4],
                 gt.releasedMask,gt.releaseFailedMask);
         }
@@ -4374,20 +4509,6 @@ void XE::processKernel(KernelPatcher &patcher, DeviceInfo *info) {
 }
 
 bool XE::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
-	
-	
-	if (index==kextIntelTGLFb.loadIndex){
-		tglInstallSonomaSurfaceABI(patcher,index,address,size,true);
-		NBlue::callback->framel=&kextIntelTGLFb;
-		return NBlue::callback->processKext(patcher,  index,  address,  size);
-	}
-	
-	if (index==kextIntelTGL.loadIndex){
-		return processTGLAccelerator(patcher, index, address, size);
-	}
-	
-	
-	
     // No full donor patch set or native display/GT dispatcher in this stage.
     if(adlpLoadOnly) {
         if(index==kextIntelTGL.loadIndex || index==kextIntelTGLFb.loadIndex)
@@ -4407,15 +4528,19 @@ bool XE::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t add
             patcher.clearError();
             display13DPProbeReady=query>=address && query-address<size &&
                 XELP::display13ProbeCapable(reinterpret_cast<XELP::QueryProbeCapabilities>(query));
+            display13PanelProbeReady=query>=address && query-address<size &&
+                XELP::display13PanelProbeCapable(reinterpret_cast<XELP::QueryProbeCapabilities>(query));
             display13TCProbeReady=query>=address && query-address<size &&
                 XELP::display13TCProbeCapable(reinterpret_cast<XELP::QueryProbeCapabilities>(query));
+            display13DPAltProbeReady=query>=address && query-address<size &&
+                XELP::display13DPAltProbeCapable(reinterpret_cast<XELP::QueryProbeCapabilities>(query));
             display13TCDPProbeReady=query>=address && query-address<size &&
                 XELP::display13TCDPProbeCapable(reinterpret_cast<XELP::QueryProbeCapabilities>(query));
         }
-        dobs("XELPDisplay13DPProbeAvailable",display13DPProbeReady);
-        dobs("XELPDisplay13TCProbeAvailable",display13TCProbeReady);
-        dobs("XELPSharedProbeAvailable",xelpProviderProbe && xelpProviderConfigureProbe);
-        if(adlnRequested)dobs("N97FBSharedProbeAvailable",xelpProviderProbe && xelpProviderConfigureProbe);
+        IORegistryEntry::getRegistryRoot()->setProperty("XELPDisplay13DPProbeAvailable",display13DPProbeReady);
+        IORegistryEntry::getRegistryRoot()->setProperty("XELPDisplay13TCProbeAvailable",display13TCProbeReady);
+        IORegistryEntry::getRegistryRoot()->setProperty("XELPSharedProbeAvailable",xelpProviderProbe && xelpProviderConfigureProbe);
+        if(adlnRequested)IORegistryEntry::getRegistryRoot()->setProperty("N97FBSharedProbeAvailable",xelpProviderProbe && xelpProviderConfigureProbe);
         return true;
     }
 	// Display dispatch is independent of the selected Render implementation.
@@ -4436,9 +4561,15 @@ bool XE::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t add
 			return processAlderLakeNLoadOnly(patcher, index, address, size);
 		return processTGLAccelerator(patcher, index, address, size);
 	}
-	return processKextFull(patcher, index, address, size);
+	// Render must not retain the Display12 framebuffer installer's large
+	// stack frame while entering the accelerator installer in DEBUG builds.
+	if (tglRequested && tglActive && currentGraphics && currentGraphics->loadIndex == index)
+		return processTGLAccelerator(patcher, index, address, size);
+	return false;
 }
 
+static bool dsiCachePath(OSObject *);
+static bool dsiLifecycleTarget(IOService *,OSObject *);
 static bool adlnWriterMappingBound();
 namespace {
 struct Display13GMBusScope {
@@ -4479,12 +4610,22 @@ struct Display13FBPipeContext {
     uint64_t watermarkClockHz {};
 };
 struct Display13FBPowerContext {
+    // Publish with IRQ state only under a quiesced adoption/retirement boundary.
+    // No DSI binding is installed until the complete adoption backend exists.
+    Display13Transcoder::Bindings transcoders;
+    XELP::DSI::Readout bootDSI; // Captured before handoff; not an implicit admission flag.
+    OSObject *dsiPort {}; // Retained after source-qualified native mode binding.
+    uint32_t dsiNativeWriters {}; // Owner-lock count; cursor bodies may wait without the FB mutex.
     IOSimpleLock *tcBankLock {};
     bool tcSupported {},tcBankFaulted {};
     Display13TC::Mode tcMode[4];
     OSObject *tcObject[4] {};
     uint32_t tcBusy[4] {};
     bool tcSignalReady[4] {};
+    IOLock *panelLock {};
+    Display13Panel::State panel;
+    bool panelFaulted {};
+    bool bootPanel {};
     bool bootDP {}; // Board protocol captured with the protected boot reference.
     Display13TC::DPRetainedLink tcDPLink[4];
     Display13FBPipeContext pipe[3];
@@ -4497,6 +4638,11 @@ struct Display13FBPowerContext {
     bool engineEnabled {};
     volatile uintptr_t arbitrationWriterBase {}; // Qualified in sleepable engine context.
     IOLock *lock {};
+    // Borrow only while lock is held, and finish consuming the snapshot
+    // before releasing it or calling a native operation that can reenter.
+    AlderLakeN::DisplayReadout displayScratch;
+    // Failure-only receipt, filled and copied to IORegistry while lock is held.
+    uint64_t wmGeometryScratch[56] {};
     void *power {}, *controller {}, *access {};
     IOMemoryMap *map {}; // Owned mapping remains valid even on native start failure.
     uint32_t sequence {}, errors {}, writes {}, firstFaultLine {};
@@ -4508,6 +4654,8 @@ struct Display13FBPowerContext {
     uint64_t powerContext[24] {1}; // Bounded CPU-only execution-context evidence.
 };
 static Display13FBPowerContext display13FBPower;
+#include "kern_dsi_adapter_state.inc"
+
 // AlderLakeN start bypasses the generic TGL framebuffer path and its power sampler.
 // Use the retained, uncached BAR owner. These GT mirrors require no forcewake,
 // mailbox transaction, MMIO write or native policy intervention.
@@ -4605,7 +4753,7 @@ static uint32_t adlnSharedGT(const void *controller) {
 // validation; they never follow native map objects or read GGTT entries.
 static bool display13FBAssociations(const void *controller,size_t controllerBytes,
                              const void *fb,size_t fbBytes,uintptr_t owner) {
- if(!Display13FBMemory::associations(controller,controllerBytes,fb,fbBytes,owner,true))return false;
+ if(!Display13FBMemory::associations(controller,controllerBytes,fb,fbBytes,owner,true,dsiLogicalSurface(fb)))return false;
  const auto surface=Display13FBMemory::field<uintptr_t>(fb,0x4348);
  return Display13FBMemory::publishedSurface(display13FBPower.pipe,fb,surface);
 }
@@ -4623,7 +4771,7 @@ static TGLFBBinding::Readout adlnInspectPathBinding(IOService *fb,OSObject *path
 	const TGLFBBinding::Objects objects {
 		{controller,controller->getMetaClass()->getClassSize()}, {fb,fb->getMetaClass()->getClassSize()},
 		{path,path->getMetaClass()->getClassSize()}, {plane,plane ? plane->getMetaClass()->getClassSize() : 0},
-		{port,port ? port->getMetaClass()->getClassSize() : 0}, display13FBExpectedOwner(controller)
+		{port,port ? port->getMetaClass()->getClassSize() : 0}, display13FBExpectedOwner(controller),dsiLogicalSurface(fb)
 	};
 	return TGLFBBinding::inspect(objects,platform,wiring,attached);
 }
@@ -4709,7 +4857,7 @@ static void adlnFault(bool &flag,uint32_t line,uint32_t status=UINT32_MAX) {
         if(c.controller) {r[24]=Display13FBMemory::field<uint32_t>(c.controller,0xDF0);r[25]=Display13FBMemory::field<uint8_t>(c.controller,0xDF4);}
         r[26]=display13FBIRQ.handlers;r[27]=display13FBIRQ.quiescing;r[28]=c.bridge.begun;r[29]=c.bridge.state.suspended;
         r[30]=c.bridge.pgRefs[0];r[31]=c.bridge.pgRefs[2];
-        dobs("N97FBFirstResourceFault",r,sizeof(r));
+        IORegistryEntry::getRegistryRoot()->setProperty("N97FBFirstResourceFault",r,sizeof(r));
     }
     flag=true;
 }
@@ -4744,6 +4892,7 @@ static void adlnIRQRecord(uint64_t (&r)[32],unsigned event) {
 	r[29]=reinterpret_cast<uintptr_t>(c.lock);r[30]=c.handlers;r[31]=c.quiescing|(c.blockedPipes<<8)|(uint64_t(c.softwareHandlers)<<32);
 }
 
+
 // These operations run under the display owner lock. AUX power qualification
 // needs the TC bank lock but never enters the native port or power callbacks.
 struct Display13FBTCAuxIO {
@@ -4761,7 +4910,8 @@ struct Display13FBTCAuxIO {
         if(!admitted(tc))return false;
         const auto pw=read(Display13Power::Driver),buffer=read(0x64300+0x100*tc),mode=read(0x161500+4*tc);
         return pw!=UINT32_MAX && buffer!=UINT32_MAX && mode!=UINT32_MAX && (pw&5)==5 &&
-            (buffer&64) && (mode&7)==4;
+            (buffer&64) && (mode&4) && Display13TC::Port::modeMatches(mode,
+                display13FBPower.tcMode[tc].selectedMode==3?3:4);
     }
     bool auxPowered(unsigned candidate) const {
         if(!admitted(candidate))return false;const auto value=read(Display13Power::AUX);
@@ -4799,6 +4949,16 @@ struct Display13FBPowerIO {
 		*reinterpret_cast<volatile uint32_t *>(map->getVirtualAddress()+r)=v;
 	}
 	void delayUs(unsigned us) { IODelay(us); }
+};
+// Panel adapter may touch only PPS readback, PWM and the documented on WA.
+// PPS control itself remains donor-owned; do not broaden the common power IO.
+struct Display13FBPanelIO : Display13FBPowerIO {
+ explicit Display13FBPanelIO(IOMemoryMap *m):Display13FBPowerIO{m} {}
+ void write(uint32_t r,uint32_t v) {
+  if(r==0xC2020 || r==0xC8250 || r==0xC8258)
+   *reinterpret_cast<volatile uint32_t *>(map->getVirtualAddress()+r)=v;
+  else Display13FBPowerIO::write(r,v);
+ }
 };
 // The static boot reader selects powered banks and fixed Display13 offsets.
 // Broader read access does not expand the power-only write allowlist above.
@@ -4852,11 +5012,27 @@ struct Display13FBTCIO : Display13FBTCAuxIO {
         const auto pll=read(p.pll);
         return pll!=UINT32_MAX && !(pll&0xcc000000U) && !c.tcSignalReady[tc];
     }
-    bool owned(unsigned ddi) {
+    bool retainedOwned(unsigned ddi) {
+        if(ddi!=tc+3 || !powerHeld())return false;
         const auto &m=display13FBPower.tcMode[tc];
-        return ddi==tc+3 && powerHeld() && m.phase==Display13TC::Mode::Phase::Active &&
-            m.ownership.active && m.ownership.identity==reinterpret_cast<uintptr_t>(object) &&
-            Display13FBMemory::field<uint32_t>(object,0x550)==4;
+        const auto native=Display13FBMemory::field<uint32_t>(object,0x550);
+        return (m.phase==Display13TC::Mode::Phase::Active || m.phase==Display13TC::Mode::Phase::Cleanup) &&
+            (m.selectedMode==3 || m.selectedMode==4) &&
+            (native==m.selectedMode || (m.phase==Display13TC::Mode::Phase::Cleanup && !native)) &&
+            m.ownership.active && m.ownership.owner==m.controller &&
+            m.ownership.identity==reinterpret_cast<uintptr_t>(object) && m.ownership.port.ddi==ddi &&
+            retainedHardwareOwner(m.ownership.port.buffer);
+    }
+    bool retainedHardwareOwner(uint32_t reg) {
+        const auto buffer=read(reg);return buffer!=UINT32_MAX && (buffer&64);
+    }
+    bool owned(unsigned ddi) {
+        if(!retainedOwned(ddi))return false;
+        const auto &m=display13FBPower.tcMode[tc];
+        return m.phase==Display13TC::Mode::Phase::Active &&
+            Display13FBMemory::field<uint32_t>(object,0x550)==m.selectedMode &&
+            Display13TC::Port::modeMatches(read(m.ownership.port.ready),m.selectedMode) &&
+            (m.selectedMode!=3 || m.lanes.unchanged(*this,m.ownership.port));
     }
     bool quiescent(unsigned ddi) {
         if(ddi!=tc+3 || !accessHeld())return false;
@@ -4869,6 +5045,17 @@ struct Display13FBTCIO : Display13FBTCAuxIO {
             if((clock>>28)==ddi+3 && (conf&0xc0000000))return false;
         }
         return true;
+    }
+    bool modeQuiescent(uintptr_t controller,uintptr_t port,unsigned ddi) {
+        auto &c=display13FBPower;
+        if(controller!=reinterpret_cast<uintptr_t>(c.controller) || port!=reinterpret_cast<uintptr_t>(object) ||
+           ddi!=tc+3 || c.tcBusy[tc] || c.bridge.nativeDDIRefs(ddi) || c.bridge.nativeAUXRefs(ddi) ||
+           !quiescent(ddi))return false;
+        // 0x570 belongs to cached AGDCDPLinkConfig, cleared by the native
+        // resetSoftwareState callback. It is not an outstanding-use count.
+        Display13TC::Port p;Display13TC::Port::resolve(ddi,p);
+        const auto pll=read(p.pll),aux=read(0x64310+0x100*tc);
+        return pll!=UINT32_MAX && aux!=UINT32_MAX && !(pll&0xcc000000) && !(aux&0x80000000);
     }
     void delayUs(unsigned us){IODelay(us);}
 };
@@ -4927,12 +5114,12 @@ static bool adlnBeginClockGuard(Display13FBClockGuard &g) {
 	auto failure=[&](uint32_t reason) {
 		uint64_t r[] {1,reason,io.reg,io.value,irq.handlers,irq.quiescing,irq.state.enabled,c.sequence,c.bridge.bootPath};
 		auto root=IORegistryEntry::getRegistryRoot();
-		dobs("N97FBClockGuardFailure",r,sizeof(r));
+		root->setProperty("N97FBClockGuardFailure",r,sizeof(r));
 		uint64_t trace[42] {1,io.reads};memcpy(trace+2,io.trace,sizeof(io.trace));
-		dobs("N97FBClockGuardReads",trace,sizeof(trace));
+		root->setProperty("N97FBClockGuardReads",trace,sizeof(trace));
 		if(!root->getProperty("N97FBClockGuardFirstFailure")) {
-			dobs("N97FBClockGuardFirstFailure",r,sizeof(r));
-			dobs("N97FBClockGuardFirstReads",trace,sizeof(trace));
+			root->setProperty("N97FBClockGuardFirstFailure",r,sizeof(r));
+			root->setProperty("N97FBClockGuardFirstReads",trace,sizeof(trace));
 		}
 	};
 	if(!c.bridge.bootAdopted || !adlnIRQOwner(static_cast<IOService *>(c.controller))) {failure(1);return false;}
@@ -4950,7 +5137,7 @@ static bool adlnBeginClockGuard(Display13FBClockGuard &g) {
 		if(quiet)break;
 		if(ms<20)IOSleep(1);
 	}
-	quiet=quiet && !(io.read(Display13FBIRQ::Master)&Display13FBIRQ::Enable) && Display13FBIRQ::consumersStopped(io,7);
+	quiet=quiet && !(io.read(Display13FBIRQ::Master)&Display13FBIRQ::Enable) && Display13FBIRQ::consumersStopped(io,7,c.transcoders);
 	if(!quiet) {failure(3);adlnEndClockGuard(g,true);}
 	return quiet;
 }
@@ -4979,10 +5166,10 @@ static void display13FBPowerRecord(uint64_t (&r)[32],uint32_t operation,uint32_t
 }
 static void adlnPublishPowerRecord(const char *key,uint64_t (&record)[32]) {
 	auto root=IORegistryEntry::getRegistryRoot();
-	dobs(key,record,sizeof(record));
+	root->setProperty(key,record,sizeof(record));
 	// Later hotplug/PM calls cannot overwrite the initiating failure.
 	if(record[4]!=static_cast<uint32_t>(Display13Power::Status::Complete) && record[7]==1)
-		dobs("N97FBFirstPowerError",record,sizeof(record));
+		root->setProperty("N97FBFirstPowerError",record,sizeof(record));
 }
 
 // Preserve the established pipe0 property names; another pipe cannot replace
@@ -4992,8 +5179,36 @@ static void adlnPublishMemory(const char *name,unsigned pipe,void *data,unsigned
     if(!pipe)snprintf(key,sizeof(key),"%s",name);
     else snprintf(key,sizeof(key),"%sPipe%u",name,pipe);
     auto root=IORegistryEntry::getRegistryRoot();
-    if(!first || !root->getProperty(key))dobs(key,data,bytes);
+    if(!first || !root->getProperty(key))root->setProperty(key,data,bytes);
 }
+
+struct Display13SurfaceIO {
+	IOMemoryMap *map;unsigned pipe;IOMemoryDescriptor *descriptor {};uint32_t options {};
+	bool memoryReady(uintptr_t mapping,uintptr_t memory,uintptr_t owner,uint64_t bytes) {
+		auto m=reinterpret_cast<OSObject *>(mapping),s=reinterpret_cast<OSObject *>(memory);
+		uint64_t q[16] {1,0,m->getMetaClass()->getClassSize(),s->getMetaClass()->getClassSize()};
+		auto publish=[&](uint64_t reason) {q[1]=reason;adlnPublishMemory("N97FBScanoutMemoryOwner",pipe,q,sizeof(q));return !reason;};
+		if(!m->metaCast("IGAccelMemoryMap") || q[2]!=0x128 ||
+		   !s->metaCast("IGAccelSysMemory") || q[3]!=0x198)return publish(1);
+		q[4]=Display13FBMemory::field<uintptr_t>(m,0x88);q[5]=Display13FBMemory::field<uintptr_t>(s,0x28);
+		q[6]=Display13FBMemory::field<uintptr_t>(m,0x18);q[7]=Display13FBMemory::field<uintptr_t>(m,0x90);
+		q[8]=Display13FBMemory::field<uintptr_t>(reinterpret_cast<void *>(owner),0x150);q[9]=Display13FBMemory::field<uint64_t>(s,0x40);
+		if(q[4]!=owner || q[5]!=owner || q[6]!=memory || q[7]!=q[8] || q[9]<bytes)return publish(2);
+		descriptor=OSDynamicCast(IOMemoryDescriptor,Display13FBMemory::field<OSObject *>(s,0xD0));
+		auto manager=Display13FBMemory::field<OSObject *>(reinterpret_cast<void *>(owner),0x1260);
+		q[10]=descriptor ? descriptor->getLength() : 0;q[11]=descriptor!=nullptr;
+		q[12]=manager ? manager->getMetaClass()->getClassSize() : 0;q[14]=reinterpret_cast<uintptr_t>(descriptor);
+		if(!descriptor || q[10]<bytes || !manager ||
+		   !manager->metaCast("IGMemoryManager") || q[12]<0x8C)return publish(3);
+		// Match native getPhysicalSegment's mapper policy.
+		options=Display13FBMemory::field<uint32_t>(manager,0x88);q[13]=options;return publish(0);
+	}
+
+	uint64_t physical(uintptr_t,uint64_t off,uint64_t &span) {
+		IOByteCount length=0;const auto p=descriptor->getPhysicalSegment(off,&length,options);span=length;return p;
+	}
+	uint64_t readPTE(uint32_t reg) {return *reinterpret_cast<volatile uint64_t *>(map->getVirtualAddress()+reg);}
+};
 
 // Caller holds the display-owner lock. Mapping is owned by PowerInit, not a
 // register-access callback with an unknown lifetime or an on-read serializer.
@@ -5014,36 +5229,10 @@ static Display13FBMemory::Readout display13FBInspectMemory(IOService *fb,bool bo
 		if(Display13FBMemory::field<uint8_t>(fb,0x4288)!=0xFF ||
 			!adlnSharedBinding(controller,reinterpret_cast<void *>(owner)) ||
 			!Display13FBMemory::identityAvailable(c.pipe,fb,pipe))return r;
-		struct SurfaceIO {
-			IOMemoryMap *map;unsigned pipe;IOMemoryDescriptor *descriptor {};uint32_t options {};
-			bool memoryReady(uintptr_t mapping,uintptr_t memory,uintptr_t owner,uint64_t bytes) {
-				auto m=reinterpret_cast<OSObject *>(mapping),s=reinterpret_cast<OSObject *>(memory);
-				uint64_t q[16] {1,0,m->getMetaClass()->getClassSize(),s->getMetaClass()->getClassSize()};
-				auto publish=[&](uint64_t reason) {q[1]=reason;adlnPublishMemory("N97FBScanoutMemoryOwner",pipe,q,sizeof(q));return !reason;};
-				if(!m->metaCast("IGAccelMemoryMap") || q[2]!=0x128 ||
-				   !s->metaCast("IGAccelSysMemory") || q[3]!=0x198)return publish(1);
-				q[4]=Display13FBMemory::field<uintptr_t>(m,0x88);q[5]=Display13FBMemory::field<uintptr_t>(s,0x28);
-				q[6]=Display13FBMemory::field<uintptr_t>(m,0x18);q[7]=Display13FBMemory::field<uintptr_t>(m,0x90);
-				q[8]=Display13FBMemory::field<uintptr_t>(reinterpret_cast<void *>(owner),0x150);q[9]=Display13FBMemory::field<uint64_t>(s,0x40);
-				if(q[4]!=owner || q[5]!=owner || q[6]!=memory || q[7]!=q[8] || q[9]<bytes)return publish(2);
-				descriptor=OSDynamicCast(IOMemoryDescriptor,Display13FBMemory::field<OSObject *>(s,0xD0));
-				auto manager=Display13FBMemory::field<OSObject *>(reinterpret_cast<void *>(owner),0x1260);
-				q[10]=descriptor ? descriptor->getLength() : 0;q[11]=descriptor!=nullptr;
-				q[12]=manager ? manager->getMetaClass()->getClassSize() : 0;q[14]=reinterpret_cast<uintptr_t>(descriptor);
-				if(!descriptor || q[10]<bytes || !manager ||
-				   !manager->metaCast("IGMemoryManager") || q[12]<0x8C)return publish(3);
-				// Match native getPhysicalSegment's mapper policy.
-				options=Display13FBMemory::field<uint32_t>(manager,0x88);q[13]=options;return publish(0);
-			}
-
-			uint64_t physical(uintptr_t,uint64_t off,uint64_t &span) {
-				IOByteCount length=0;const auto p=descriptor->getPhysicalSegment(off,&length,options);span=length;return p;
-			}
-			uint64_t readPTE(uint32_t reg) {return *reinterpret_cast<volatile uint64_t *>(map->getVirtualAddress()+reg);}
-		} io {c.map,pipe};
+		Display13SurfaceIO io {c.map,pipe};
 		const auto reserve=owner ? Display13FBMemory::field<uint32_t>(reinterpret_cast<void *>(owner),0x13C0) : 0;
 		c.pipe[pipe].scanout=Display13FBMemory::inspectSurface(io,controller,controller->getMetaClass()->getClassSize(),
-			fb,fb->getMetaClass()->getClassSize(),owner,reserve,(c.map->getLength()-0x800000)/8*4096,xelpMemory);
+			fb,fb->getMetaClass()->getClassSize(),owner,reserve,(c.map->getLength()-0x800000)/8*4096,xelpMemory,dsiLogicalSurface(fb));
 		adlnPublishMemory("N97FBAcceleratorBacking",pipe,&c.pipe[pipe].scanout,sizeof(c.pipe[pipe].scanout));
 		const auto prefix=__atomic_load_n(&display13FBGTT.sharedPoolPrefix,__ATOMIC_ACQUIRE);
 		const bool dualReservation=prefix && prefix==reserve && adlnSysMemOwner(controller,Display13FBMemory::pool(controller));
@@ -5085,12 +5274,25 @@ static Display13FBMemory::Readout display13FBInspectMemory(IOService *fb,bool bo
 	} io {c.map};
     const auto tc=Display13TC::Boot::capture(io,bootScanout && c.bridge.bootPort>=3,c.bridge.bootPort,0);
     const bool dp=bootScanout && c.bootDP;
-    const auto source=AlderLakeN::readDisplay(io,dp);
+    auto &source=c.displayScratch;AlderLakeN::readDisplay(io,dp,source);
 	return Display13FBMemory::inspect(io,controller,controller->getMetaClass()->getClassSize(),
 		fb,fb->getMetaClass()->getClassSize(),aperture->getLength(),xelpMemory,bootScanout,display13FBExpectedOwner(controller),c.bridge.bootPort,
-        c.bridge.bootPort>=3 ? &tc : nullptr,dp?&source:nullptr);
+        c.bridge.bootPort>=3 ? &tc : nullptr,dp?&source:nullptr,
+        c.bootPanel,bootScanout && c.transcoders.dsi(0) ? &c.bootDSI : nullptr);
 }
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 bool XE::processDisplay13Framebuffer(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
 	// All offsets and entry bytes are from the exact c004fc1a donor. Do not
@@ -5136,7 +5338,7 @@ bool XE::processDisplay13Framebuffer(KernelPatcher &patcher,size_t index,mach_vm
  const bool calcReady=xelpMemory.valid && xelpMemory.reservationKnown && (!needCalc ||
   (modDVMTCalcFix.isApplied() && modDVMTCalcFix.bytes()==xelpMemory.bytes));
  uint64_t calc[] {1,ggc,nativeBytes,xelpMemory.bytes,needCalc,modDVMTCalcFix.enabled,modDVMTCalcFix.isApplied(),calcReady};
- dobs("N97DVMTCalcPolicy",calc,sizeof(calc));
+ IORegistryEntry::getRegistryRoot()->setProperty("N97DVMTCalcPolicy",calc,sizeof(calc));
  if(!calcReady)return false;
  // The AlderLakeN entry bypasses processKextFull, which supplies the qualified
  // non-GuC frequency-query contract on TGL. Its native pmNotify is the same
@@ -5145,8 +5347,8 @@ bool XE::processDisplay13Framebuffer(KernelPatcher &patcher,size_t index,mach_vm
   !checkKernelArgument("-wex-no-host-rps");
  bool hostRPSReady=false;
  if(hostRPSRequested)hostRPSReady=xelpInstallHostRPS(patcher,index,address,size);
- dobs("N97HostRPSRequested",hostRPSRequested);
- dobs("N97HostRPSReady",hostRPSReady);
+ IORegistryEntry::getRegistryRoot()->setProperty("N97HostRPSRequested",hostRPSRequested);
+ IORegistryEntry::getRegistryRoot()->setProperty("N97HostRPSReady",hostRPSReady);
 	KernelPatcher::RouteRequest references[] {
 		{symbols[0],wrapAlderLakeNPowerInit,orgAlderLakeNPowerReferences[0]},
 		{symbols[1],wrapAlderLakeNPowerGetPG,orgAlderLakeNPowerReferences[1]},
@@ -5158,7 +5360,7 @@ bool XE::processDisplay13Framebuffer(KernelPatcher &patcher,size_t index,mach_vm
 	};
 	display13FBPowerReferencesReady=display13FBPower.lock && patcher.routeMultiple(index,references,arrsize(references),address,size);
 	patcher.clearError();
-	dobs("N97FBPowerReferenceHooksReady",display13FBPowerReferencesReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBPowerReferenceHooksReady",display13FBPowerReferencesReady);
 	static const char *clockSymbols[] {
 		"__ZN31AppleIntelFramebufferController11initCDClockEv",
 		"__ZN31AppleIntelFramebufferController21probeCDClockFrequencyEv"
@@ -5184,7 +5386,7 @@ bool XE::processDisplay13Framebuffer(KernelPatcher &patcher,size_t index,mach_vm
 	};
 	display13FBClockReadoutHooksReady=display13FBPower.lock && clockKnown && patcher.routeMultiple(index,clocks,arrsize(clocks),address,size);
 	patcher.clearError();
-	dobs("N97FBClockReadoutHooksReady",display13FBClockReadoutHooksReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBClockReadoutHooksReady",display13FBClockReadoutHooksReady);
 	const char *setter="__ZN31AppleIntelFramebufferController19setCDClockFrequencyEy";
 	const auto setFn=patcher.solveSymbol<mach_vm_address_t>(index,setter,address,size);
 	const uint8_t setEntry[] {0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50,0x49,0x89,0xF6,0x49,0x89,0xFD};
@@ -5196,7 +5398,7 @@ bool XE::processDisplay13Framebuffer(KernelPatcher &patcher,size_t index,mach_vm
 	KernelPatcher::RouteRequest setClock(setter,wrapAlderLakeNClockSet,orgAlderLakeNClockSet);
 	display13FBClockSetHookReady=display13FBClockReadoutHooksReady && setKnown && patcher.routeMultiple(index,&setClock,1,address,size);
 	patcher.clearError();
-	dobs("N97FBClockSetHookReady",display13FBClockSetHookReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBClockSetHookReady",display13FBClockSetHookReady);
 	static const char *memorySymbols[] {
 		"__ZN21AppleIntelFramebuffer21allocateScanoutMemoryEv",
 		"__ZN21AppleIntelFramebuffer18setupScanoutMemoryEv",
@@ -5249,7 +5451,7 @@ bool XE::processDisplay13Framebuffer(KernelPatcher &patcher,size_t index,mach_vm
 	};
 	display13FBMemoryHooksReady=display13FBPower.lock && memoryKnown && patcher.routeMultiple(index,memoryRoutes,arrsize(memoryRoutes),address,size);
 	patcher.clearError();
-	dobs("N97FBMemoryHooksReady",display13FBMemoryHooksReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBMemoryHooksReady",display13FBMemoryHooksReady);
 	const auto stopFB=patcher.solveSymbol<mach_vm_address_t>(index,"__ZN21AppleIntelFramebuffer14disableDisplayEb",address,size);
 	patcher.clearError();
 	const uint8_t stopEntry[] {0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53};
@@ -5259,7 +5461,7 @@ bool XE::processDisplay13Framebuffer(KernelPatcher &patcher,size_t index,mach_vm
 		!memcmp(reinterpret_cast<void *>(stopFB),stopEntry,sizeof(stopEntry)) &&
 		!memcmp(reinterpret_cast<void *>(address+0x68A88),stopCall,sizeof(stopCall)) &&
 		!memcmp(reinterpret_cast<void *>(address+0x68A8D),stopCache,sizeof(stopCache)) ? stopFB : 0;
-	dobs("N97FBScanoutSwapStopReady",adlnScanoutDisableFB!=0);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBScanoutSwapStopReady",adlnScanoutDisableFB!=0);
 	const char *setupLoop="__ZN31AppleIntelFramebufferController13setupWorkLoopEP10IOWorkLoop";
 	const auto loopFn=patcher.solveSymbol<mach_vm_address_t>(index,setupLoop,address,size);
 	const uint8_t loopEntry[] {0x55,0x48,0x89,0xE5,0x41,0x56,0x53,0x49,0x89,0xF6,0x48,0x89,0xFB};
@@ -5279,34 +5481,41 @@ bool XE::processDisplay13Framebuffer(KernelPatcher &patcher,size_t index,mach_vm
 	KernelPatcher::RouteRequest handoff(setupLoop,wrapAlderLakeNSetupWorkLoop,orgAlderLakeNSetupWorkLoop);
 	display13FBBootHandoffHookReady=display13FBMemoryHooksReady && loopKnown && patcher.routeMultiple(index,&handoff,1,address,size);
 	patcher.clearError();
-	dobs("N97FBBootHandoffHookReady",display13FBBootHandoffHookReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBBootHandoffHookReady",display13FBBootHandoffHookReady);
 	display13FBDBUFHooksReady=processDisplay13FramebufferDBUF(patcher,index,address,size);
-	dobs("N97FBDBUFHooksReady",display13FBDBUFHooksReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBDBUFHooksReady",display13FBDBUFHooksReady);
 	display13FBWatermarkLayoutReady=processDisplay13FramebufferWatermarks(patcher,index,address,size);
-	dobs("N97FBWatermarkLayoutReady",display13FBWatermarkLayoutReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBWatermarkLayoutReady",display13FBWatermarkLayoutReady);
 	display13FBWatermarkHooksReady=processDisplay13FramebufferWMBackend(patcher,index,address,size);
-	dobs("N97FBWatermarkHooksReady",display13FBWatermarkHooksReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBWatermarkHooksReady",display13FBWatermarkHooksReady);
 
 	display13FBIRQReady=processDisplay13FramebufferIRQ(patcher,index,address,size);
-	dobs("N97FBIRQHooksReady",display13FBIRQReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBIRQHooksReady",display13FBIRQReady);
 	display13FBABIReady=framebufferDonorCommonReady;
-	dobs("N97FBCommonABIReady",display13FBABIReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBCommonABIReady",display13FBABIReady);
 	display13FBLifecycleHooksReady=processDisplay13FramebufferLifecycle(patcher,index,address,size);
-	dobs("N97FBLifecycleHooksReady",display13FBLifecycleHooksReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBLifecycleHooksReady",display13FBLifecycleHooksReady);
 	display13FBOutputHooksReady=processDisplay13FramebufferOutput(patcher,index,address,size);
+    if(adlnOutputWiring.panel)processDisplay13Panel(patcher,index,address,size);
     display13FBTCHooksReady=processDisplay13FramebufferTC(patcher,index,address,size);
-    dobs("WEXDisplay13TCHooksReady",display13FBTCHooksReady);
-	dobs("N97FBOutputHooksReady",display13FBOutputHooksReady);
+    if(!(adlnOutputWiring.selected()&0x78) && adlnOutputWiring.panel)processDisplay13Training(patcher,index,address,size);
+    IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13TCHooksReady",display13FBTCHooksReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBOutputHooksReady",display13FBOutputHooksReady);
 	display13FBGTTHooksReady=processDisplay13FramebufferGTT(patcher,index,address,size);
-	dobs("N97FBGTTHooksReady",display13FBGTTHooksReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBGTTHooksReady",display13FBGTTHooksReady);
 	display13FBTopologyHooksReady=processDisplay13FramebufferTopology(patcher,index,address,size);
-	dobs("N97FBTopologyHooksReady",display13FBTopologyHooksReady);
+    display13DSIModeHooksReady=processDisplay13DSIModes(patcher,index,address,size);
+    dsiNativeWriterHooksReady=!adlnOutputWiring.dsi || (processDSINativeWriters(patcher,index,address,size) &&
+        processDSINativeTransactions(patcher,index,address,size) && processDSINativeAttributes(patcher,index,address,size));
+    dsiBootProbeReady=processDisplay13DSIBoot(patcher,index,address,size);
+    dsiCacheHooksReady=processDisplay13DSICache(patcher,index,address,size);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBTopologyHooksReady",display13FBTopologyHooksReady);
  using C=XELP::DisplayContract;const auto installed=display13Available();
  display13FBPowerBackendReady=C{C::Power13,installed}.ready();
  display13FBClockReady=C{C::Clock13,installed}.ready();
  display13FBMemoryReady=C{C::MemoryGroup13,installed}.ready();
- const bool backend=C::display13(installed).ready();
-	dobs("N97FramebufferBackendReady",backend);
+ const bool backend=C::display13(installed,adlnOutputWiring.dp!=0,adlnOutputWiring.panel!=0).ready();
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FramebufferBackendReady",backend);
 	return true; // Installed routes; actual startup/scanout still require runtime checks.
 }
 
@@ -5376,6 +5585,7 @@ bool XE::processDisplay13FramebufferLifecycle(KernelPatcher &patcher,size_t inde
 	const uint8_t removeCall[] {0xE8,0x67,0x02,0x00,0x00};
 	const bool pathKnown=pathFn==address+0x68AAE && !memcmp(reinterpret_cast<void *>(pathFn),pathEntry,sizeof(pathEntry)) &&
 		!memcmp(reinterpret_cast<void *>(address+0x68C38),removeCall,sizeof(removeCall));
+    if(adlnOutputWiring.dsi && !processDSIPathDisposal(patcher,index,address,size))return false;
 	KernelPatcher::RouteRequest pathRoute {pathSymbol,wrapAlderLakeNFreePath,orgAlderLakeNFreePath};
 	const bool pathRouted=disableRouted && pathKnown && patcher.routeMultipleShort(index,&pathRoute,1,address,size);
 	patcher.clearError();
@@ -5414,7 +5624,7 @@ bool XE::processDisplay13Retirement(KernelPatcher &patcher,size_t index,mach_vm_
         {freeAll,wrapDisplay13FreeResources,orgDisplay13FreeResources},
         {allocate,wrapDisplay13AllocateResources,orgDisplay13AllocateResources}};
     const bool ready=patcher.routeMultipleShort(index,routes,arrsize(routes),address,size);patcher.clearError();
-    dobs("WEXDisplay13RetirementReady",ready);
+    IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13RetirementReady",ready);
     return ready;
 }
 
@@ -5477,7 +5687,7 @@ uint32_t XE::wrapDisplay13FreeResources(void *raw) {
     // adapter also keeps a sticky fault if suffix cleanup could not finish.
     IORecursiveLockUnlock(mutex);
     uint32_t record[]={1,Display13FBMemory::field<uint32_t>(fb,0x1dc),before,count,allocated,result};
-    dobs("WEXDisplay13Retirement",record,sizeof(record));
+    IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13Retirement",record,sizeof(record));
     return result;
 }
 
@@ -5512,7 +5722,7 @@ bool XE::processDisplay13FramebufferDBUF(KernelPatcher &patcher,size_t index,mac
 	display13FBEngineEnableHookReady=display13FBPowerReferencesReady && display13FBClockReadoutHooksReady && engineKnown &&
 		patcher.routeMultiple(index,&engineRoute,1,address,size);
 	patcher.clearError();
-	dobs("N97FBEngineEnableHookReady",display13FBEngineEnableHookReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBEngineEnableHookReady",display13FBEngineEnableHookReady);
 	const char *update="__ZN15AppleIntelPlane10updateDBUFEjjb";
 	const auto updateFn=patcher.solveSymbol<mach_vm_address_t>(index,update,address,size);
 	const uint8_t updateEntry[] {0x55,0x48,0x89,0xE5,0x41,0x56,0x53,0x48,0xFF,0x05,0x1A,0xD2,0x0C,0x00,0x41,0x89,0xCE,0x48,0x89,0xFB};
@@ -5827,11 +6037,11 @@ IOReturn XE::wrapDisplay13FBEnableIRQ(IOService *controller) {
 	for(unsigned i=0;i<4;++i)check[19+i]=io.read(otherBanks[i]+4)&~io.read(otherBanks[i]-4);
 	if(Display13FBTopology::multiOutputWiring(callbackXE->adlnOutputWiring)) {
 		const auto admitted=__atomic_load_n(&c.admittedPipes,__ATOMIC_ACQUIRE);
-		const auto actual=Display13FBIRQ::readActivePipes(io,admitted);
+		const auto actual=Display13FBIRQ::readActivePipes(io,admitted,c.state.transcoders);
 		c.status=c.quiescing ? Display13FBIRQ::Status::Power : actual.status;
 		if(c.status==Display13FBIRQ::Status::Complete)c.status=c.state.begun && c.state.enabled ?
-			Display13FBIRQ::extendActivePipes(io,c.state,admitted) : Display13FBIRQ::enable(io,c.state,excluded,adlnSharedGT(controller),actual.active,callbackXE->adlnOutputWiring.selected());
-	} else c.status=c.quiescing ? Display13FBIRQ::Status::Power : Display13FBIRQ::enable(io,c.state,excluded,adlnSharedGT(controller),1,callbackXE->adlnOutputWiring.selected());
+			Display13FBIRQ::extendActivePipes(io,c.state,admitted) : Display13FBIRQ::enable(io,c.state,excluded,adlnSharedGT(controller),actual.active,callbackXE->adlnOutputWiring.hotplug(),callbackXE->adlnOutputWiring.typeC);
+	} else c.status=c.quiescing ? Display13FBIRQ::Status::Power : Display13FBIRQ::enable(io,c.state,excluded,adlnSharedGT(controller),1,callbackXE->adlnOutputWiring.hotplug(),callbackXE->adlnOutputWiring.typeC);
 	adlnIRQCache(controller,io);adlnIRQRecord(record,1);
 	check[23]=static_cast<uint32_t>(c.status);check[24]=c.state.begun;
 	check[25]=c.state.enabled;check[26]=c.state.faulted;check[27]=c.state.active;check[28]=c.state.configured;
@@ -5844,8 +6054,8 @@ IOReturn XE::wrapDisplay13FBEnableIRQ(IOService *controller) {
 	const bool enabled=c.status==Display13FBIRQ::Status::Complete;
 	IOSimpleLockUnlockEnableInterrupt(c.lock,saved);
 	controller->setProperty("N97FBIRQ",record,sizeof(record));
-	dobs("N97FBIRQEnableCheck",check,sizeof(check));
-	if(!check[3])dobs("N97FBIRQFirstEnableCheck",check,sizeof(check));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBIRQEnableCheck",check,sizeof(check));
+	if(!check[3])IORegistryEntry::getRegistryRoot()->setProperty("N97FBIRQFirstEnableCheck",check,sizeof(check));
 	return enabled ? kIOReturnSuccess : kIOReturnNotReady;
 }
 IOReturn XE::wrapDisplay13FBDisableIRQ(IOService *controller) {
@@ -5880,10 +6090,10 @@ void XE::wrapDisplay13FBConfigureVBL(IOService *controller,IOService *fb,OSObjec
 		// Native enablePipe enables PIPECONF before this VBL callback. Re-arm
 		// the full pipe bank only at that real activation boundary after idle HPD.
 		if(!Display13FBTopology::multiOutputWiring(callbackXE->adlnOutputWiring) && enabled && c.state.begun && c.state.enabled && !c.state.active && !c.state.faulted &&
-			Display13FBIRQ::powered(io.read(Display13FBIRQ::Driver),pipe) && (io.read(0x70008+0x1000*pipe)&Display13FBIRQ::Enable)) {
+			Display13FBIRQ::powered(io.read(Display13FBIRQ::Driver),pipe) && Display13Transcoder::running(io,pipe,c.state.transcoders)) {
 			const auto excluded=controller==callbackXE->adlnTopologyController ?
 				Display13FBTopology::excludedHotplug(callbackXE->adlnPlatform,sizeof(callbackXE->adlnPlatform),callbackXE->adlnOutputWiring) : 0;
-			c.status=Display13FBIRQ::enable(io,c.state,excluded,adlnSharedGT(controller),1,callbackXE->adlnOutputWiring.selected());
+			c.status=Display13FBIRQ::enable(io,c.state,excluded,adlnSharedGT(controller),1,callbackXE->adlnOutputWiring.hotplug(),callbackXE->adlnOutputWiring.typeC);
 		}
 		if(!c.state.faulted)c.status=Display13FBIRQ::vblank(io,c.state,pipe,enabled);
 	}
@@ -6006,7 +6216,7 @@ bool XE::processAlderLakeNSharedReservation(KernelPatcher &patcher,size_t index,
 	KernelPatcher::RouteRequest route {symbol,wrapDisplay13FramebufferPlatformCall,orgDisplay13FramebufferPlatformCall};
 	// Six-byte prologue ends before the RIP-relative statistics counter.
 	const bool ready=patcher.routeMultipleShort(index,&route,1,address,size);patcher.clearError();
-	dobs("N97SharedReservationHookReady",ready);return ready;
+	IORegistryEntry::getRegistryRoot()->setProperty("N97SharedReservationHookReady",ready);return ready;
 }
 
 bool XE::processAlderLakeNSysMem(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
@@ -6026,8 +6236,8 @@ bool XE::processAlderLakeNSysMem(KernelPatcher &patcher,size_t index,mach_vm_add
 	KernelPatcher::RouteRequest routes[] {{symbols[0],wrapAlderLakeNSysMemAllocate,orgAlderLakeNSysMemAllocate},
 		{symbols[1],wrapAlderLakeNSysMemFree,orgAlderLakeNSysMemFree}};
 	const bool ready=patcher.routeMultipleShort(index,routes,arrsize(routes),address,size);patcher.clearError();
-	dobs("N97SysMemHooksReady",ready);
-	dobs("N97FixedSysMemEnabled",adlnFixedSysMemEnabled);return ready;
+	IORegistryEntry::getRegistryRoot()->setProperty("N97SysMemHooksReady",ready);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FixedSysMemEnabled",adlnFixedSysMemEnabled);return ready;
 }
 void XE::wrapAlderLakeNSysMemAllocate(IOService *controller,uint32_t slot) {
 	if(!Display13FBTopology::multiOutputWiring(callbackXE->adlnOutputWiring) || !slot) {
@@ -6056,18 +6266,18 @@ void XE::adlnSysMemOperation(IOService *controller,uint32_t slot,bool release) {
         const bool blocked=!release || !bound || slot>=3 || pool.state || pool.descriptor;
         uint64_t record[] {1,release,slot,count,bound,pool.state,pool.descriptor,pool.base,pool.bytes,blocked};
         auto root=IORegistryEntry::getRegistryRoot();
-        dobs("N97FixedSysMemRequest",record,sizeof(record));
+        root->setProperty("N97FixedSysMemRequest",record,sizeof(record));
         if(blocked) {
-            dobs("N97FixedSysMemRejected",record,sizeof(record));
+            root->setProperty("N97FixedSysMemRejected",record,sizeof(record));
             if(!root->getProperty("N97FixedSysMemFirstRejected"))
-                dobs("N97FixedSysMemFirstRejected",record,sizeof(record));
+                root->setProperty("N97FixedSysMemFirstRejected",record,sizeof(record));
         }
         return;
     }
 	uint32_t stage=1;
 	auto publish=[&](uint64_t *record,size_t bytes) {
 		char key[48];snprintf(key,sizeof(key),"N97SysMemSlot%u%s",slot,release ? "Free" : "Allocate");
-		dobs(key,record,bytes);
+		IORegistryEntry::getRegistryRoot()->setProperty(key,record,bytes);
 	};
 	auto unavailable=[&]() {
 		uint64_t record[15] {2,release,slot,UINT32_MAX};record[14]=stage;publish(record,sizeof(record));
@@ -6152,7 +6362,7 @@ void XE::adlnSysMemOperation(IOService *controller,uint32_t slot,bool release) {
 			bool consumersStopped(unsigned,const Display13FBMemory::Pool &) {
 				if(pipe>=3 || display13FBPower.pipe[pipe].wmProgramming || display13FBPower.pipe[pipe].wmCommitting)return false;
 				Display13FBIRQIO io {display13FBGTT.map->getVirtualAddress()};
-				return Display13FBIRQ::consumersStopped(io,1U<<pipe);
+				return Display13FBIRQ::consumersStopped(io,1U<<pipe,display13FBPower.transcoders);
 			}
 			uint64_t physical(uint64_t offset,uint64_t &span) {
 				IOByteCount length=0;const auto value=buffer->getPhysicalSegment(offset,&length,kIOMemoryMapperNone);span=length;return value;
@@ -6245,7 +6455,7 @@ IOReturn XE::wrapDisplay13FramebufferPlatformCall(IOService *controller,const OS
 	}
 	uint64_t record[] {1,plan.nativePrefix,plan.reservedPrefix,plan.apertureBytes,plan.freeApertureBytes,
 		layout.count,published};
-	dobs("N97SharedFixedPoolReservation",record,sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97SharedFixedPoolReservation",record,sizeof(record));
 	return published ? result : kIOReturnNotReady;
 }
 
@@ -6286,7 +6496,7 @@ void XE::wrapDisplay13FBMemoryInit(IOService *controller) {
 	valid=valid && map && map->getLength()==0x1000000 && map->getVirtualAddress() && map->getPhysicalAddress()==physical;
 	uint64_t admission[] {1,mapperOptions,systemMapper,physicalOptions,physical,unmapped,length,physicalLength,
 		native ? native->getPhysicalAddress() : 0,map ? map->getPhysicalAddress() : 0,valid};
-	dobs("N97FBGTTAdmission",admission,sizeof(admission));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBGTTAdmission",admission,sizeof(admission));
 	if(valid) {
         auto base=reinterpret_cast<volatile uint32_t *>(map->getVirtualAddress()+0x1082C0);
         const auto high=base[1],low=base[0];
@@ -6313,6 +6523,13 @@ void XE::wrapDisplay13FBMemoryInit(IOService *controller) {
 		for(uint32_t i=0;valid && i<pool.pages;++i)
 			valid=io.readPTE(0x800000+8*i)==Display13FBGTT::pte(pool.physical,4096*i);
 		g.initialized=valid;
+        // Qualify the entire fixed reservation before the accelerator exists.
+        // Large stolen layouts may leave no aperture for secondary windows;
+        // retain their native-surface path instead of rejecting registration.
+        const auto layout=Display13FBMemory::poolLayout(controller,controller->getMetaClass()->getClassSize(),UINT32_MAX);
+        adlnFixedSysMemEnabled=valid && Display13FBTopology::multiOutputWiring(s->adlnOutputWiring) &&
+            Display13FBMemory::sharedReservation(layout,Display13FBGTT::Aperture,true).valid;
+        IORegistryEntry::getRegistryRoot()->setProperty("N97FixedSysMemEnabled",adlnFixedSysMemEnabled);
 	} else OSSafeReleaseNULL(map);
 	if(!valid) {g.faulted=true;adlnFault(display13FBPower.memoryFaulted,__LINE__);}
 	uint64_t record[] {1,valid,g.reads,g.faulted};
@@ -6364,6 +6581,17 @@ IOReturn XE::adlnSetupAuxiliaryMemory(IOService *controller,bool dsb) {
 IOReturn XE::wrapDisplay13CursorSetup(IOService *controller) {return adlnSetupAuxiliaryMemory(controller,false);}
 IOReturn XE::wrapAlderLakeNDSBSetup(IOService *controller) {return adlnSetupAuxiliaryMemory(controller,true);}
 
+
+
+
+
+
+
+
+
+
+
+
 bool XE::processDisplay13FramebufferTopology(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
 	const char *os="__ZN31AppleIntelFramebufferController16getOSInformationEv";
 	const char *state="__ZN14AppleIntelPort14probePortStateEv";
@@ -6393,7 +6621,7 @@ bool XE::processDisplay13FramebufferTopology(KernelPatcher &patcher,size_t index
 bool XE::wrapAlderLakeNGetOSInformation(IOService *controller) {
 	auto s=callbackXE;
 	if(!s->display13FBTopologyHooksReady || !controller || controller->getMetaClass()->getClassSize()<0x1C20 ||
-		!Display13FBTopology::supportedWiring(s->adlnOutputWiring,s->xeProfile.display==XELP::Display::XeLPD) || !checkKernelArgument("-disablegfxfirmware"))return false;
+		!Display13FBTopology::supportedWiring(s->adlnOutputWiring,s->xeProfile.display==XELP::Display::XeLPD,checkKernelArgument("-wex-dsi-adopt")) || !checkKernelArgument("-disablegfxfirmware"))return false;
 	if(!FunctionCast(wrapAlderLakeNGetOSInformation,s->orgAlderLakeNGetOSInformation)(controller))return false;
 	auto platform=Display13FBMemory::field<void *>(controller,0xD40);
 	if(!Display13FBTopology::apply(s->adlnPlatform,sizeof(s->adlnPlatform),platform,s->adlnOutputWiring))return false;
@@ -6404,7 +6632,7 @@ bool XE::wrapAlderLakeNGetOSInformation(IOService *controller) {
     const bool poolReady=pool && Display13FBMemory::setDisplayPool(controller,s->adlnPlatform,sizeof(s->adlnPlatform),pool);
     uint64_t policy[] {2,nativePool,requested,xelpMemory.bytes,xelpMemory.usable(),pool,poolReady,profilePool};
     controller->setProperty("N97DisplayPoolPolicy",policy,sizeof(policy));
-    dobs("N97DisplayPoolPolicy",policy,sizeof(policy));
+    IORegistryEntry::getRegistryRoot()->setProperty("N97DisplayPoolPolicy",policy,sizeof(policy));
     if(!poolReady)return false;
 	auto copy=reinterpret_cast<uint8_t *>(s->adlnPlatform);
 	memcpy(reinterpret_cast<uint8_t *>(controller)+0xD40,&copy,sizeof(copy));
@@ -6414,9 +6642,35 @@ bool XE::wrapAlderLakeNGetOSInformation(IOService *controller) {
 	uint32_t dcPolicy[] {Display13FBMemory::field<uint32_t>(controller,0xB48),0};
 	memcpy(reinterpret_cast<uint8_t *>(controller)+0xB48,&dcPolicy[1],sizeof(uint32_t));
 	s->adlnTopologyController=controller;
+ s->tglObservationController=controller;
+ display13FBPower.panel={};display13FBPower.panelFaulted=false;resetPanelDepth();
 	controller->setProperty("N97FBConnectorPolicy",copy+0x20,24*Display13FBTopology::Ports);
 	controller->setProperty("N97FBDMCPolicy",dcPolicy,sizeof(dcPolicy));
 	return true;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+uint32_t XE::wrapDisplay13ProbeMode(OSObject *port) {
+    auto self=callbackXE;
+    if(!port || port->getMetaClass()->getClassSize()<0x6B0)return 0;
+    auto config=Display13FBMemory::field<uint32_t *>(port,0x548);
+    if(self->adlnOutputWiring.dsi && config && config[0]==0)
+        return !display13Offline && __atomic_load_n(&self->dsiResourcesReady,__ATOMIC_ACQUIRE) && setDSIPortMode(port,1)==kIOReturnSuccess ? 1U : 0U;
+    return self->xelpProviderProbe ? reinterpret_cast<uint32_t (*)(OSObject *)>(self->xelpProviderProbe)(port) : 0;
 }
 
 uint32_t XE::wrapAlderLakeNPortState(OSObject *port) {
@@ -6428,24 +6682,30 @@ uint32_t XE::wrapAlderLakeNPortState(OSObject *port) {
         // HPD, EDID and mode programming during framebuffer bring-up.
         if(display13Offline) {
             *reinterpret_cast<uint32_t *>(reinterpret_cast<uint8_t *>(port)+0x554)=0;
-            dobs("WEXDisplay13OfflineProbe",true);
+            IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13OfflineProbe",true);
             return 0;
+        }
+        if(s->adlnOutputWiring.dsi && config[0]==0) {
+            // DSI has neither HPD nor a DPCD sink. Only an adopted live source
+            // may report connected; never enter the donor's eDP probe branch.
+            const auto state=setDSIPortMode(port,1)==kIOReturnSuccess ? 2U : 0U;
+            *reinterpret_cast<uint32_t *>(reinterpret_cast<uint8_t *>(port)+0x554)=state;return state;
         }
         // CPU binding only. TC bits are added when mode/AUX/PLL/GOP become
         // qualified together; a board description alone is insufficient.
         if(!s->xelpBindProbe(s->adlnTopologyController)) {
-            dobs("N97FBSharedProbeBound",false);return 0;
+            IORegistryEntry::getRegistryRoot()->setProperty("N97FBSharedProbeBound",false);return 0;
         }
-        dobs("N97FBSharedProbeBound",true);
+        IORegistryEntry::getRegistryRoot()->setProperty("N97FBSharedProbeBound",true);
         static uint32_t count {}; const auto call=__sync_add_and_fetch(&count,1);
         uint64_t r[] {1,call,config[0],config[1],config[2],
             Display13FBMemory::field<uint32_t>(port,0x550),Display13FBMemory::field<uint32_t>(port,0x554),0,0,0};
         auto root=IORegistryEntry::getRegistryRoot();
-        dobs("N97FBPortProbeEntry",r,sizeof(r));
+        root->setProperty("N97FBPortProbeEntry",r,sizeof(r));
         const auto result=FunctionCast(wrapAlderLakeNPortState,s->orgAlderLakeNPortState)(port); // Real selected HPD/EDID path.
         r[7]=result;r[8]=Display13FBMemory::field<uint32_t>(port,0x550);r[9]=Display13FBMemory::field<uint32_t>(port,0x554);
-        dobs("N97FBPortProbeLast",r,sizeof(r));
-        if(call<=16) {char key[40];snprintf(key,sizeof(key),"N97FBPortProbeFirst%u",call);dobs(key,r,sizeof(r));}
+        root->setProperty("N97FBPortProbeLast",r,sizeof(r));
+        if(call<=16) {char key[40];snprintf(key,sizeof(key),"N97FBPortProbeFirst%u",call);root->setProperty(key,r,sizeof(r));}
         return result;
     }
 	// Deliberately excluded connector policy. Do not enter TC/AUX hardware
@@ -6468,13 +6728,16 @@ unsigned XE::display13TCTarget(OSObject *port,bool cleanup) {
     return config[0];
 }
 
+
 uint32_t XE::wrapDisplay13TCMode(OSObject *port,uint32_t wanted) {
     auto self=callbackXE;auto &c=display13FBPower;
     auto config=port && port->getMetaClass()->getClassSize()>=0x580 ? Display13FBMemory::field<uint32_t *>(port,0x548) : nullptr;
+    if(self->adlnOutputWiring.dsi && config && config[0]==0)return setDSIPortMode(port,wanted);
     if(config && config[0]<3)return FunctionCast(wrapDisplay13TCMode,self->orgDisplay13TCMode)(port,wanted);
     if(!c.lock)return kIOReturnNotReady;
     IOLockLock(c.lock);const auto ddi=display13TCTarget(port,wanted==0);
-    if(ddi>=7 || (wanted!=0 && wanted!=4) || c.tcBusy[ddi-3] ||
+    const auto selected=ddi<7 && (self->adlnOutputWiring.typeC&(1U<<ddi))?3U:4U;
+    if(ddi>=7 || (wanted!=0 && wanted!=selected) || c.tcBusy[ddi-3] ||
        (c.tcObject[ddi-3] && c.tcObject[ddi-3]!=port)) {IOLockUnlock(c.lock);return kIOReturnNotReady;}
     const auto tc=ddi-3;auto &mode=c.tcMode[tc];
     if(!c.tcObject[tc]){c.tcObject[tc]=port;port->retain();}
@@ -6506,13 +6769,7 @@ uint32_t XE::wrapDisplay13TCMode(OSObject *port,uint32_t wanted) {
                 port==reinterpret_cast<uintptr_t>(object) && d==tc+3;
         }
         bool quiescent(uintptr_t controller,uintptr_t port,unsigned d) {
-            auto &c=display13FBPower;
-            if(controller!=reinterpret_cast<uintptr_t>(c.controller) || port!=reinterpret_cast<uintptr_t>(object) ||
-               d!=tc+3 || c.tcBusy[tc] || c.bridge.nativeDDIRefs(d) || c.bridge.nativeAUXRefs(d) ||
-               Display13FBMemory::field<uint32_t>(object,0x570) || !Display13FBTCIO::quiescent(d))return false;
-            Display13TC::Port p;Display13TC::Port::resolve(d,p);
-            const auto pll=read(p.pll),aux=read(0x64310+0x100*tc);
-            return pll!=UINT32_MAX && aux!=UINT32_MAX && !(pll&0xc0000000) && !(aux&0x80000000);
+            return modeQuiescent(controller,port,d);
         }
     };
     // Adopt only the validated, protected firmware boot route. Merely finding
@@ -6524,31 +6781,53 @@ uint32_t XE::wrapDisplay13TCMode(OSObject *port,uint32_t wanted) {
         Display13FBTopology::bootDDI(self->adlnOutputWiring,bootIO.read(0x60400),true)==ddi &&
         (bootIO.read(0x70008)&0xc0000000)==0xc0000000 && boot.unchanged(bootIO);
     if(inherited && dpBoot) {
-        const auto source=AlderLakeN::readDisplay(bootIO,true);
+        auto &source=c.displayScratch;AlderLakeN::readDisplay(bootIO,true,source);
         inherited=source.activePipes==1 && AlderLakeN::dpSourceUnchanged(bootIO,source,0,ddi,0,&boot);
     }
-    const auto preparation=framebufferLinkRequirements(port,4).preparation(inherited);
+    const auto preparation=framebufferLinkRequirements(port,selected).preparation(inherited);
     IO io{port,tc,reinterpret_cast<uint32_t (*)(OSObject *,uint32_t)>(self->display13TCBaseMode),preparation};
     const auto owner=reinterpret_cast<uintptr_t>(c.controller),object=reinterpret_cast<uintptr_t>(port);
-    const auto result=wanted?mode.connect(io,owner,object,ddi):mode.disconnect(io,owner,object,ddi);
+    const auto result=wanted?mode.connect(io,owner,object,ddi,wanted):mode.disconnect(io,owner,object,ddi);
     const bool done=result.status==Display13TC::Status::Complete;
     if(!wanted && done){c.tcSignalReady[tc]=false;c.tcDPLink[tc]={};OSSafeReleaseNULL(c.tcObject[tc]);}
-    uint32_t record[]={1,ddi,wanted,uint32_t(result.status),uint32_t(result.phy.status),uint32_t(result.power.status),uint32_t(mode.phase),mode.disconnectPending};
+    uint32_t record[]={2,ddi,wanted,uint32_t(result.status),uint32_t(result.phy.status),uint32_t(result.power.status),uint32_t(mode.phase),mode.disconnectPending,mode.lanes.mask,mode.lanes.pin};
     IOLockUnlock(c.lock);auto root=IORegistryEntry::getRegistryRoot();
-    dobs("WEXDisplay13TCMode",record,sizeof(record));
+    root->setProperty("WEXDisplay13TCMode",record,sizeof(record));
+    char modeKey[40];snprintf(modeKey,sizeof(modeKey),"WEXDisplay13TCMode%u",ddi);root->setProperty(modeKey,record,sizeof(record));
     // Keep the initiating power-domain result; subsequent native getPG errors
     // can only observe the shared fault and cannot reconstruct this boundary.
     if(result.status==Display13TC::Status::NoPower) {
         uint32_t power[]={1,ddi,wanted,uint32_t(result.power.status),result.power.domain,
             result.power.writes,result.power.rollbackFailed,result.power.forcedOn,result.power.isolated};
-        if(!root->getProperty("WEXDisplay13TCFirstPowerError"))dobs("WEXDisplay13TCFirstPowerError",power,sizeof(power));
+        if(!root->getProperty("WEXDisplay13TCFirstPowerError"))root->setProperty("WEXDisplay13TCFirstPowerError",power,sizeof(power));
     }
     if(!done && !root->getProperty("WEXDisplay13TCModeFailure")) {
-        dobs("WEXDisplay13TCModeFailure",record,sizeof(record));
+        root->setProperty("WEXDisplay13TCModeFailure",record,sizeof(record));
         uint32_t detail[] {1,ddi,result.phy.before,result.phy.after,result.phy.writes,result.phy.elapsedUs};
-        dobs("WEXDisplay13TCModeFailureState",detail,sizeof(detail));
+        root->setProperty("WEXDisplay13TCModeFailureState",detail,sizeof(detail));
     }
     return done ? kIOReturnSuccess : kIOReturnNotReady;
+}
+
+void XE::drainDisplay13TCMode(unsigned ddi) {
+    auto &c=display13FBPower;auto self=callbackXE;
+    if(!c.lock || ddi<3 || ddi>6)return;
+    // This continuation runs after native path removal, under its workloop
+    // gate. Never race a new connect while dropping the owner lock for reset.
+    IOLockLock(c.lock);auto port=c.tcObject[ddi-3];
+    const bool gated=c.workLoop && self->adlnWorkLoopInGate &&
+        Display13FBMemory::field<IOWorkLoop *>(c.controller,0xE00)==c.workLoop &&
+        reinterpret_cast<bool (*)(const IOWorkLoop *)>(self->adlnWorkLoopInGate)(c.workLoop);
+    const bool pending=port && c.tcMode[ddi-3].disconnectPending && !c.tcBusy[ddi-3];
+    uint32_t record[]={1,ddi,pending,gated,c.bridge.nativeDDIRefs(ddi),c.bridge.nativeAUXRefs(ddi),
+        port?Display13FBMemory::field<uint32_t>(port,0x570):0,0,0};
+    if(pending && gated)port->retain();
+    IOLockUnlock(c.lock);
+    if(pending && gated) {
+        record[7]=wrapDisplay13TCMode(port,0);
+        record[8]=Display13FBMemory::field<uint32_t>(port,0x550);port->release();
+    }
+    if(pending)IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13TCDrain",record,sizeof(record));
 }
 
 void XE::wrapDisplay13TCEnableClocks(void *controller,void *raw,void *other,uint32_t *params) {
@@ -6574,7 +6853,9 @@ void XE::wrapDisplay13TCEnableClocks(void *controller,void *raw,void *other,uint
             ok=c.tcSignalReady[tc] && c.tcDPLink[tc].matches(io,p,plan,lanes);
             if(ok)stage=Display13TC::Clock::LinkStage::Complete;
             else {
-                ok=Display13TC::DPSignal::startLink(io,p,plan,lanes,&stage);
+                ok=Display13TC::DPSignal::startLink(io,p,plan,lanes,&stage,
+                    c.tcMode[tc].selectedMode==3?c.tcMode[tc].lanes.pin:0,
+                    c.tcMode[tc].selectedMode==3?c.tcMode[tc].lanes.mask:15);
                 if(ok)c.tcDPLink[tc]={plan.rate,plan.reference,lanes};
             }
         } else {
@@ -6587,12 +6868,13 @@ void XE::wrapDisplay13TCEnableClocks(void *controller,void *raw,void *other,uint
     }
     if(!ok)adlnFault(c.clockFaulted,__LINE__);
     uint32_t record[]={2,ddi,rate,ok,uint32_t(stage),uint32_t(power.status),power.domain,power.writes,power.rollbackFailed};IOLockUnlock(c.lock);
-    dobs("WEXDisplay13TCClockEnable",record,sizeof(record));
+    IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13TCClockEnable",record,sizeof(record));
 }
 void XE::wrapDisplay13TCDisableClocks(void *controller,void *raw,void *other) {
     auto self=callbackXE;auto port=static_cast<OSObject *>(raw);auto &c=display13FBPower;
     auto config=port && port->getMetaClass()->getClassSize()>=0x580 ? Display13FBMemory::field<uint32_t *>(port,0x548):nullptr;
     if(config && config[0]<3) {
+        if((self->adlnOutputWiring.links()&(1U<<config[0])) && self->display13ClockOrderReady && !display13StopTranscoder(raw))return;
         bool keep=false;
         if(!comboClockTarget(controller,raw,other) || !comboBeginClock(controller,raw,false,keep)) {
             adlnFault(c.clockFaulted,__LINE__);return;
@@ -6604,7 +6886,7 @@ void XE::wrapDisplay13TCDisableClocks(void *controller,void *raw,void *other) {
     // transcoder stop before dropping DDI/PLL, including retry and abort paths.
     if(config && config[0]<7 && (self->adlnOutputWiring.dp&(1U<<config[0])) && self->display13ClockOrderReady &&
        !display13StopTranscoder(raw)) {
-        dobs("WEXDisplay13ClockStopRejected",true);return;
+        IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13ClockStopRejected",true);return;
     }
     if(!c.lock)return;IOLockLock(c.lock);const auto ddi=display13TCTarget(port,true);bool ok=false;
     if(controller==c.controller && (!other || other==raw) && ddi<7 && !c.tcBusy[ddi-3]) {
@@ -6614,7 +6896,7 @@ void XE::wrapDisplay13TCDisableClocks(void *controller,void *raw,void *other) {
     }
     if(!ok)adlnFault(c.clockFaulted,__LINE__);
     uint32_t record[]={1,ddi,ok};IOLockUnlock(c.lock);
-    dobs("WEXDisplay13TCClockDisable",record,sizeof(record));
+    IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13TCClockDisable",record,sizeof(record));
 }
 uint32_t XE::wrapDisplay13TCSignal(void *raw,uint32_t swing,uint32_t emphasis,void *drive) {
     auto self=callbackXE;auto port=static_cast<OSObject *>(raw);auto &c=display13FBPower;
@@ -6627,7 +6909,8 @@ uint32_t XE::wrapDisplay13TCSignal(void *raw,uint32_t swing,uint32_t emphasis,vo
         Display13FBTCIO io{port,ddi-3};ok=io.owned(ddi) && io.linkHeld() && c.tcSignalReady[ddi-3];
         if(ok && (self->adlnOutputWiring.dp&(1U<<ddi))) {
             Display13TC::Port p;Display13TC::Port::resolve(ddi,p);
-            ok=!drive && Display13TC::DPSignal::program(io,p,Display13FBMemory::field<uint32_t>(port,0x128),swing,emphasis);
+            ok=!drive && Display13TC::DPSignal::program(io,p,Display13FBMemory::field<uint32_t>(port,0x128),swing,emphasis,
+                c.tcMode[ddi-3].selectedMode==3?c.tcMode[ddi-3].lanes.mask:15);
         }
     }
     if(!ok)adlnFault(c.clockFaulted,__LINE__);IOLockUnlock(c.lock);
@@ -6649,8 +6932,10 @@ uint32_t XE::wrapDisplay13DPLaneMask(void *port) {
         return FunctionCast(wrapDisplay13DPLaneMask,s->orgDisplay13DPLaneMask)(port);
     auto &c=display13FBPower;if(!c.lock)return 0;IOLockLock(c.lock);
     const auto ddi=display13TCTarget(object);bool ok=false;
-    if(ddi>=3 && ddi<=6){Display13FBTCIO io{object,ddi-3};ok=io.owned(ddi);}
-    IOLockUnlock(c.lock);return ok?15U:0;
+    uint32_t mask=0;
+    if(ddi>=3 && ddi<=6){Display13FBTCIO io{object,ddi-3};ok=io.owned(ddi);
+        mask=c.tcMode[ddi-3].selectedMode==3?c.tcMode[ddi-3].lanes.mask:15U;}
+    IOLockUnlock(c.lock);return ok?mask:0;
 }
 void XE::wrapDisplay13DPPhyGating(void *port,bool gate) {
     auto s=callbackXE;auto object=static_cast<OSObject *>(port);
@@ -6662,10 +6947,12 @@ void XE::wrapDisplay13DPPhyGating(void *port,bool gate) {
     const auto ddi=display13TCTarget(object);bool ok=false;
     if(ddi>=3 && ddi<=6) {
         Display13FBTCIO io{object,ddi-3};Display13TC::Port p;Display13TC::Port::resolve(ddi,p);
-        ok=io.owned(ddi) && io.linkHeld();
+        ok=(io.owned(ddi) || (gate && io.retainedOwned(ddi) && io.quiescent(ddi))) && io.linkHeld();
         // Same fixed-DP contract as TGL: Linux leaves DP_MODE bits5:1
         // intact during training. Do not run the donor's clear operation.
         if(ok && gate)for(unsigned group=0;group<2;++group) {
+            const auto &mode=c.tcMode[ddi-3];
+            if(mode.selectedMode==3 && !(mode.lanes.mask&(3U<<(2*group))))continue;
             uint32_t value=0x3e;ok=Display13TC::PHY::access(io,p,0x1000*group+0xa0,0x3e,value,true) && ok;
         }
     }
@@ -6679,8 +6966,10 @@ void XE::wrapDisplay13DPPortWrite(void *port,uint32_t reg,uint32_t value) {
             IOLockLock(c.lock);const auto ddi=display13TCTarget(object);
             if(ddi>=3 && ddi<=6 && (s->adlnOutputWiring.dp&(1U<<ddi)) && reg==0x64000+0x100*ddi && (value&0x80000000)) {
                 Display13FBTCIO io{object,ddi-3};const auto rate=Display13FBMemory::field<uint32_t>(port,0x128);
-                if(io.owned(ddi) && io.linkHeld() && (rate==6 || rate==10 || rate==20 || rate==30))
-                    value=(value&~0xff00U)|(((rate*27+9)/10)<<8);
+                Display13TC::Port p;uint32_t before[2]{},after[2]{};
+                const bool ready=io.owned(ddi) && io.linkHeld() && Display13TC::DPSignal::bufferRate(rate,value) &&
+                    Display13TC::Port::resolve(ddi,p) && Display13TC::DPSignal::prepareBuffer(io,p,before,after);
+                if(ready)value=(value&~0xff00U)|(((rate*27+9)/10)<<8);
                 else {adlnFault(c.clockFaulted,__LINE__);IOLockUnlock(c.lock);return;}
             }
             IOLockUnlock(c.lock);
@@ -6744,12 +7033,21 @@ uint32_t XE::wrapDisplay13TCLightUp(void *controller,void *rawFB,void *rawPath,c
     io.dp=io.ddi<7 && (self->adlnOutputWiring.dp&(1U<<io.ddi));
     const auto result=io.dp?Display13TC::lightUpDP(io,io.ddi,io.pipeIndex):Display13TC::lightUpTMDS(io,io.ddi,io.pipeIndex);
     uint32_t record[]={1,io.ddi,io.pipeIndex,uint32_t(result.stage),result.status};
-    dobs("WEXDisplay13TCLightUp",record,sizeof(record));
+    IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13TCLightUp",record,sizeof(record));
     return result.status;
 }
 
 uint32_t XE::wrapDisplay13TCSetMode(void *controller,void *fb,const void *timing) {
     auto self=callbackXE;
+    // The GOP-preserving surface adapter must replace this refusal before
+    // startup admission can open. The original sends a begin notification and
+    // writes ordinary clock/timing state before reaching LightUpEDP.
+    if(self->adlnOutputWiring.dsi) {
+        auto service=static_cast<IOService *>(fb);
+        const auto path=service && service->getMetaClass()->getClassSize()>=0x4B90 ?
+            Display13FBMemory::singlePath<OSObject *>(service) : nullptr;
+        if(dsiLifecycleTarget(service,path))return kIOReturnNotReady;
+    }
     return Display13TC::finishMode(
         [&](){return FunctionCast(wrapDisplay13TCSetMode,self->orgDisplay13TCSetMode)(controller,fb,timing);},
         [&](){reinterpret_cast<void (*)(void *,void *,uint32_t)>(self->display13TCNotify)(controller,fb,1);});
@@ -6766,6 +7064,8 @@ bool XE::processDisplay13FramebufferTC(KernelPatcher &patcher,size_t index,mach_
     }
     struct Span {uint32_t offset;const uint8_t *bytes;size_t size;};
     const Span spans[]={
+        {baseModeBranchOffset,baseModeBranch,sizeof(baseModeBranch)},
+        {baseModeStoreOffset,baseModeStore,sizeof(baseModeStore)},
         {bootPortInitOffset,bootPortInit,sizeof(bootPortInit)},
         {bootPowerCallOffset,bootPowerCall,sizeof(bootPowerCall)},
         {bootSetupCallOffset,bootSetupCall,sizeof(bootSetupCall)},
@@ -6902,7 +7202,7 @@ bool XE::processDisplay13FramebufferOutput(KernelPatcher &patcher,size_t index,m
         {frontend[3].symbol,wrapDisplay13FBDDC,orgDisplay13FBDDC}
     };
     const bool ready=patcher.routeMultipleShort(index,routes,arrsize(routes),address,size);patcher.clearError();
-    dobs("N97FBGMBusObservationReady",ready);
+    IORegistryEntry::getRegistryRoot()->setProperty("N97FBGMBusObservationReady",ready);
     bool comboReady=true;
     if(ready && !(adlnOutputWiring.selected()&0x78)) {
         const char *off="__ZN31AppleIntelFramebufferController13disableClocksEP14AppleIntelPortS1_";
@@ -6950,7 +7250,7 @@ bool XE::processDisplay13FramebufferAUX(KernelPatcher &patcher,size_t index,mach
 
 // Caller holds the display owner lock. Probe may run before setPortMode,
 // hence mode0 is allowed; a DDI/main-link lease is deliberately not required.
-bool XE::display13AUXReady(void *port,bool command) {
+bool XE::display13AUXReady(void *port,bool command,bool retained) {
  auto s=callbackXE;auto &c=display13FBPower;auto object=static_cast<OSObject *>(port);
  if(!s->display13FramebufferRequested || s->xeProfile.display!=XELP::Display::XeLPD || !s->display13FBAUXHooksReady ||
     !object || object->getMetaClass()->getClassSize()<0x5AC || !c.controller ||
@@ -6964,6 +7264,7 @@ bool XE::display13AUXReady(void *port,bool command) {
     !Display13FBMemory::field<void *>(c.controller,0xC30))return false;
  auto p=static_cast<uint8_t *>(port);auto config=Display13FBMemory::field<uint32_t *>(p,0x548);
  if(!Display13FBTopology::selected(s->adlnPlatform,config,s->adlnOutputWiring) || config[0]>=7 || config[0]==2 ||
+    (s->adlnOutputWiring.dsi & (1U<<config[0])) ||
     Display13FBMemory::field<uint32_t>(p,0x120)!=config[0] ||
     (config[0]<3 && Display13FBMemory::field<uint32_t>(p,0x550)>1) ||
     Display13FBMemory::field<void *>(p,0x578)!=c.access ||
@@ -6971,8 +7272,11 @@ bool XE::display13AUXReady(void *port,bool command) {
     Display13FBMemory::field<void *>(c.power,0x78)!=c.access)return false;
  if(config[0]>=3) {
   Display13FBTCIO tc{object,config[0]-3};
-  if(!(s->adlnOutputWiring.dp&(1U<<config[0])) || !tc.owned(config[0]))return false;
+  if(!(s->adlnOutputWiring.dp&(1U<<config[0])) ||
+     !(retained && !command ? tc.retainedOwned(config[0]) : tc.owned(config[0])))return false;
  }
+ // DSI is a selected display path but has no AUX transport. Reject it above
+ // before any native public operation can acquire an AUX power reference.
  // Exact c004 HAL uses CTL + five DATA offsets from the port object.
  const auto ctl=0x64010+0x100*config[0];
  for(unsigned n=0;n<6;++n)if(Display13FBMemory::field<uint32_t>(p,0x594+4*n)!=ctl+4*n)return false;
@@ -7011,8 +7315,11 @@ uint32_t XE::wrapDisplay13RunAUX(void *port,uint32_t command,uint32_t *packet,ui
  IOLockUnlock(c.lock);if(!ready)return kIOReturnNotReady;
  const auto r=FunctionCast(wrapDisplay13RunAUX,callbackXE->orgDisplay13RunAUX)(port,command,packet,length,flag);
  IOLockLock(c.lock);Display13FBPowerIO io {c.map};const bool held=c.bridge.endAUXCommand(io,ddi);
- const bool complete=display13AUXReady(port,false) && held;
- if(!complete)adlnFault(c.bridge.state.faulted,__LINE__);
+ // HPD/assignment can disappear while the donor waits for the AUX reply.
+ // Reject that reply, but only lost identity/power/leases poison the owner.
+ const bool protectedCompletion=held && display13AUXReady(port,false,true);
+ const bool complete=protectedCompletion && display13AUXReady(port,false);
+ if(!protectedCompletion)adlnFault(c.bridge.state.faulted,__LINE__);
  IOLockUnlock(c.lock);return r ? r : complete ? 0 : kIOReturnNotReady;
 }
 
@@ -7052,9 +7359,10 @@ bool XE::processFramebufferTraining(KernelPatcher &patcher,size_t index,mach_vm_
 }
 
 bool XE::processDisplay13Training(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
- if(!adlnOutputWiring.dp)return true;
+ if(!adlnOutputWiring.links())return true;
  using namespace FramebufferTrainingNative;
- if(!framebufferTrainingHooksReady || !display13FBDPHooksReady || !display13FBSSTHooksReady ||
+ if(!framebufferTrainingHooksReady || (adlnOutputWiring.dp && !display13FBDPHooksReady) ||
+    (adlnOutputWiring.panel && (!display13PanelPowerReady || !tglSinkFramingReady)) || !display13FBSSTHooksReady ||
     !display13FBPowerReferencesReady || !orgDisplay13GMBusWrite)return false;
  const auto &e=entries[PortTrain];
  const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,e.symbol,address,size);patcher.clearError();
@@ -7062,13 +7370,14 @@ bool XE::processDisplay13Training(KernelPatcher &patcher,size_t index,mach_vm_ad
  KernelPatcher::RouteRequest route(e.symbol,wrapDisplay13PortTraining,orgDisplay13PortTraining);
  const bool routed=patcher.routeMultipleShort(index,&route,1,address,size);patcher.clearError();
  if(!routed)return false;
- trainingLeaseDP13Mask=adlnOutputWiring.dp;
+ trainingLeaseDP13Mask=adlnOutputWiring.links();
+ display13DPImage=address;
  trainingLeaseValidate=display13LeaseValidate;trainingLeasePower=display13LeasePower;trainingLeaseStop=display13LeaseStop;
  tglDisablePort=reinterpret_cast<mach_vm_address_t>(wrapDisplay13DisablePort);
  tglDisableClocks=reinterpret_cast<mach_vm_address_t>(wrapDisplay13TCDisableClocks);
  display13TrainingReady=tglTrainingLeaseReady=true;
  display13FramingReady=display13ClockOrderReady=true;
- dobs("WEXDisplay13TrainingReady",true);
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13TrainingReady",true);
  return true;
 }
 
@@ -7095,7 +7404,10 @@ bool XE::display13LeaseStop(void *controller,void *port) {
   IOLockLock(c.lock);auto p=display13SSTPort(port);bool ok=false;
   if(p) {
    const auto ddi=Display13FBMemory::field<uint32_t>(p,0x120);Display13TC::Port phy;
-   if(Display13TC::Port::resolve(ddi,phy)) {
+   if(ddi<2) {
+    Display13FBPowerIO io{c.map};const auto mux=io.read(0x164280);
+    ok=mux!=UINT32_MAX && (mux&(1U<<(10+ddi))) && !c.bridge.nativeDDIRefs(ddi) && !c.mainLink[ddi].owner;
+   } else if(Display13TC::Port::resolve(ddi,phy)) {
     Display13FBTCIO io{static_cast<OSObject *>(port),ddi-3};
     if(io.powerHeld()) {
      const auto pll=io.read(phy.pll);
@@ -7152,7 +7464,7 @@ bool XE::display13DeferClock(void *access,uint64_t reg,uint32_t value,uintptr_t 
  const auto pipe=unsigned((reg-0x46140)/4);void *port=nullptr;
  // The native caller owns the path/FB mutex. Look up the real pool entry,
  // including partial modesets not yet published to the scanout allocator.
- for(unsigned ddi=3;ddi<7;++ddi)if(s->adlnOutputWiring.dp&(1U<<ddi)) {
+ for(unsigned ddi=0;ddi<7;++ddi)if(s->adlnOutputWiring.links()&(1U<<ddi)) {
   auto candidate=reinterpret_cast<void *(*)(uint32_t)>(s->tglPortByDDI)(ddi);
   auto path=candidate?reinterpret_cast<void *(*)(void *)>(s->orgTGLPathLookup)(candidate):nullptr;
   if(path && Display13FBMemory::field<uint32_t>(path,0x3640)==pipe &&
@@ -7184,7 +7496,7 @@ bool XE::display13StopTranscoder(void *port) {
   auto &deferred=display13DeferredClocks[pipe];
   ok=buffer!=UINT32_MAX && conf!=UINT32_MAX && func!=UINT32_MAX && tp!=UINT32_MAX && clock!=UINT32_MAX &&
    !(buffer&0x80000000U) && !(conf&0xc0000000U) && !((func|tp)&0x80000000U) &&
-   (!(clock&0xf0000000U) || (clock>>28)==ddi+3) && (!deferred.pending || deferred.port==port);
+   (!(clock&0xf0000000U) || (clock>>28)==ddi+(ddi>=3?3:1)) && (!deferred.pending || deferred.port==port);
   if(ok) {
    if(!(buffer&0x80U))IODelay(8); // DDI disable: idle or >=8us before clock removal.
    const auto value=deferred.pending?deferred.value:(clock&0x0fffffffU);
@@ -7237,11 +7549,11 @@ uint8_t *XE::display13SSTPort(void *port) {
  if(!s->display13FramebufferRequested || s->xeProfile.display!=XELP::Display::XeLPD || !s->display13FBSSTHooksReady ||
     !object || object->getMetaClass()->getClassSize()<0x624 || !c.controller ||
     c.controller!=s->adlnTopologyController || !adlnWriterMappingBound() ||
-    c.clockFaulted || c.memoryFaulted || c.clockStopped || !s->adlnOutputWiring.described())return nullptr;
+    c.clockFaulted || c.memoryFaulted || c.panelFaulted || c.clockStopped || !s->adlnOutputWiring.described())return nullptr;
  auto p=static_cast<uint8_t *>(port);auto config=Display13FBMemory::field<uint32_t *>(p,0x548);
  if(!Display13FBTopology::selected(s->adlnPlatform,config,s->adlnOutputWiring) ||
-    !(s->adlnOutputWiring.dp&(1U<<config[0])) || p[0x117] ||
-    Display13FBMemory::field<uint32_t>(p,0x120)!=config[0] || Display13FBMemory::field<uint32_t>(p,0x550)!=(config[0]>=3?4U:1U) ||
+    !(s->adlnOutputWiring.links()&(1U<<config[0])) || p[0x117] ||
+    Display13FBMemory::field<uint32_t>(p,0x120)!=config[0] || Display13FBMemory::field<uint32_t>(p,0x550)!=(config[0]>=3?((s->adlnOutputWiring.typeC&(1U<<config[0]))?3U:4U):1U) ||
     Display13FBMemory::field<void *>(p,0x578)!=c.access)return nullptr;
  return p;
 }
@@ -7253,7 +7565,7 @@ bool XE::display13HDMIPort(void *port) {
  return Display13FBTopology::selected(s->adlnPlatform,config,s->adlnOutputWiring) && s->adlnOutputWiring.matchesHDMI(config);
 }
 
-bool XE::display13MainLinkAUX(void *port,bool acquire) {
+bool XE::display13MainLinkAUX(void *port,bool acquire,bool stopping) {
  auto &c=display13FBPower;if(!c.lock)return false;
  OSObject *retired=nullptr;bool ok=false;IOLockLock(c.lock);
  auto p=display13SSTPort(port);
@@ -7264,7 +7576,8 @@ bool XE::display13MainLinkAUX(void *port,bool acquire) {
   if(ddi>=3 && ddi<=6) {
    // Mode owns AUX from before first DPCD through buffer/PLL stop. Do not
    // add the Combo main-link lease or release mode power at buffer-disable.
-   Display13FBTCIO tc{static_cast<OSObject *>(port),ddi-3};ok=tc.owned(ddi) && tc.linkHeld();
+   Display13FBTCIO tc{static_cast<OSObject *>(port),ddi-3};
+   ok=(acquire && !stopping ? tc.owned(ddi) : tc.retainedOwned(ddi)) && tc.linkHeld();
   }
   if(ddi<2 && Display13FBMemory::field<uint32_t>(p,0x590)==0x64000+0x100*ddi) {
    auto &link=c.mainLink[ddi];const auto previous=link.owner;Display13FBPowerIO io{c.map};
@@ -7282,7 +7595,7 @@ bool XE::display13MainLinkAUX(void *port,bool acquire) {
 
 uint32_t XE::wrapDisplay13EnablePort(void *port) {
  auto s=callbackXE;
- if(!s->adlnOutputWiring.dp || display13HDMIPort(port))
+ if(!s->adlnOutputWiring.links() || display13HDMIPort(port))
   return FunctionCast(wrapDisplay13EnablePort,s->orgDisplay13EnablePort)(port);
  if(!display13MainLinkAUX(port,true))return kIOReturnNotReady;
  const auto result=FunctionCast(wrapDisplay13EnablePort,s->orgDisplay13EnablePort)(port);
@@ -7292,12 +7605,12 @@ uint32_t XE::wrapDisplay13EnablePort(void *port) {
 
 uint32_t XE::wrapDisplay13DisablePort(void *port) {
  auto s=callbackXE;
- if(!s->adlnOutputWiring.dp || display13HDMIPort(port))
+ if(!s->adlnOutputWiring.links() || display13HDMIPort(port))
   return FunctionCast(wrapDisplay13DisablePort,s->orgDisplay13DisablePort)(port);
- if(!display13MainLinkAUX(port,true))return kIOReturnNotReady;
+ if(!display13MainLinkAUX(port,true,true))return kIOReturnNotReady;
  const auto result=FunctionCast(wrapDisplay13DisablePort,s->orgDisplay13DisablePort)(port);
  if(!result && s->display13ClockOrderReady && !display13StopTranscoder(port))return kIOReturnNotReady;
- const bool released=display13MainLinkAUX(port,false);
+ const bool released=display13MainLinkAUX(port,false,true);
  return result ? result : released ? 0 : kIOReturnNotReady;
 }
 
@@ -7309,14 +7622,14 @@ uint32_t XE::wrapDisplay13SignalLevels(void *port,uint32_t swing,uint32_t emphas
     Display13FBMemory::field<uint32_t>(port,0x120)>=3)
   return wrapDisplay13TCSignal(port,swing,emphasis,overrideConfig);
  // No protocol replacement for Combo HDMI; preserve the donor's behavior.
- if(!s->adlnOutputWiring.dp || display13HDMIPort(port))
+ if(!s->adlnOutputWiring.links() || display13HDMIPort(port))
   return FunctionCast(wrapDisplay13SignalLevels,s->orgDisplay13SignalLevels)(port,swing,emphasis,overrideConfig);
  if(!c.lock)return kIOReturnNotReady;
  IOLockLock(c.lock);auto p=display13SSTPort(port);uint32_t result=kIOReturnNotReady;
  if(p && !overrideConfig) {
   const auto ddi=Display13FBMemory::field<uint32_t>(p,0x120);TGLComboSignal selected;
   Display13FBPowerIO io{c.map};
-  if(selected.selectADLP(ddi,Display13FBMemory::field<uint32_t>(p,0x124),Display13FBMemory::field<uint32_t>(p,0x128),swing,emphasis) &&
+  if(selected.selectADLP(ddi,Display13FBMemory::field<uint32_t>(p,0x124),Display13FBMemory::field<uint32_t>(p,0x128),swing,emphasis,(s->adlnOutputWiring.panel&(1U<<ddi))!=0,s->firmwarePorts.panel.lowSwing) &&
      Display13FBMemory::field<uint32_t>(p,0x620)==selected.base+0x804 &&
      Display13FBMemory::field<uint32_t>(p,0x5C8)==selected.base+0x28 &&
      Display13FBMemory::field<uint32_t>(c.access,0x60)>=selected.base+0xBA0 && c.bridge.ddiHeld(io,ddi)) {
@@ -7330,7 +7643,7 @@ uint32_t XE::wrapDisplay13SignalLevels(void *port,uint32_t swing,uint32_t emphas
 
 uint32_t XE::wrapDisplay13TrainingPattern(void *path,uint32_t pattern) {
  auto s=callbackXE;auto &c=display13FBPower;
- if(!s->adlnOutputWiring.dp)return FunctionCast(wrapDisplay13TrainingPattern,s->orgDisplay13TrainingPattern)(path,pattern);
+ if(!s->adlnOutputWiring.links())return FunctionCast(wrapDisplay13TrainingPattern,s->orgDisplay13TrainingPattern)(path,pattern);
  auto object=static_cast<OSObject *>(path);
  if(!c.lock || !object || object->getMetaClass()->getClassSize()<0x3730)return kIOReturnNotReady;
  if(display13HDMIPort(Display13FBMemory::field<void *>(path,0x3648)))
@@ -7363,7 +7676,7 @@ uint32_t XE::wrapDisplay13TrainingPattern(void *path,uint32_t pattern) {
         (!r.reason || (r.reason==2 && r.clockBefore==r.clockWanted && r.funcBefore==r.funcWanted));
     }
    } else {
-    const auto r=XELP::SSTProgram::framing(read,write,binding.pipe,p[0x11A],false,false,0,true);
+    const auto r=XELP::SSTProgram::framing(read,write,binding.pipe,p[0x11A],(s->adlnOutputWiring.panel&(1U<<binding.ddi))!=0,s->tglSinkFramingReady,p[0x118],true);
     ok=r.ready && r.after!=UINT32_MAX && !(r.after&0x08000000U) && (!r.active || r.after==r.wanted);
    }
   }
@@ -7383,7 +7696,7 @@ uint32_t XE::wrapDisplay13GMBus(IOService *controller,uint32_t bus,uint32_t spee
     static uint32_t count {}; const auto call=__sync_add_and_fetch(&count,1);
     uint64_t r[21] {3,call,bus,speed};auto req=static_cast<uint8_t *>(request);
     if(req) {memcpy(r+4,req,16);r[6]=*reinterpret_cast<uint32_t *>(req+0x28);r[7]=*reinterpret_cast<uint32_t *>(req+0x38);}
-    auto root=IORegistryEntry::getRegistryRoot();dobs("N97FBGMBusEntry",r,sizeof(r));
+    auto root=IORegistryEntry::getRegistryRoot();root->setProperty("N97FBGMBusEntry",r,sizeof(r));
     Display13GMBusScope *scope=nullptr;const auto thread=reinterpret_cast<uintptr_t>(current_thread());
     for(auto &o:adlnGMBusScopes)if(__sync_bool_compare_and_swap(&o.thread,0,thread)) {
         o.reads=o.writes=o.first=o.last=o.combined=o.error=o.samples=o.polls=o.pollReads=o.pollUs=0;
@@ -7400,13 +7713,13 @@ uint32_t XE::wrapDisplay13GMBus(IOService *controller,uint32_t bus,uint32_t spee
         r[10]=scope->reads;r[11]=scope->writes;r[12]=scope->first;r[13]=scope->last;
         r[14]=scope->combined;r[15]=scope->samples;r[16]=scope->error;r[17]=1;
         r[18]=scope->polls;r[19]=scope->pollReads;r[20]=scope->pollUs;
-        dobs("N97FBGMBusHistoryLast",scope->history,scope->samples*sizeof(scope->history[0]));
-        if(call<=16) {char key[44];snprintf(key,sizeof(key),"N97FBGMBusHistoryFirst%u",call);dobs(key,scope->history,scope->samples*sizeof(scope->history[0]));}
+        root->setProperty("N97FBGMBusHistoryLast",scope->history,scope->samples*sizeof(scope->history[0]));
+        if(call<=16) {char key[44];snprintf(key,sizeof(key),"N97FBGMBusHistoryFirst%u",call);root->setProperty(key,scope->history,scope->samples*sizeof(scope->history[0]));}
         __sync_lock_test_and_set(&scope->thread,0);
     }
     r[8]=result;if(req)r[9]=*reinterpret_cast<uint32_t *>(req+0x1C);
-    dobs("N97FBGMBusLast",r,sizeof(r));
-    if(call<=16) {char key[40];snprintf(key,sizeof(key),"N97FBGMBusFirst%u",call);dobs(key,r,sizeof(r));}
+    root->setProperty("N97FBGMBusLast",r,sizeof(r));
+    if(call<=16) {char key[40];snprintf(key,sizeof(key),"N97FBGMBusFirst%u",call);root->setProperty(key,r,sizeof(r));}
     return result;
 }
 
@@ -7501,10 +7814,10 @@ bool XE::processDisplay13FramebufferColor(KernelPatcher &patcher,size_t index,ma
         KernelPatcher::RouteRequest preRoute(preSymbol,wrapAlderLakeNPreGamma,orgAlderLakeNPreGamma);
         ready=patcher.routeMultipleShort(index,&preRoute,1,address,size);patcher.clearError();
     }
-    dobs("N97FBDisplay13PreGammaReady",ready);
-    dobs("N97FBGammaObservationReady",ready);
+    IORegistryEntry::getRegistryRoot()->setProperty("N97FBDisplay13PreGammaReady",ready);
+    IORegistryEntry::getRegistryRoot()->setProperty("N97FBGammaObservationReady",ready);
     if(ready && display13TraceEnabled)if(auto observation=OSSerializer::forTarget(nullptr,adlnArbitrationSerialize)) {
-        dobs("N97FBArbitrationLive",observation);observation->release();
+        IORegistryEntry::getRegistryRoot()->setProperty("N97FBArbitrationLive",observation);observation->release();
     }
     return ready;
 }
@@ -7548,12 +7861,12 @@ void XE::wrapAlderLakeNPreGamma(void *path,void *transaction,uint32_t control) {
         r[56]=upload;
         auto root=IORegistryEntry::getRegistryRoot();char key[64];
         if(local<=64) {
-            snprintf(key,sizeof(key),"N97FBPreGammaPipe%uLast%u",pipe,local%4);dobs(key,r,sizeof(r));
-            if(local<=8) {snprintf(key,sizeof(key),"N97FBPreGammaPipe%uFirst%u",pipe,local);dobs(key,r,sizeof(r));}
+            snprintf(key,sizeof(key),"N97FBPreGammaPipe%uLast%u",pipe,local%4);root->setProperty(key,r,sizeof(r));
+            if(local<=8) {snprintf(key,sizeof(key),"N97FBPreGammaPipe%uFirst%u",pipe,local);root->setProperty(key,r,sizeof(r));}
         }
         if(upload && upload<=64) {
-            snprintf(key,sizeof(key),"N97FBPreGammaPipe%uUploadLast",pipe);dobs(key,r,sizeof(r));
-            if(upload==1) {snprintf(key,sizeof(key),"N97FBPreGammaPipe%uUploadFirst",pipe);dobs(key,r,sizeof(r));}
+            snprintf(key,sizeof(key),"N97FBPreGammaPipe%uUploadLast",pipe);root->setProperty(key,r,sizeof(r));
+            if(upload==1) {snprintf(key,sizeof(key),"N97FBPreGammaPipe%uUploadFirst",pipe);root->setProperty(key,r,sizeof(r));}
         }
     }
     if(slot)__sync_lock_test_and_set(&slot->thread,0);
@@ -7624,14 +7937,14 @@ void XE::wrapAlderLakeNGamma10(void *path,void *transaction,uint32_t control) {
         r[125]=local;r[126]=upload;
         auto root=IORegistryEntry::getRegistryRoot();char key[64];
         if(local<=64) {
-            snprintf(key,sizeof(key),"N97FBGammaUploadPipe%uLast%u",pipe,local%4);dobs(key,r,sizeof(r));
-            if(local<=8) {snprintf(key,sizeof(key),"N97FBGammaUploadPipe%uFirst%u",pipe,local);dobs(key,r,sizeof(r));}
+            snprintf(key,sizeof(key),"N97FBGammaUploadPipe%uLast%u",pipe,local%4);root->setProperty(key,r,sizeof(r));
+            if(local<=8) {snprintf(key,sizeof(key),"N97FBGammaUploadPipe%uFirst%u",pipe,local);root->setProperty(key,r,sizeof(r));}
         }
         // Retain real DATA writes, including zero/partial/failing transfers.
         // No-op control updates cannot masquerade as the latest table upload.
         if(upload && upload<=64) {
-            snprintf(key,sizeof(key),"N97FBGammaUploadPipe%uDataLast",pipe);dobs(key,r,sizeof(r));
-            if(upload==1) {snprintf(key,sizeof(key),"N97FBGammaUploadPipe%uDataFirst",pipe);dobs(key,r,sizeof(r));}
+            snprintf(key,sizeof(key),"N97FBGammaUploadPipe%uDataLast",pipe);root->setProperty(key,r,sizeof(r));
+            if(upload==1) {snprintf(key,sizeof(key),"N97FBGammaUploadPipe%uDataFirst",pipe);root->setProperty(key,r,sizeof(r));}
         }
     }
     if(slot)__sync_lock_test_and_set(&slot->thread,0);
@@ -7774,7 +8087,7 @@ static void adlnFrontendSnapshot(IOService *fb,uint64_t (&r)[16]) {
 }
 static void adlnPublishFrontend(const char *name,const char *phase,uint64_t (&r)[16]) {
     char key[64];snprintf(key,sizeof(key),"N97FB%s%u%s",name,static_cast<uint32_t>(r[2]),phase);
-    dobs(key,r,sizeof(r));
+    IORegistryEntry::getRegistryRoot()->setProperty(key,r,sizeof(r));
 }
 bool XE::processFramebufferAGDC(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
     // Both short trampolines end before the donor's RIP-relative counters.
@@ -7795,9 +8108,63 @@ bool XE::processFramebufferAGDC(KernelPatcher &patcher,size_t index,mach_vm_addr
         {client,wrapFramebufferUserClient,orgFramebufferUserClient},
         {callback,wrapFramebufferAGDCCallback,orgFramebufferAGDCCallback}
     };
-    const bool ready=patcher.routeMultipleShort(index,routes,arrsize(routes),address,size);patcher.clearError();
-    dobs("WEXDisplay13AGDCGuardReady",ready);
+    bool ready=patcher.routeMultipleShort(index,routes,arrsize(routes),address,size);patcher.clearError();
+    if(ready)ready=processDisplay13TrialAGDC(patcher,index,address,size);
+    IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13AGDCGuardReady",ready);
     return ready;
+}
+
+// This belongs to the opt-in DSI bootstrap experiment, not the USB-C backend.
+// A disconnected temporary boot port needs an explicit native retirement when
+// policy first replaces it. Real DSI support can remove this experiment whole.
+bool XE::processDisplay13TrialAGDC(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
+    if(!display13FramebufferRequested || !checkKernelArgument("-wex-dsi-hdmi-test"))return true;
+    const char *symbol="__ZN31AppleIntelFramebufferController30commitResourceConfigurationSetEP30AGDCResourceConfigurationSet_tS1_";
+    const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,symbol,address,size);patcher.clearError();
+    const uint8_t entry[]={0x55,0x48,0x89,0xe5,0x53,0x50};
+    if(size<=0x670B9 || fn!=address+0x66F6E || memcmp(reinterpret_cast<void *>(fn),entry,sizeof(entry)))return false;
+    KernelPatcher::RouteRequest route(symbol,wrapDisplay13TrialCommit,orgDisplay13TrialCommit);
+    const bool ready=patcher.routeMultipleShort(index,&route,1,address,size);patcher.clearError();return ready;
+}
+
+uint32_t XE::wrapDisplay13TrialCommit(void *controller,void *request,void *output) {
+    auto req=static_cast<uint32_t *>(request);
+    const auto count=req ? req[0]:0;
+    const auto index=req && output && count && count<=16 ? req[4]:UINT32_MAX;
+    auto fb=tglResourceFB(controller,index);
+    // Opt-in DSI handoff trial only: an unplugged temporary boot connector
+    // never becomes online, so policy does not retire its boot allocation.
+    // Use the normal stop/free path before committing a different live port.
+    if(callbackXE->display13FramebufferRequested && checkKernelArgument("-wex-dsi-hdmi-test") &&
+       fb && count==1 && display13RetirementHealthy() &&
+       !Display13FBMemory::field<uint8_t>(fb,0x1E0) &&
+       Display13FBMemory::field<uint8_t>(fb,0x44DE) &&
+       Display13FBMemory::field<uint8_t>(fb,0x1E7) &&
+       Display13FBMemory::field<uint32_t>(fb,0x49E8)==1 &&
+       Display13FBMemory::field<uint32_t>(fb,0x4A00)==1) {
+        auto path=Display13FBMemory::singlePath<OSObject *>(fb);
+        const auto binding=adlnInspectPathBinding(static_cast<IOService *>(fb),path,
+            callbackXE->adlnPlatform,callbackXE->adlnOutputWiring);
+        const auto target=req[0x48/4];
+        auto port=path ? Display13FBMemory::field<OSObject *>(path,0x3648) : nullptr;
+        auto next=target && target<=9 && callbackXE->tglPortByDDI ?
+            reinterpret_cast<OSObject *(*)(uint32_t)>(callbackXE->tglPortByDDI)(target-1) : nullptr;
+        if(binding.status==TGLFBBinding::Status::Complete && port && next &&
+           next!=port && next->getMetaClass()->getClassSize()>=0x580 &&
+           Display13FBTopology::selected(callbackXE->adlnPlatform,
+               Display13FBMemory::field<uint32_t *>(next,0x548),callbackXE->adlnOutputWiring) &&
+           Display13FBMemory::field<uint32_t>(next,0x120)==target-1 &&
+           Display13FBMemory::field<uint32_t>(path,0x3644)>=1 &&
+           Display13FBMemory::field<uint32_t>(path,0x3644)<=2 &&
+           Display13FBMemory::field<uint32_t>(port,0x554)<2 &&
+           Display13FBMemory::field<uint32_t>(next,0x554)>1) {
+            const auto retired=wrapDisplay13FreeResources(fb);
+            uint32_t record[]={1,binding.ddi,target-1,retired};
+            IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13TrialBootRetire",record,sizeof(record));
+            if(retired)return retired;
+        }
+    }
+    return FunctionCast(wrapDisplay13TrialCommit,callbackXE->orgDisplay13TrialCommit)(controller,request,output);
 }
 
 uint32_t XE::wrapFramebufferUserClient(IOService *fb,void *task,void *security,uint32_t type,void **client) {
@@ -7821,7 +8188,7 @@ uint32_t XE::wrapFramebufferUserClient(IOService *fb,void *task,void *security,u
         uint64_t record[]={1,bound,started,registered,
             bound && Display13FBMemory::field<uintptr_t>(controller,0x1C00),
             framebuffer ? Display13FBMemory::field<uint32_t>(fb,0x1DC) : UINT32_MAX};
-        dobs("WEXDisplay13ClientReadiness",record,sizeof(record));
+        IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13ClientReadiness",record,sizeof(record));
         if(!started || !registered) {
             if(client)*client=nullptr;
             return kIOReturnNotReady;
@@ -7856,7 +8223,7 @@ uint32_t XE::wrapAlderLakeNConnectionAttr(IOService *fb,int connection,uint32_t 
     r[5]=result;r[6]=!result && value ? *value : 0;adlnFrontendSnapshot(fb,r);adlnPublishFrontend("Attr","Last",r);
     if(attribute=='cena' || attribute=='enab' || attribute=='flgs') {
         char key[64];snprintf(key,sizeof(key),"N97FBAttr%u_%08x",static_cast<uint32_t>(r[2]),attribute);
-        dobs(key,r,sizeof(r));
+        IORegistryEntry::getRegistryRoot()->setProperty(key,r,sizeof(r));
     }
     return result;
 }
@@ -7869,14 +8236,15 @@ uint32_t XE::wrapAlderLakeNPortDDC(OSObject *port,uint32_t block,uint8_t *data,b
     auto config=Display13FBMemory::field<uint32_t *>(port,0x548);
     const bool selected=Display13FBTopology::selected(callbackXE->adlnPlatform,config,callbackXE->adlnOutputWiring);
     uint64_t r[8] {1,block,force,0,0,config ? config[0] : 9};
-    auto root=IORegistryEntry::getRegistryRoot();if(selected)dobs("N97FBPortDDCEntry",r,sizeof(r));
+    auto root=IORegistryEntry::getRegistryRoot();if(selected)root->setProperty("N97FBPortDDCEntry",r,sizeof(r));
     const auto result=FunctionCast(wrapAlderLakeNPortDDC,callbackXE->orgAlderLakeNPortDDC)(port,block,data,force);r[3]=result;
+    cachePanelDepth(port,block,data,result);
     if(selected) {
         if(!result && data && (block==1 || block==2)) {
             uint32_t sum=0;for(unsigned i=0;i<128;++i)sum+=data[i];r[4]=sum&255;
-            dobs(block==1 ? "N97FBEDIDBase" : "N97FBEDIDExtension",data,128);
+            root->setProperty(block==1 ? "N97FBEDIDBase" : "N97FBEDIDExtension",data,128);
         }
-        dobs("N97FBPortDDCLast",r,sizeof(r));
+        root->setProperty("N97FBPortDDCLast",r,sizeof(r));
     }
     return result;
 }
@@ -7895,17 +8263,25 @@ bool XE::prepareDisplay13BootScanout(IOPCIDevice *pci) {
         void delay(){IODelay(100);}
     } io{reinterpret_cast<volatile uint8_t *>(map->getVirtualAddress()),map->getLength()};
     const bool mapped=io.base && io.bytes==0x1000000;
+    if(adlnOutputWiring.dsi) {
+        // Preserve the DSI GOP exactly. Native power/path adoption follows;
+        // normal-plane reinitialization would destroy the inherited source.
+        const bool ready=mapped && dsiBoot.complete() && XELP::DSI::verifyBootPrefix(io,dsiBoot,xelpMemory);
+        pci->setProperty("WEXDSIBootHandoff",&dsiBoot,sizeof(dsiBoot));
+        map->release();return ready;
+    }
     const auto boot=AlderLakeN::readDisplay(io,mapped);
     uint32_t trans=UINT32_MAX;AlderLakeN::value(boot,0x60400,trans);
     const auto ddi=Display13FBTopology::bootstrapDDI(adlnOutputWiring,
         boot.status==AlderLakeN::ReadoutStatus::Complete,boot.poweredPipes,boot.activePipes,trans,true);
-    const bool dp=ddi<7 && (adlnOutputWiring.dp&(1U<<ddi));
+    const bool dp=ddi<7 && (adlnOutputWiring.links()&(1U<<ddi));
     auto tc=Display13TC::Boot::capture(io,mapped && ddi>=3,ddi,0,dp);
     if(ddi>=3 && ddi<7)pci->setProperty("WEXDisplay13TCBoot",&tc,sizeof(tc));
     auto result=Display13Boot::prepareLinear(io,boot,mapped,ddi,xelpMemory,ddi>=3?&tc:nullptr,
+        ddi<2 && (adlnOutputWiring.panel&(1U<<ddi))?AlderLakeN::GOPProtocol::EDP:
         dp?AlderLakeN::GOPProtocol::DP:AlderLakeN::GOPProtocol::TMDS);
     map->release();
-    dobs("WEXDisplay13BootHandoff",&result,sizeof(result));
+    IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13BootHandoff",&result,sizeof(result));
     SYSLOG("igfx","Display13 native handoff status=%u writes=%u restored=%u",
         static_cast<unsigned>(result.status),result.writes,result.restored);
     return result.status==AlderLakeN::LinearStatus::Success;
@@ -7916,12 +8292,21 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
 	if(s->tglObservationController==that)s->tglObservationController=nullptr;
 	if(!pci)return false;
     const auto board=s->display13BoardWiring(provider);
-    if(!Display13FBTopology::supportedWiring(board,s->xeProfile.display==XELP::Display::XeLPD) ||
+    if(!Display13FBTopology::supportedWiring(board,s->xeProfile.display==XELP::Display::XeLPD,checkKernelArgument("-wex-dsi-adopt")) ||
        board.selected()!=s->adlnOutputWiring.selected())return false;
-    if((board.selected()&0x78) && (!s->display13FBTCHooksReady || !s->display13TCProbeReady)) {
-        dobs("ADLPFBTCUnavailable",true);return false;
+    if(board.dsi) {
+        const bool disposal=s->dsiFreePlane && s->dsiFreeScaler && s->dsiDetachPath && s->dsiRemovePath && s->dsiPipeMap;
+        const bool ready=s->display13DSIModeHooksReady && s->dsiNativeWriterHooksReady &&
+            s->dsiBootProbeReady && s->dsiCacheHooksReady && disposal;
+        uint64_t record[] {1,ready,s->display13DSIModeHooksReady,s->dsiNativeWriterHooksReady,
+            s->dsiBootProbeReady,s->dsiCacheHooksReady,disposal};
+        IORegistryEntry::getRegistryRoot()->setProperty("WEXDSIStartupHooks",record,sizeof(record));
+        if(!ready)return false;
     }
- const auto contract=XELP::DisplayContract::display13(s->display13Available(),s->adlnOutputWiring.dp!=0);
+    if((board.selected()&0x78) && (!s->display13FBTCHooksReady || !s->display13TCProbeReady)) {
+        IORegistryEntry::getRegistryRoot()->setProperty("ADLPFBTCUnavailable",true);return false;
+    }
+ const auto contract=XELP::DisplayContract::display13(s->display13Available(),s->adlnOutputWiring.dp!=0,s->adlnOutputWiring.panel!=0);
  const bool ready=s->display13FramebufferRequested && s->display13BootReady && s->tglActive &&
   contract.ready() && pci && xelpDisplay13Device(pci);
  uint64_t contractRecord[]={1,contract.required,contract.available,contract.missing()};
@@ -7934,7 +8319,7 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
 		(!adlnFixedSysMemEnabled || display13FBSysMem.lock) && display13FBSysMem.retireLock && s->adlnWorkLoopInGate && s->adlnWorkLoopTryClose && s->adlnWorkLoopOpen;
 	uint64_t dualPolicy[] {1,s->adlnOutputWiring.selected(),dualReady,s->display13BootReady,s->adlnScanoutDisableFB!=0,
 		s->orgAlderLakeNSysMemAllocate!=0,s->orgAlderLakeNSysMemFree!=0,display13FBSysMem.lock!=nullptr,display13FBSysMem.retireLock!=nullptr,adlnFixedSysMemEnabled};
-	dobs("N97FramebufferDualPolicy",dualPolicy,sizeof(dualPolicy));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FramebufferDualPolicy",dualPolicy,sizeof(dualPolicy));
 	if(Display13FBTopology::multiOutputWiring(s->adlnOutputWiring) && !dualReady)return false;
 	// Native provider-workloop mode creates/binds the PCI interrupt source in
 	// controller start, rather than waiting for an accelerator or FB open.
@@ -7958,7 +8343,7 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
 	const auto started=FunctionCast(wrapDisplay13FramebufferStart,s->orgFramebufferStart)(that,provider);
 	SYSLOG("igfx","Display13 native controller start return=%u",started);
 	that->setProperty("N97FramebufferOriginalStart",started);
-	dobs("N97FramebufferOriginalStart",started);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FramebufferOriginalStart",started);
 	bool irqEnabled=false;
 	if(adlnIRQOwner(that)) {
 		const auto saved=IOSimpleLockLockDisableInterrupt(display13FBIRQ.lock);
@@ -7980,9 +8365,10 @@ bool XE::wrapDisplay13FramebufferStart(IOService *that,IOService *provider) {
    that->setProperty("N97GTPowerSample",power);power->release();
   }
  }
-	dobs("N97FramebufferStartAccepted",accepted);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FramebufferStartAccepted",accepted);
 	return accepted;
 }
+
 
 void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop) {
 	FunctionCast(wrapAlderLakeNSetupWorkLoop,callbackXE->orgAlderLakeNSetupWorkLoop)(controller,workLoop);
@@ -8085,20 +8471,25 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 			valid=enabled && !c.bridge.state.faulted && !c.memoryFaulted && !c.clockFaulted;
 		}
 		check[37]=valid;
-		if(valid) {
+        if(valid && callbackXE->adlnOutputWiring.dsi) {
+            IOLockUnlock(c.lock);
+            const bool adopted=callbackXE->adoptDSIBootPath(fb,path);
+            IOLockLock(c.lock);
+            result.status=adopted ? Display13Power::Status::Complete : Display13Power::Status::NotReady;
+        } else if(valid) {
 			if(!c.bridge.bootAdopted) {
                 const auto ddi=c.bridge.bootPort;
-                const bool dp=ddi<7 && (callbackXE->adlnOutputWiring.dp&(1U<<ddi));
+                const bool dp=ddi<7 && (callbackXE->adlnOutputWiring.links()&(1U<<ddi));
                 bool linked=!dp;
                 if(dp && display13SSTPort(port)) {
-                    Display13FBBootIO io{c.map};const auto boot=AlderLakeN::readDisplay(io,true);
+                    Display13FBBootIO io{c.map};auto &boot=c.displayScratch;AlderLakeN::readDisplay(io,true,boot);
                     if(ddi>=3) {
                         const auto source=Display13TC::Boot::capture(io,true,ddi,0);
                         Display13FBTCIO tc{port,ddi-3};
                         linked=tc.owned(ddi) && tc.linkHeld() && boot.activePipes==1 &&
                             AlderLakeN::dpSourceUnchanged(io,boot,0,ddi,0,&source);
                     } else if(ddi<2) {
-                        result=AlderLakeN::adoptDPBootAUX(io,boot,c.bridge,c.mainLink[ddi],reinterpret_cast<uintptr_t>(port),ddi);
+                        result=AlderLakeN::adoptDPBootAUX(io,boot,c.bridge,c.mainLink[ddi],reinterpret_cast<uintptr_t>(port),ddi,(callbackXE->adlnOutputWiring.panel&(1U<<ddi))!=0);
                         linked=result.status==Display13Power::Status::Complete;
                         if(linked)port->retain(); // Released only after real buffer stop/idle.
                     }
@@ -8117,7 +8508,7 @@ void XE::wrapAlderLakeNSetupWorkLoop(IOService *controller,IOWorkLoop *workLoop)
 	IOLockUnlock(c.lock);
 	if(result.status!=Display13Power::Status::Complete && adlnIRQOwner(controller))wrapDisplay13FBDisableIRQ(controller);
 	adlnPublishPowerRecord("N97FBBootHandoff",record);
-	dobs("N97FBBootHandoffCheck",check,sizeof(check));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBBootHandoffCheck",check,sizeof(check));
 }
 
 bool XE::wrapAlderLakeNScanoutAllocate(IOService *fb) {
@@ -8133,6 +8524,7 @@ bool XE::wrapAlderLakeNScanoutAllocate(IOService *fb) {
 		binding=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnOutputWiring);
 		pipe=binding.pipe;
 	}
+	if(dsiPendingTarget(fb) || dsiSharedWriterStopped(fb,pipe)) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);return false;}
 	record[12]=pipe;record[13]=static_cast<uint32_t>(binding.status);record[14]=dual;
 	if(pipe<3 && !c.pipe[pipe].destroyingPath && (!dual || binding.status==TGLFBBinding::Status::Complete) &&
 		(c.bridge.bootAdopted || !pipe) && callbackXE->display13FBMemoryHooksReady && controller && c.bridge.begun &&
@@ -8200,6 +8592,7 @@ void XE::wrapAlderLakeNScanoutSetup(IOService *fb) {
 	IOWorkLoop *acquiredSwapGate=nullptr;OSObject *stopPath=nullptr;bool stopSwap=false;
 	IOLockLock(c.lock);
 	pipe=Display13FBMemory::boundPipe(c.pipe,fb);record[18]=pipe;
+	if(dsiPendingTarget(fb) || dsiSharedWriterStopped(fb,pipe)) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);return;}
 	const auto binding=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnOutputWiring);
 	record[19]=static_cast<uint32_t>(binding.status);
 	if(callbackXE->display13FBMemoryHooksReady && pipe<3 && !c.pipe[pipe].destroyingPath && !c.memoryFaulted &&
@@ -8223,7 +8616,7 @@ void XE::wrapAlderLakeNScanoutSetup(IOService *fb) {
         swap[5]=transition.aperture;swap[6]=transition.replace;swap[7]=stolen;
         if(transition.replace && !stolen) {
             Display13FBIRQIO io {c.map->getVirtualAddress()};
-            const bool stopped=Display13FBIRQ::consumersStopped(io,1U<<pipe);swap[8]=stopped;
+            const bool stopped=Display13FBIRQ::consumersStopped(io,1U<<pipe,c.transcoders);swap[8]=stopped;
             {
                 stopPath=Display13FBMemory::singlePath<OSObject *>(fb);
                 const bool bound=c.workLoop && Display13FBMemory::field<IOWorkLoop *>(controller,0xE00)==c.workLoop;
@@ -8259,7 +8652,7 @@ void XE::wrapAlderLakeNScanoutSetup(IOService *fb) {
         IOLockLock(c.lock);
         const auto current=adlnInspectPathBinding(fb,Display13FBMemory::singlePath<OSObject *>(fb),callbackXE->adlnPlatform,callbackXE->adlnOutputWiring);
         swap[15]=static_cast<uint32_t>(current.status);
-        Display13FBIRQIO io {c.map->getVirtualAddress()};swap[16]=Display13FBIRQ::consumersStopped(io,1U<<pipe);
+        Display13FBIRQIO io {c.map->getVirtualAddress()};swap[16]=Display13FBIRQ::consumersStopped(io,1U<<pipe,c.transcoders);
         admitted=current.status==TGLFBBinding::Status::Complete && current.pipe==pipe && current.ddi==binding.ddi &&
             Display13FBMemory::singlePath<OSObject *>(fb)==stopPath && swap[16] && !c.bridge.state.faulted &&
             !c.clockFaulted && !c.memoryFaulted;
@@ -8305,6 +8698,7 @@ void XE::wrapAlderLakeNScanoutFree(IOService *fb) {
 	auto &c=display13FBPower;if(!c.lock || !fb || fb->getMetaClass()->getClassSize()<0x4B90)return;
 	auto mutex=Display13FBMemory::field<IORecursiveLock *>(fb,0x4220);if(!mutex)return;
 	IORecursiveLockLock(mutex);
+    if(dsiPendingTarget(fb)){IORecursiveLockUnlock(mutex);return;}
 	uint64_t record[30] {},handoff[8] {1};bool freed=false;IOLockLock(c.lock);
 	const auto pool=c.controller ? Display13FBMemory::pool(c.controller) : Display13FBMemory::Pool {};
 	const bool associated=fb==c.pipe[0].memoryFramebuffer && display13FBAssociations(c.controller,0x1C20,fb,fb->getMetaClass()->getClassSize(),display13FBExpectedOwner(c.controller));
@@ -8371,9 +8765,9 @@ void XE::wrapAlderLakeNScanoutFree(IOService *fb) {
 		IOSimpleLockUnlockEnableInterrupt(display13FBIRQ.lock,saved);
 	}
 	IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);
-	auto root=IORegistryEntry::getRegistryRoot();dobs("N97FBMemoryFree",record,sizeof(record));
-	if(handoff[1])dobs("N97FBStolenHandoff",handoff,sizeof(handoff));
-	if(!root->getProperty("N97FBMemoryFirstFree"))dobs("N97FBMemoryFirstFree",record,sizeof(record));
+	auto root=IORegistryEntry::getRegistryRoot();root->setProperty("N97FBMemoryFree",record,sizeof(record));
+	if(handoff[1])root->setProperty("N97FBStolenHandoff",handoff,sizeof(handoff));
+	if(!root->getProperty("N97FBMemoryFirstFree"))root->setProperty("N97FBMemoryFirstFree",record,sizeof(record));
 }
 // A stopped-pipe release owns only its memory/IRQ/DDB consumers. It does not
 // stop shared CDCLK/engine or destroy the native path/DDI power lease.
@@ -8381,7 +8775,9 @@ bool XE::adlnFreeStoppedPipe(IOService *fb) {
     auto &c=display13FBPower;auto &irq=display13FBIRQ;
     if(!c.lock || !display13FBSysMem.retireLock || !fb || fb->getMetaClass()->getClassSize()<0x4B90)return false;
     auto mutex=Display13FBMemory::field<IORecursiveLock *>(fb,0x4220);if(!mutex)return false;
-    IORecursiveLockLock(mutex);IORecursiveLockLock(display13FBSysMem.retireLock);IOLockLock(c.lock);
+    IORecursiveLockLock(mutex);
+    if(dsiPendingTarget(fb)){IORecursiveLockUnlock(mutex);return false;}
+    IORecursiveLockLock(display13FBSysMem.retireLock);IOLockLock(c.lock);
     const auto pipe=Display13FBMemory::boundPipe(c.pipe,fb);
     uint64_t record[24] {1,pipe};bool freed=false,held=false;uint32_t master=0,blocked=0;bool enabled=false;
     auto controller=static_cast<IOService *>(c.controller);
@@ -8481,8 +8877,10 @@ bool XE::adlnFreeStoppedPipe(IOService *fb) {
     return freed;
 }
 
+
+
 uint32_t XE::releaseDisplay13Path(IOService *fb,OSObject *path) {
-    if(!Display13FBTopology::multiOutputWiring(callbackXE->adlnOutputWiring)) {
+    if(!Display13FBTopology::multiOutputWiring(callbackXE->adlnOutputWiring) && !callbackXE->adlnOutputWiring.dsi) {
         FunctionCast(wrapAlderLakeNFreePath,callbackXE->orgAlderLakeNFreePath)(fb,path);return 0;
     }
     auto &c=display13FBPower;
@@ -8521,6 +8919,15 @@ uint32_t XE::releaseDisplay13Path(IOService *fb,OSObject *path) {
         adlnFault(c.memoryFaulted,__LINE__);IOLockUnlock(c.lock);
         IORecursiveLockUnlock(mutex);path->release();fb->release();return kIOReturnNotReady;
     }
+    // DSI has no audio link or normal-DDI port reset. Dispose only its proven
+    // stopped native CPU associations and PG lease, never the full donor body.
+    if(callbackXE->adlnOutputWiring.dsi && dsiLifecycleTarget(fb,path)) {
+        if(!selected || !callbackXE->disposeDSIPath(fb,path)) {
+            IOLockLock(c.lock);if(pipe<3)c.pipe[pipe].destroyingPath=false;
+            adlnFault(c.memoryFaulted,__LINE__);IOLockUnlock(c.lock);
+            IORecursiveLockUnlock(mutex);path->release();fb->release();return kIOReturnNotReady;
+        }
+    } else
     FunctionCast(wrapAlderLakeNFreePath,callbackXE->orgAlderLakeNFreePath)(fb,path);
     IOLockLock(c.lock);
     record[6]=countOffset ? Display13FBMemory::field<uint32_t>(fb,countOffset) : UINT32_MAX;
@@ -8539,6 +8946,7 @@ uint32_t XE::releaseDisplay13Path(IOService *fb,OSObject *path) {
     record[7]=released;record[8]=detached;record[9]=removed;record[10]=withdrawn!=nullptr;
     record[11]=c.memoryFaulted;record[12]=c.dbuf.selected;record[13]=c.dbuf.consumers;record[14]=c.dbuf.unretired;record[15]=countOffset;
     IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);
+    if(removed)drainDisplay13TCMode(binding.ddi);
     OSSafeReleaseNULL(withdrawn);path->release();fb->release();
     adlnPublishMemory("N97FBPathFree",pipe,record,sizeof(record));
     return selected && !removed ? kIOReturnNotReady : 0;
@@ -8568,6 +8976,15 @@ IOMemoryDescriptor *XE::wrapAlderLakeNAperture(IOService *fb,int apertureIndex) 
 		if(backing && slot) {
 			const auto layout=Display13FBMemory::poolLayout(c.controller,0x1C20,0x10000000);
 			backing=adlnInspectSysMem(static_cast<IOService *>(c.controller),fb,slot,layout).status==Display13FBSysMem::Status::Complete;
+		}
+		// IOGraphics may ask before the first DSI mode transaction has set
+		// dimensions, including while P2's private identification backing is
+		// armed. The validated GOP pool is still owned, but no client aperture
+		// was published. Return unavailable without poisoning that shared owner.
+		// Nonzero invalid ranges and lost backing retain the fault path below.
+		if(!base && !bytes && parent && backing && !slot && callbackXE->adlnOutputWiring.dsi==1 &&
+		   dsiModeTarget(fb) && !callbackXE->dsiStopAttempted) {
+			IOLockUnlock(c.lock);return nullptr;
 		}
 		if(!parent || !backing ||
 			!Display13FBMemory::apertureRange(c.pipe[pipe].memory.pool,base,bytes,parent->getLength()))parent=nullptr;
@@ -8622,7 +9039,7 @@ Display13Clock::Readout XE::adlnClockReadout(IOService *controller) {
 		if(r.status!=Display13Clock::Status::Complete && !(c.clockStopped && r.status==Display13Clock::Status::Disabled))adlnFault(c.clockFaulted,__LINE__);
 		IOLockUnlock(c.lock);
 	}
-	dobs("N97FBClock",&r,sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBClock",&r,sizeof(r));
 	return r;
 }
 void XE::wrapAlderLakeNClockInit(IOService *controller) {
@@ -8690,8 +9107,8 @@ void XE::wrapAlderLakeNClockSet(IOService *controller,uint64_t nativeHz) {
 	wmRecord[0]=1;wmRecord[3]=static_cast<uint32_t>(beforeWM.status);wmRecord[4]=static_cast<uint32_t>(afterWM.status);
 	wmRecord[5]=c.pipe[0].watermarkClockHz;
 	IOLockUnlock(c.lock);if(mutex)IORecursiveLockUnlock(mutex);
-	dobs("N97FBClockWM",wmRecord,sizeof(wmRecord));
-	dobs("N97FBClockChange",&result,sizeof(result));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBClockWM",wmRecord,sizeof(wmRecord));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBClockChange",&result,sizeof(result));
 }
 
 // A shared crawl needs real WM certificates for every active native pipe.
@@ -8816,10 +9233,10 @@ void XE::adlnSetDualClock(IOService *controller,uint64_t nativeHz) {
     for(auto fb:frames)if(fb)fb->release();
     if(acquired)reinterpret_cast<void (*)(IOWorkLoop *)>(callbackXE->adlnWorkLoopOpen)(acquired);
     auto root=IORegistryEntry::getRegistryRoot();
-    dobs("N97FBClockWMAll",evidence,sizeof(evidence));
+    root->setProperty("N97FBClockWMAll",evidence,sizeof(evidence));
     if(result.status!=Display13Clock::ChangeStatus::Complete && !root->getProperty("N97FBClockWMAllFirstFailure"))
-        dobs("N97FBClockWMAllFirstFailure",evidence,sizeof(evidence));
-    dobs("N97FBClockChange",&result,sizeof(result));
+        root->setProperty("N97FBClockWMAllFirstFailure",evidence,sizeof(evidence));
+    root->setProperty("N97FBClockChange",&result,sizeof(result));
 }
 
 void XE::wrapAlderLakeNClockDisable(IOService *controller) {
@@ -8839,7 +9256,7 @@ void XE::wrapAlderLakeNClockDisable(IOService *controller) {
 		} else result.status=Display13Clock::ChangeStatus::ActiveDividerChange;
 	}
 	if(result.status!=Display13Clock::ChangeStatus::Complete)adlnFault(c.clockFaulted,__LINE__);
-	IOLockUnlock(c.lock);dobs("N97FBClockStop",&result,sizeof(result));
+	IOLockUnlock(c.lock);IORegistryEntry::getRegistryRoot()->setProperty("N97FBClockStop",&result,sizeof(result));
 }
 uint64_t XE::wrapAlderLakeNClockCalculate(IOService *controller,uint64_t minimumHz) {
 	auto &c=display13FBPower;if(!c.lock)return 0;
@@ -8856,7 +9273,7 @@ uint64_t XE::wrapAlderLakeNClockCalculate(IOService *controller,uint64_t minimum
 	}
 	if(!selected)adlnFault(c.clockFaulted,__LINE__);
 	record[0]=1;record[1]=minimumHz;record[2]=selected;
-	IOLockUnlock(c.lock);dobs("N97FBClockSelection",record,sizeof(record));return selected;
+	IOLockUnlock(c.lock);IORegistryEntry::getRegistryRoot()->setProperty("N97FBClockSelection",record,sizeof(record));return selected;
 }
 
 uint32_t XE::adlnMailbox(IOService *controller,uint32_t command,uint32_t data,unsigned kind,bool sleep) {
@@ -8879,7 +9296,7 @@ uint32_t XE::adlnMailbox(IOService *controller,uint32_t command,uint32_t data,un
 	}
 	record[0]=1;record[1]=kind;record[2]=command;record[3]=data;record[4]=accepted;
 	record[9]=result;IOLockUnlock(c.lock);
-	dobs("N97FBMailbox",record,sizeof(record));return result;
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBMailbox",record,sizeof(record));return result;
 }
 uint32_t XE::wrapAlderLakeNMailboxRead(IOService *controller,uint32_t command) {return adlnMailbox(controller,command,0,0,false);}
 uint32_t XE::wrapAlderLakeNMailboxReadData(IOService *controller,uint32_t command,uint32_t data) {return adlnMailbox(controller,command,data,1,false);}
@@ -8902,7 +9319,7 @@ void XE::wrapAlderLakeNLatencyInit(IOService *controller) {
 	for(unsigned i=0;i<6;++i)record[5+i]=c.latency.us[i];
 	record[11]=c.latency.mailboxStatus;record[12]=c.latency.writes;record[13]=c.latency.delayUs;
 	IOLockUnlock(c.lock);
-	dobs("N97FBLatency",record,sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBLatency",record,sizeof(record));
 }
 
 void XE::adlnWMSetup(OSObject *plane,OSObject *path,bool cursor) {
@@ -8917,12 +9334,13 @@ void XE::adlnWMSetup(OSObject *plane,OSObject *path,bool cursor) {
 		{fb,fb ? fb->getMetaClass()->getClassSize() : 0},
 		{path,path ? path->getMetaClass()->getClassSize() : 0},
 		{plane,plane ? plane->getMetaClass()->getClassSize() : 0},
-		{port,port ? port->getMetaClass()->getClassSize() : 0},display13FBExpectedOwner(controller)
+		{port,port ? port->getMetaClass()->getClassSize() : 0},display13FBExpectedOwner(controller),dsiLogicalSurface(fb)
 	};
 	const auto binding=TGLFBBinding::inspect(objects,callbackXE->adlnPlatform,callbackXE->adlnOutputWiring);
 	uint64_t bindingRecord[] {1,static_cast<uint32_t>(binding.status),binding.framebuffer,binding.pipe,binding.ddi,binding.plane,
 		binding.status==TGLFBBinding::Status::Complete ? Display13FBMemory::allocatedSlot(controller,fb) : UINT32_MAX};
 	const auto pipe=binding.status==TGLFBBinding::Status::Complete ? binding.pipe : UINT32_MAX;
+	if(dsiSharedWriterStopped(fb,pipe)) {IOLockUnlock(c.lock);return;}
 	const auto bank=pipe<3 ? 0x1000*pipe : 0U;
 	// Use the real path's pipe and a unique published memory owner. Neither
 	// framebuffer index, physical DDI nor aperture slot selects a WM bank.
@@ -8954,8 +9372,12 @@ void XE::adlnWMSetup(OSObject *plane,OSObject *path,bool cursor) {
 		inputs[14]=wells;inputs[15]=rangeRaw;inputs[16]=ctl;inputs[17]=ipc;inputs[18]=cursorMode;
 		inputs[19]=width;inputs[20]=htotal;inputs[21]=rgbSupported;inputs[22]=powered;
 		inputs[23]=Display13FBMemory::field<uint32_t>(plane,0x10C);
+		// Native cursor changes prepare watermarks for FB +0x4278 before
+		// writing the new CURCNTR. The live register can still describe the
+		// previous size here. Validate the requested size now; latch() checks
+		// the applied control against the prepared plan after the update.
 		if(powered && rangeRaw!=UINT32_MAX && Display13DBUF::valid(range) && rgbSupported && ipc!=UINT32_MAX &&
-			(!cursor || Display13WM::cursorMatches(cursorMode,width,true)) &&
+			(!cursor || Display13WM::cursorWidthSupported(width)) &&
 			!(Display13DBUF::slices(range)&~Display13DBUF::allowed(c.dbuf,pipe)) &&
 			(cursor || !Display13DBUF::overlap(range,c.dbuf.pipe[pipe].cursor))) {
 			// Audited native pixel/scaling calculation is CPU-only. Preserve its
@@ -8988,23 +9410,23 @@ void XE::adlnWMSetup(OSObject *plane,OSObject *path,bool cursor) {
 	record[23]=reinterpret_cast<uintptr_t>(plane);record[24]=reinterpret_cast<uintptr_t>(path);
 	record[25]=pipe;record[26]=binding.framebuffer;record[27]=binding.ddi;
 	IOLockUnlock(c.lock);
-	dobs(cursor ? "N97FBCursorWM" : "N97FBPrimaryWM",record,sizeof(record));
-	dobs("N97FBBinding",bindingRecord,sizeof(bindingRecord));
+	IORegistryEntry::getRegistryRoot()->setProperty(cursor ? "N97FBCursorWM" : "N97FBPrimaryWM",record,sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBBinding",bindingRecord,sizeof(bindingRecord));
 	auto root=IORegistryEntry::getRegistryRoot();
 	if(pipe<3) {
 		char property[48];snprintf(property,sizeof(property),"N97FBPipe%u%sWM",pipe,cursor ? "Cursor" : "Primary");
-		dobs(property,record,sizeof(record));
-		snprintf(property,sizeof(property),"N97FBPipe%uBinding",pipe);dobs(property,bindingRecord,sizeof(bindingRecord));
+		root->setProperty(property,record,sizeof(record));
+		snprintf(property,sizeof(property),"N97FBPipe%uBinding",pipe);root->setProperty(property,bindingRecord,sizeof(bindingRecord));
 	}
 	auto key=cursor ? "N97FBCursorWMFirstInputs" : "N97FBPrimaryWMFirstInputs";
-	if(!root->getProperty(key))dobs(key,inputs,sizeof(inputs));
+	if(!root->getProperty(key))root->setProperty(key,inputs,sizeof(inputs));
 	if(pipe<3) {
 		char property[64];
 		snprintf(property,sizeof(property),"N97FBPipe%u%sWMFirstInputs",pipe,cursor ? "Cursor" : "Primary");
-		if(!root->getProperty(property))dobs(property,inputs,sizeof(inputs));
+		if(!root->getProperty(property))root->setProperty(property,inputs,sizeof(inputs));
 		if(p.status!=Display13WM::Status::Complete) {
 			snprintf(property,sizeof(property),"N97FBPipe%u%sWMFailureInputs",pipe,cursor ? "Cursor" : "Primary");
-			if(!root->getProperty(property))dobs(property,inputs,sizeof(inputs));
+			if(!root->getProperty(property))root->setProperty(property,inputs,sizeof(inputs));
 		}
 	}
 }
@@ -9014,6 +9436,7 @@ void XE::wrapDisplay13CursorWMSetup(OSObject *plane,OSObject *path) {adlnWMSetup
 void XE::wrapAlderLakeNPipeWMSetup(IOService *controller,IOService *fb,OSObject *path,void *params) {
 	auto &c=display13FBPower;if(!c.lock)return;
 	uint64_t record[8] {};IOLockLock(c.lock);
+	if(dsiSharedWriterStopped(fb,Display13FBMemory::boundPipe(c.pipe,fb))) {IOLockUnlock(c.lock);return;}
 	const bool associated=callbackXE->display13FBWatermarkHooksReady && controller==c.controller && fb && path &&
 		controller->getMetaClass()->getClassSize()>=0x1C20 && fb->getMetaClass()->getClassSize()>=0x4B90 &&
 		path->getMetaClass()->getClassSize()>=0x3730 && Display13FBMemory::field<void *>(fb,0x1D0)==controller &&
@@ -9042,7 +9465,7 @@ void XE::wrapAlderLakeNPipeWMSetup(IOService *controller,IOService *fb,OSObject 
 	record[0]=2;record[5]=valid;record[6]=reinterpret_cast<uintptr_t>(path);
 	record[7]=associated ? Display13FBMemory::field<uint32_t>(path,0x3640) : UINT32_MAX;
 	IOLockUnlock(c.lock);
-	dobs("N97FBPipeWM",record,sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBPipeWM",record,sizeof(record));
 }
 
 
@@ -9058,7 +9481,17 @@ static bool adlnWriterMappingBound() {
 			native->getPhysicalAddress(),native->getLength(),c.map->getPhysicalAddress(),c.map->getLength());
 }
 
+
+
 void XE::wrapAlderLakeNDisableDisplay(IOService *controller,IOService *fb,OSObject *path,uint8_t mode) {
+	if(callbackXE->adlnOutputWiring.dsi && dsiLifecycleTarget(fb,path)) {
+        const bool stopped=callbackXE->quiesceDSIPath(controller,fb,path);
+        // Failed stops retain resources. Successful GOP-only stops can now
+        // reach the qualified PG/path/timing disposal at the native free entry.
+        auto &c=display13FBPower;
+        if(!stopped && c.lock){IOLockLock(c.lock);adlnFault(c.memoryFaulted,__LINE__);IOLockUnlock(c.lock);}
+		return;
+	}
 	auto &c=display13FBPower;Display13Cursor::Result result;bool selected=false;unsigned pipe=UINT32_MAX;
 	if(c.lock && controller==c.controller && fb && fb->getMetaClass()->getClassSize()>=0x4B90 && path && path->getMetaClass()->getClassSize()>=0x3730) {
 		IOLockLock(c.lock);
@@ -9076,7 +9509,7 @@ void XE::wrapAlderLakeNDisableDisplay(IOService *controller,IOService *fb,OSObje
 				void write(uint32_t r,uint32_t v) {if(r==0x70080+bank || r==0x70088+bank || r==0x70084+bank)*reinterpret_cast<volatile uint32_t *>(map->getVirtualAddress()+r)=v;}
 				void delayUs(unsigned us) {IOSleep(us/1000);}
 			} io {c.map,pipe*0x1000};
-			result=Display13Cursor::stop(io,pipe);
+			result=Display13Cursor::stop(io,pipe,c.transcoders);
 			if(result.status==Display13Cursor::Status::Complete) {
 				// Keep the donor's visible/control cache consistent with the stopped cursor.
 				*reinterpret_cast<uint32_t *>(reinterpret_cast<uint8_t *>(path)+0x170)=0;
@@ -9106,6 +9539,7 @@ void XE::adlnWMEnable(OSObject *plane,bool arm,bool cursor) {
 	uint64_t record[16] {},inputs[24] {};Display13WM::Program r;uint32_t surface=0,queueIndex=0;bool queued=false;
 	IOLockLock(c.lock);
 	const auto pipe=Display13FBMemory::boundPipe(c.pipe,fb);
+	if(dsiSharedWriterStopped(fb,pipe)) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);return;}
 	if(pipe>=3) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);return;}
 	const auto bank=0x1000*pipe;
 	const auto &p=c.pipe[pipe].wm[cursor ? 1 : 0];
@@ -9185,13 +9619,13 @@ void XE::adlnWMEnable(OSObject *plane,bool arm,bool cursor) {
 	// Trigger queued is not a VBlank/flip/DSB ACK. No DBUF retirement or
 	// watermarkClockHz qualification occurs here.
 	record[10]=queued;record[11]=queued && arm;record[12]=surface;record[13]=queueIndex;record[14]=pipe;
-	dobs(cursor ? "N97FBCursorWMProgram" : "N97FBPrimaryWMProgram",record,sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(cursor ? "N97FBCursorWMProgram" : "N97FBPrimaryWMProgram",record,sizeof(record));
 	auto root=IORegistryEntry::getRegistryRoot();
 	char property[48];snprintf(property,sizeof(property),"N97FBPipe%u%sWMProgram",pipe,cursor ? "Cursor" : "Primary");
-	dobs(property,record,sizeof(record));
+	root->setProperty(property,record,sizeof(record));
 	auto key=cursor ? "N97FBCursorWMEnableFirstInputs" : "N97FBPrimaryWMEnableFirstInputs";
 	inputs[21]=static_cast<uint32_t>(r.status);
-	if(!root->getProperty(key))dobs(key,inputs,sizeof(inputs));
+	if(!root->getProperty(key))root->setProperty(key,inputs,sizeof(inputs));
 }
 void XE::wrapAlderLakeNPlaneWMEnable(OSObject *plane,bool arm) {adlnWMEnable(plane,arm,false);}
 void XE::wrapDisplay13CursorWMEnable(OSObject *plane,bool arm) {adlnWMEnable(plane,arm,true);}
@@ -9217,7 +9651,7 @@ Display13WM::Latch XE::adlnVerifyWMLatch(IOService *fb,uint64_t nativeHz,uint64_
 		result.status=Display13WM::Status::Conflict;return result;
 	}
 	const bool cursor=readout.read(0x70080+bank)&63;
-	const auto conf=readout.read(0x70008+bank);
+	const auto conf=Display13Transcoder::control(readout,pipe,c.transcoders);
 	if(conf==UINT32_MAX) {result.status=Display13WM::Status::Readback;return result;}
 	// Cursor setup may follow primary arm. Keep old slices and pending bits
 	// until every active consumer has actually been programmed.
@@ -9239,7 +9673,7 @@ Display13WM::Latch XE::adlnVerifyWMLatch(IOService *fb,uint64_t nativeHz,uint64_
 	const Display13WM::Snapshot expected {
 		&c.pipe[pipe].wm[0],&c.pipe[pipe].wm[1],primaryRaw,cursorRaw,
 		c.pipe[pipe].wmSurface[0],c.pipe[pipe].wmSurface[1],readout.read(0x45004),nativeHz,c.pipe[pipe].wm0Only[0],cursor,
-		Display13WM::pipeLineTime(c.pipe[pipe].wm[0].htotal,pipePixel),pipePixel,pipe
+		Display13WM::pipeLineTime(c.pipe[pipe].wm[0].htotal,pipePixel),pipePixel,pipe,c.transcoders
 	};
 	if(!Display13WM::clockFits(expected,targetHz)) {result.status=Display13WM::Status::Input;return result;}
 	return Display13WM::latch(io,expected);
@@ -9296,6 +9730,22 @@ static bool adlnObserveScanoutPixels(unsigned pipe,uint64_t (&q)[88]) {
 }
 
 void XE::wrapDisplay13WMArmUpdate(IOService *fb) {
+    if(!callbackXE->adlnOutputWiring.dsi){display13WMArmUpdate(fb);return;}
+    if(!fb || fb->getMetaClass()->getClassSize()<0x4B90)return;
+    {
+        DSIModeScope scope(fb);if(!scope.lock)return;
+        if(dsiLifecycleTarget(fb,Display13FBMemory::singlePath<OSObject *>(fb))) {
+            // armUpdate flushes native packets even without pending WM work.
+            // Keep FB serialization from admission through flush/sendPush.
+            if(dsiNativeUpdateAllowed(fb))display13WMArmUpdate(fb);
+            return;
+        }
+    }
+    // Preserve the original external body's locking and callback boundaries.
+    display13WMArmUpdate(fb);
+}
+
+void XE::display13WMArmUpdate(IOService *fb) {
 	auto &c=display13FBPower;bool owner=false;
 	const auto pipe=Display13FBMemory::boundPipe(c.pipe,fb);
 	Display13WM::TriggerSurfaces intent;OSObject *path=nullptr;uint32_t packetCount=0;
@@ -9371,7 +9821,7 @@ void XE::wrapDisplay13WMArmUpdate(IOService *fb) {
 		if(observations[pipe]<32 && c.engineEnabled && c.map && adlnWriterMappingBound()) {
 			Display13FBDBUFIO io {c.map};const auto wells=io.read(0x45404);
 			if(Display13FBIRQ::powered(wells,pipe)) {
-				const uint32_t regs[] {0x70180,0x701CC,0x70188,0x70190,0x7019C,0x701AC,
+				static constexpr uint32_t regs[] {0x70180,0x701CC,0x70188,0x70190,0x7019C,0x701AC,
 					0x701A4,0x70008,0x70040,0x4A480,0x49028,0x49010,0x49014,
 					0x49018,0x4901C,0x49020,0x49024,0x49050,0x49054,0x49058,
 					0x4905C,0x49060,0x49064,0x70080,0x70084,0x700AC,
@@ -9402,7 +9852,7 @@ void XE::wrapDisplay13WMArmUpdate(IOService *fb) {
 	}
 	if(colorRecorded) {
 		char key[64];snprintf(key,sizeof(key),"N97FBColorScanoutPipe%uSample%u",pipe,static_cast<unsigned>(color[1]));
-		dobs(key,color,sizeof(color));
+		IORegistryEntry::getRegistryRoot()->setProperty(key,color,sizeof(color));
 	}
 	if(!owner) {if(mutex)IORecursiveLockUnlock(mutex);return;}
 	uint64_t record[16] {};IOLockLock(c.lock);
@@ -9432,6 +9882,43 @@ void XE::wrapDisplay13WMArmUpdate(IOService *fb) {
 			result.pipeControl,result.planeControl,result.cursorControl,result.checkRegister,result.checkValue,
 			result.clockHz,actualHz,result.frameBefore,result.frameAfter,result.lastReg,result.expected,result.observed};
 		adlnPublishMemory("N97FBWMLatchFailure",pipe,proof,sizeof(proof),true);
+		// Retain the software source/destination geometry with the first
+		// failed latch. OS orientation is independent of DSI wire timing;
+		// distinguish a native scaling request from a link/stride mismatch.
+		auto &geometry=c.wmGeometryScratch;bzero(geometry,sizeof(geometry));
+        geometry[0]=3;geometry[1]=pipe;geometry[2]=c.pipe[pipe].wm[0].width;geometry[3]=c.pipe[pipe].wm[0].height;
+        geometry[4]=c.pipe[pipe].wm[0].htotal;geometry[5]=c.pipe[pipe].wm[0].pixelHz;geometry[6]=actualHz;
+		static constexpr unsigned fbOffsets[]={0x430C,0x4310,0x4314,0x4320,0x4324,0x4328,0x432C,0x4334,0x4338};
+		for(unsigned i=0;i<arrsize(fbOffsets);++i)geometry[7+i]=Display13FBMemory::field<uint32_t>(fb,fbOffsets[i]);
+		if(path && path->getMetaClass()->getClassSize()>=0x3730) {
+			static constexpr unsigned pathOffsets[]={0xF8,0xFC,0x108,0x10C,0x138,0x144};
+			for(unsigned i=0;i<arrsize(pathOffsets);++i)geometry[16+i]=Display13FBMemory::field<uint32_t>(path,pathOffsets[i]);
+			auto plane=Display13FBMemory::field<OSObject *>(path,0x32C8);
+			auto scaler=Display13FBMemory::field<OSObject *>(path,0x32C0);
+			if(plane && plane->getMetaClass()->getClassSize()>=0x1C8) {
+				static constexpr unsigned planeOffsets[]={0x100,0x104,0x108,0x10C,0x110,0x114,0x118,0x11C,0x120,0x124};
+				for(unsigned i=0;i<arrsize(planeOffsets);++i)geometry[22+i]=Display13FBMemory::field<uint32_t>(plane,planeOffsets[i]);
+                auto planeScaler=Display13FBMemory::field<OSObject *>(plane,0x88);
+                if(planeScaler && planeScaler->getMetaClass()->getClassSize()>=0x50) {
+                    geometry[46]=Display13FBMemory::field<uint32_t>(planeScaler,0x44);
+                    geometry[47]=Display13FBMemory::field<uint32_t>(planeScaler,0x4C);
+                }
+			}
+			if(scaler && scaler->getMetaClass()->getClassSize()>=0x58)
+				for(unsigned i=0;i<6;++i)geometry[32+i]=Display13FBMemory::field<uint32_t>(scaler,0x40+4*i);
+		}
+		Display13FBDBUFIO geometryIO {c.map};
+		if(Display13FBIRQ::powered(geometryIO.read(0x45404),pipe)) {
+			static constexpr unsigned registers[]={0x70180,0x70188,0x7018C,0x70190,0x7019C,0x701A4,0x701AC,0x6001C};
+			for(unsigned i=0;i<arrsize(registers);++i)geometry[38+i]=geometryIO.read(registers[i]+0x1000*pipe);
+		}
+		if(dsiModeTarget(fb) && dsiPendingTarget(fb) && dsiPendingBacking.pipe &&
+		   dsiPendingBacking.pipe->getMetaClass()->getClassSize()>=0x12DC) {
+			static constexpr unsigned offsets[]={0x1264,0x1268,0x128C,0x1290,0x1294,0x12D8};
+			for(unsigned i=0;i<arrsize(offsets);++i)
+				geometry[48+i]=Display13FBMemory::field<uint32_t>(dsiPendingBacking.pipe,offsets[i]);
+		}
+		adlnPublishMemory("N97FBWMGeometryFailure",pipe,geometry,sizeof(geometry),true);
 		uint64_t cursor[8] {1,pipe};Display13FBDBUFIO readout {c.map};
 		if(Display13FBIRQ::powered(readout.read(0x45404),pipe)) {
 			cursor[2]=readout.read(0x70080+0x1000*pipe);
@@ -9449,14 +9936,14 @@ void XE::wrapDisplay13WMArmUpdate(IOService *fb) {
 	IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);
     if(pixelsRecorded) {
         char key[64];snprintf(key,sizeof(key),"N97FBScanoutPixelsPipe%uSample%u",pipe,static_cast<unsigned>(pixels[1]));
-        dobs(key,pixels,sizeof(pixels));
+        IORegistryEntry::getRegistryRoot()->setProperty(key,pixels,sizeof(pixels));
     }
 	trigger[10]=static_cast<uint32_t>(result.status);trigger[11]=pipe;
-	dobs("N97FBWMTriggerSurfaces",trigger,sizeof(trigger));
-	dobs("N97FBWMLatch",record,sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBWMTriggerSurfaces",trigger,sizeof(trigger));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBWMLatch",record,sizeof(record));
 	auto root=IORegistryEntry::getRegistryRoot();char property[48];
-	snprintf(property,sizeof(property),"N97FBPipe%uWMTriggerSurfaces",pipe);dobs(property,trigger,sizeof(trigger));
-	snprintf(property,sizeof(property),"N97FBPipe%uWMLatch",pipe);dobs(property,record,sizeof(record));
+	snprintf(property,sizeof(property),"N97FBPipe%uWMTriggerSurfaces",pipe);root->setProperty(property,trigger,sizeof(trigger));
+	snprintf(property,sizeof(property),"N97FBPipe%uWMLatch",pipe);root->setProperty(property,record,sizeof(record));
 }
 
 void XE::wrapAlderLakeNEngineEnable(void *power) {
@@ -9489,7 +9976,7 @@ void XE::wrapAlderLakeNEngineEnable(void *power) {
 		!c.bridge.state.suspended && acquired.status==Display13Power::Status::Complete && !c.clockFaulted && clock.status==Display13Clock::Status::Complete &&
 		Display13Power::objectAssociations(power,0x80,c.controller,0x1C20)) {
 		Display13FBDBUFIO io {c.map};
-		status=Display13DBUF::begin(io,c.dbuf,__builtin_popcount(callbackXE->adlnOutputWiring.selected())>=3 ? 7U : 0U);
+		status=Display13DBUF::begin(io,c.dbuf,__builtin_popcount(callbackXE->adlnOutputWiring.selected())>=3 ? 7U : 0U,c.transcoders);
 		if(status==Display13DBUF::Status::Complete) {
 			if(acquired.status==Display13Power::Status::Complete)status=Display13DBUF::resumeEngine(io,c.dbuf);
 			else status=Display13DBUF::Status::Power;
@@ -9512,9 +9999,9 @@ void XE::wrapAlderLakeNEngineEnable(void *power) {
     record[25]=writerBase!=0;
 	record[26]=d.selected;record[27]=static_cast<uint32_t>(acquired.status);record[28]=static_cast<uint32_t>(clock.status);
 	IOLockUnlock(c.lock);
-	auto root=IORegistryEntry::getRegistryRoot();dobs("N97FBEngine",record,sizeof(record));
+	auto root=IORegistryEntry::getRegistryRoot();root->setProperty("N97FBEngine",record,sizeof(record));
 	if(!record[26] && !root->getProperty("N97FBEngineFirstEmptyResume"))
-		dobs("N97FBEngineFirstEmptyResume",record,sizeof(record));
+		root->setProperty("N97FBEngineFirstEmptyResume",record,sizeof(record));
 }
 
 void XE::wrapAlderLakeNEngineDisable(void *power) {
@@ -9624,15 +10111,21 @@ void XE::wrapAlderLakeNEngineDisable(void *power) {
 	record[4]=static_cast<uint32_t>(clock.status);record[5]=c.clockStopped;record[6]=c.resumeClockHz;
 	record[7]=c.dbuf.requested;record[8]=c.dbuf.owned;record[9]=c.dbuf.unretired;
 	record[10]=static_cast<uint32_t>(released.status);record[11]=released.writes;
-	IOLockUnlock(c.lock);dobs("N97FBEngineStop",record,sizeof(record));
-	if(hotplug[0])dobs("N97FBHotplugIdle",hotplug,sizeof(hotplug));
-	if(gateEvidence[0])dobs("N97FBEngineStopGate",gateEvidence,sizeof(gateEvidence));
-	if(irqRelease[0])dobs("N97FBEngineStopIRQ",irqRelease,sizeof(irqRelease));
+	IOLockUnlock(c.lock);IORegistryEntry::getRegistryRoot()->setProperty("N97FBEngineStop",record,sizeof(record));
+	if(hotplug[0])IORegistryEntry::getRegistryRoot()->setProperty("N97FBHotplugIdle",hotplug,sizeof(hotplug));
+	if(gateEvidence[0])IORegistryEntry::getRegistryRoot()->setProperty("N97FBEngineStopGate",gateEvidence,sizeof(gateEvidence));
+	if(irqRelease[0])IORegistryEntry::getRegistryRoot()->setProperty("N97FBEngineStopIRQ",irqRelease,sizeof(irqRelease));
 	if(acquiredGate)reinterpret_cast<void (*)(IOWorkLoop *)>(callbackXE->adlnWorkLoopOpen)(acquiredGate);
 }
 
 void XE::wrapAlderLakeNPowerOverride(void *power,bool enable) {
 	auto &c=display13FBPower;if(!c.lock || power!=c.power || !c.controller)return;
+	// The last hwShutdown can suspend the power banks before returning.
+	// Return idle TC PHY ownership while its access lease is still usable.
+	// Ordinary display/system sleep override calls keep their existing policy.
+	if(!enable && callbackXE->display13ShutdownPowerCaller &&
+	   reinterpret_cast<uintptr_t>(__builtin_return_address(0))==callbackXE->display13ShutdownPowerCaller)
+		finishDisplay13TCShutdown(c.controller);
 	// override(true) is only reached by the donor's simulator backend; our
 	// physical object has simulator=0. Do not force unrelated DDI/AUX domains.
 	if(!enable)wrapAlderLakeNEngineDisable(power);
@@ -9680,6 +10173,7 @@ void XE::wrapAlderLakeNPrimaryDBUF(OSObject *plane,uint32_t start,uint32_t end,b
 	IORecursiveLockLock(mutex);
 	uint64_t record[20] {};IOLockLock(c.lock);
 	const auto pipe=Display13FBMemory::boundPipe(c.pipe,fb);
+	if(dsiSharedWriterStopped(fb,pipe)) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);return;}
 	if(pipe>=3 || c.pipe[pipe].destroyingPath) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);return;}
 	Display13DBUF::Status status=Display13DBUF::Status::Unavailable;
 	auto path=fb ? Display13FBMemory::field<OSObject *>(plane,0x70) : nullptr;
@@ -9729,6 +10223,7 @@ void XE::wrapAlderLakeNPlanarDBUFWrite(void *access,uint64_t reg,uint32_t value)
 	if(fb->getMetaClass()->getClassSize()<0x4B90) {fb->release();return;}
 	auto mutex=Display13FBMemory::field<IORecursiveLock *>(fb,0x4220);if(!mutex) {fb->release();return;}
 	IORecursiveLockLock(mutex);IOLockLock(c.lock);
+	if(dsiSharedWriterStopped(fb,pipe)) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);fb->release();return;}
 	if(c.pipe[pipe].destroyingPath) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);fb->release();return;}
 	uint64_t record[14] {2,reg,value};auto status=Display13DBUF::Status::Unavailable;
 	auto path=Display13FBMemory::singlePath<OSObject *>(fb);
@@ -9767,6 +10262,7 @@ void XE::wrapDisplay13CursorDBUF(OSObject *plane) {
 	IORecursiveLockLock(mutex);IOLockLock(c.lock);
 	Display13DBUF::Status status=Display13DBUF::Status::Unavailable;uint64_t record[16] {};
 	const auto pipe=Display13FBMemory::boundPipe(c.pipe,fb);
+	if(dsiSharedWriterStopped(fb,pipe)) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);return;}
 	if(pipe>=3 || c.pipe[pipe].destroyingPath) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);return;}
 	auto path=Display13FBMemory::field<OSObject *>(plane,0x70);
 	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnOutputWiring);
@@ -9816,7 +10312,7 @@ void XE::adlnSetupDBUF(IOService *controller,bool optimized) {
 	// owning none can process retained identities one at a time.
 	const auto selected=Display13FBTopology::multiOutputWiring(callbackXE->adlnOutputWiring) ? (held ? (held&published) : published) : (published&1U);
 	uint64_t dispatch[] {1,optimized,published,held,selected};
-	dobs("N97FBDBUFDispatch",dispatch,sizeof(dispatch));
+	IORegistryEntry::getRegistryRoot()->setProperty("N97FBDBUFDispatch",dispatch,sizeof(dispatch));
 	for(unsigned pipe=0;pipe<3;++pipe) {
 		if(selected&(1U<<pipe))adlnSetupDBUFPipe(controller,framebuffer[pipe],pipe,optimized);
 		OSSafeReleaseNULL(framebuffer[pipe]);
@@ -9828,7 +10324,8 @@ void XE::adlnSetupDBUFPipe(IOService *controller,IOService *fb,unsigned pipe,boo
 	if(pipe>=3 || !fb || fb->getMetaClass()->getClassSize()<0x4B90)return;
 	auto mutex=Display13FBMemory::field<IORecursiveLock *>(fb,0x4220);if(!mutex)return;
 	IORecursiveLockLock(mutex);IOLockLock(c.lock);
-	Display13DBUF::Layout layout;Display13DBUF::Range relativePrimary;OSObject *plane=nullptr;uint64_t record[18] {},resume[6] {};
+	if(dsiSharedWriterStopped(fb,pipe)) {IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);return;}
+	Display13DBUF::Layout layout;Display13DBUF::Range relativePrimary;OSObject *plane=nullptr;uint64_t record[20] {},resume[6] {};
 	auto path=Display13FBMemory::singlePath<OSObject *>(fb);
 	const auto binding=adlnInspectPathBinding(fb,path,callbackXE->adlnPlatform,callbackXE->adlnOutputWiring);
 	const bool associated=Display13FBMemory::boundPipe(c.pipe,fb)==pipe &&
@@ -9883,7 +10380,18 @@ void XE::adlnSetupDBUFPipe(IOService *controller,IOService *fb,unsigned pipe,boo
 		// arm it after this allocation; keep its old slices pending until then.
 		IOLockLock(c.lock);
 		if(!allocated || c.watermarkFaulted)layout.status=Display13DBUF::Status::Faulted;
-		else if(layout.active && (c.pipe[pipe].wmPending || c.pipe[pipe].wmLatch.status!=Display13WM::Status::Complete))layout.status=Display13DBUF::Status::Conflict;
+		else if(layout.active && (c.pipe[pipe].wmPending || c.pipe[pipe].wmLatch.status!=Display13WM::Status::Complete)) {
+			// An enabled timing pipe can still be preparing its primary, or
+			// waiting for the live surface to catch up. The WM proof explicitly
+			// leaves those cases pending. Allocation success is not retirement:
+			// retain the old slices and clock guard until a later native arm
+			// proves the actual scanout. Other unavailable/failed proofs are not
+			// permission to continue an active allocation.
+			const auto &latch=c.pipe[pipe].wmLatch;
+			const bool awaiting=latch.status==Display13WM::Status::Unavailable &&
+				(latch.check==Display13WM::LatchCheck::AwaitingScanout || latch.check==Display13WM::LatchCheck::AwaitingFlip);
+			if(!awaiting)layout.status=Display13DBUF::Status::Conflict;
+		}
 		if(layout.status==Display13DBUF::Status::Complete && !optimized)
 			reinterpret_cast<uint8_t *>(controller)[0x1AFA]=0;
 	}
@@ -9892,12 +10400,17 @@ void XE::adlnSetupDBUFPipe(IOService *controller,IOService *fb,unsigned pipe,boo
 	record[5]=c.dbuf.pipe[pipe].primary.start;record[6]=c.dbuf.pipe[pipe].primary.end;record[7]=c.dbuf.pipe[pipe].cursor.start;record[8]=c.dbuf.pipe[pipe].cursor.end;
 	record[9]=c.dbuf.consumers;record[10]=c.dbuf.unretired;record[11]=c.dbuf.requested;record[12]=c.dbuf.powered;
 	record[13]=c.pipe[pipe].wmPending;record[14]=c.pipe[pipe].watermarkClockHz;record[15]=static_cast<uint32_t>(c.pipe[pipe].wmLatch.status);record[16]=pipe;record[17]=binding.ddi;
+	record[18]=static_cast<uint32_t>(c.pipe[pipe].wmLatch.check);record[19]=c.dbuf.faulted;
 	IOLockUnlock(c.lock);IORecursiveLockUnlock(mutex);
 	adlnPublishMemory("N97FBDBUFLayout",pipe,record,sizeof(record));
+	if(layout.status!=Display13DBUF::Status::Complete)adlnPublishMemory("N97FBDBUFLayoutFailure",pipe,record,sizeof(record),true);
 	if(resume[0])adlnPublishMemory("N97FBDBUFColdResume",pipe,resume,sizeof(resume));
 }
 void XE::wrapAlderLakeNDefaultDBUF(IOService *controller) {adlnSetupDBUF(controller,false);}
 void XE::wrapAlderLakeNOptimizedDBUF(IOService *controller) {adlnSetupDBUF(controller,true);}
+
+
+
 
 void XE::wrapAlderLakeNPowerInit(void *power,void *controller) {
 	auto &c=display13FBPower; if(!c.lock)return;
@@ -9921,16 +10434,23 @@ void XE::wrapAlderLakeNPowerInit(void *power,void *controller) {
 			// Reference failures retain mappings/objects for diagnosis until reboot.
 			service->retain();static_cast<OSObject *>(power)->retain();static_cast<OSObject *>(c.access)->retain();
 			Display13FBPowerIO io {map};
-			const auto wells=io.read(Display13Power::Driver),a=io.read(0x60400),pipeA=io.read(0x70008);
-			const auto bootPort=Display13FBTopology::bootDDI(callbackXE->adlnOutputWiring,a,true);
-			const bool dpBoot=bootPort<7 && (callbackXE->adlnOutputWiring.dp&(1U<<bootPort));
-			const auto ddi=bootPort<7 ? io.read(0x64000+0x100*bootPort) : UINT32_MAX;
+            const auto wells=io.read(Display13Power::Driver);
+            const bool pipePowered=Display13FBIRQ::powered(wells,0);
+            const auto a=pipePowered ? io.read(0x60400) : UINT32_MAX;
+            const auto pipeA=pipePowered ? io.read(0x70008) : UINT32_MAX;
+            const bool dsi=callbackXE->adlnOutputWiring.dsi==1;
+			const auto bootPort=dsi ? 0U : Display13FBTopology::bootDDI(callbackXE->adlnOutputWiring,a,true);
+			const bool dpBoot=bootPort<7 && (callbackXE->adlnOutputWiring.links()&(1U<<bootPort));
+			const auto ddi=pipePowered && bootPort<7 ? io.read(0x64000+0x100*bootPort) : UINT32_MAX;
 			// The initial protected references belong to the measured pipe A /
 			// selected boot display. Validate that live topology before acquiring
 			// them. Resource/surface/IRQ adoption remains a separate operation.
-			bool boot=bootPort<7 && wells!=UINT32_MAX && (wells&(1U<<10)) &&
+            Display13FBBootIO sourceIO{map};
+			bool boot=dsi ? callbackXE->dsiBoot.complete() &&
+                XELP::DSI::bootUnchanged(sourceIO,callbackXE->dsiBoot,xelpMemory) :
+                bootPort<7 && wells!=UINT32_MAX && (wells&(1U<<10)) &&
 				pipeA!=UINT32_MAX && ddi!=UINT32_MAX && (pipeA&(1U<<31)) && (ddi&(1U<<31));
-			for(unsigned pipe=1;pipe<3;++pipe) if(wells&(1U<<(2*(5+pipe)))) {
+			for(unsigned pipe=1;boot && pipe<3;++pipe) if(Display13FBIRQ::powered(wells,pipe)) {
 				const auto trans=io.read(0x60400+pipe*0x1000);
 				boot=boot && trans!=UINT32_MAX && !(trans&(1U<<31));
 			}
@@ -9938,33 +10458,39 @@ void XE::wrapAlderLakeNPowerInit(void *power,void *controller) {
                 Display13FBBootIO bootIO{map};boot=Display13TC::Boot::capture(bootIO,true,bootPort,0,dpBoot).valid();
             }
             if(boot && dpBoot) {
-                Display13FBBootIO bootIO{map};const auto source=AlderLakeN::readDisplay(bootIO,true);uint32_t aux=0;
+                Display13FBBootIO bootIO{map};auto &source=c.displayScratch;AlderLakeN::readDisplay(bootIO,true,source);uint32_t aux=0;
                 const auto tc=Display13TC::Boot::capture(bootIO,bootPort>=3,bootPort,0,true);
-                boot=AlderLakeN::dpSourceUnchanged(bootIO,source,0,bootPort,0,bootPort>=3?&tc:nullptr);
+                boot=AlderLakeN::dpSourceUnchanged(bootIO,source,0,bootPort,0,bootPort>=3?&tc:nullptr,(callbackXE->adlnOutputWiring.panel&(1U<<bootPort))!=0);
                 if(bootPort<2)boot=boot && AlderLakeN::value(source,Display13Power::AUX,aux) && (aux&(1U<<(2*bootPort)));
             }
 			if(boot) {
                 result=c.bridge.begin(io,bootPort,callbackXE->adlnOutputWiring.selected());
-                if(result.status==Display13Power::Status::Complete)c.bootDP=dpBoot;
+                if(result.status==Display13Power::Status::Complete){c.bootDP=dpBoot;c.bootPanel=(callbackXE->adlnOutputWiring.panel&(1U<<bootPort))!=0;}
             }
 			else {result.status=Display13Power::Status::InvalidDomains;adlnFault(c.bridge.state.faulted,__LINE__);}
             if(result.status==Display13Power::Status::Complete && dpBoot && bootPort<2) {
-                Display13FBBootIO bootIO{map};const auto source=AlderLakeN::readDisplay(bootIO,true);
-                result=AlderLakeN::holdDPBootAUX(bootIO,source,c.bridge,c.mainLink[bootPort],bootPort);
+                Display13FBBootIO bootIO{map};auto &source=c.displayScratch;AlderLakeN::readDisplay(bootIO,true,source);
+                result=AlderLakeN::holdDPBootAUX(bootIO,source,c.bridge,c.mainLink[bootPort],bootPort,(callbackXE->adlnOutputWiring.panel&(1U<<bootPort))!=0);
                 if(result.status!=Display13Power::Status::Complete)adlnFault(c.bridge.state.faulted,__LINE__);
             }
 			if(result.status==Display13Power::Status::Complete && !Display13Power::publishObject(c.bridge,power,0x80,controller,0xC60)) {
 				result.status=Display13Power::Status::NotReady;adlnFault(c.bridge.state.faulted,__LINE__);
 			}
+            if(result.status==Display13Power::Status::Complete && dsi) {
+                IOLockUnlock(c.lock);
+                const bool bound=callbackXE->bindDSIResources(service);
+                IOLockLock(c.lock);
+                if(!bound){result.status=Display13Power::Status::NotReady;adlnFault(c.bridge.state.faulted,__LINE__);}
+            }
             if(result.status==Display13Power::Status::Complete) {
                 // Initial discovery can call the virtual probe directly without
                 // probePortState. Bind at the proven manager/power-owner boundary
                 // before returning from init and starting engine/native clients.
                 const bool bound=controller==callbackXE->adlnTopologyController && callbackXE->xelpBindProbe(controller);
-                dobs("N97FBSharedProbeBound",bound);
+                IORegistryEntry::getRegistryRoot()->setProperty("N97FBSharedProbeBound",bound);
                 if(!bound){result.status=Display13Power::Status::NotReady;adlnFault(c.bridge.state.faulted,__LINE__);}
             }
-			if(result.status==Display13Power::Status::Complete && callbackXE->display13FBIRQReady) {
+			if(result.status==Display13Power::Status::Complete && !dsi && callbackXE->display13FBIRQReady) {
 				auto irqLock=*reinterpret_cast<IOSimpleLock **>(static_cast<uint8_t *>(controller)+0x90);
 				if(irqLock) {
 					display13FBIRQ.base=map->getVirtualAddress();display13FBIRQ.lock=irqLock;
@@ -9977,6 +10503,16 @@ void XE::wrapAlderLakeNPowerInit(void *power,void *controller) {
             if(result.status==Display13Power::Status::Complete && dpBoot && bootPort>=3)tcBootDDI=bootPort;
 		} else OSSafeReleaseNULL(map);
 	}
+    if(result.status==Display13Power::Status::Complete && callbackXE->adlnOutputWiring.dsi) {
+        auto getPort=reinterpret_cast<OSObject *(*)(uint32_t)>(callbackXE->tglPortByDDI);
+        auto port=getPort?getPort(0):nullptr;
+        bool adopted=false;
+        if(port) {
+            port->retain();IOLockUnlock(c.lock);adopted=setDSIPortMode(port,1)==kIOReturnSuccess;
+            IOLockLock(c.lock);port->release();
+        }
+        if(!adopted){result.status=Display13Power::Status::NotReady;adlnFault(c.bridge.state.faulted,__LINE__);}
+    }
     if(tcBootDDI<7) {
         // Exact donor start initializes every port before PowerWell::init.
         // Establish the same durable Mode used by probing/hotplug before any
@@ -9989,7 +10525,7 @@ void XE::wrapAlderLakeNPowerInit(void *power,void *controller) {
             adopted=wrapDisplay13TCMode(port,4)==kIOReturnSuccess;
             IOLockLock(c.lock);
             if(adopted) {
-                Display13FBBootIO io{c.map};const auto view=AlderLakeN::readDisplay(io,true);
+                Display13FBBootIO io{c.map};auto &view=c.displayScratch;AlderLakeN::readDisplay(io,true,view);
                 const auto tc=Display13TC::Boot::capture(io,true,tcBootDDI,0);
                 Display13FBTCIO access{port,tcBootDDI-3};
                 adopted=access.owned(tcBootDDI) && access.linkHeld() && view.activePipes==1 &&
@@ -10149,13 +10685,13 @@ bool XE::adlnPowerReference(void *power,uint32_t operation,uint32_t domain) {
     auxRecord[8]=c.bridge.state.initialAUX;auxRecord[9]=c.bridge.auxLease[auxPort].domains;
 	IOLockUnlock(c.lock);
 	adlnPublishPowerRecord("N97FBPower",record);
-	if(display13TraceEnabled)dobs("N97FBPowerContext",context,sizeof(context));
-	if(gateEvidence[0])dobs("N97FBPowerReleaseGate",gateEvidence,sizeof(gateEvidence));
-	if(irqRelease[0])dobs("N97FBPowerReleaseIRQ",irqRelease,sizeof(irqRelease));
-    dobs("N97FBAUXPower",auxRecord,sizeof(auxRecord));
-	if(check[14])dobs("N97FBPowerReleaseMap",check,sizeof(check));
+	if(display13TraceEnabled)IORegistryEntry::getRegistryRoot()->setProperty("N97FBPowerContext",context,sizeof(context));
+	if(gateEvidence[0])IORegistryEntry::getRegistryRoot()->setProperty("N97FBPowerReleaseGate",gateEvidence,sizeof(gateEvidence));
+	if(irqRelease[0])IORegistryEntry::getRegistryRoot()->setProperty("N97FBPowerReleaseIRQ",irqRelease,sizeof(irqRelease));
+    IORegistryEntry::getRegistryRoot()->setProperty("N97FBAUXPower",auxRecord,sizeof(auxRecord));
+	if(check[14])IORegistryEntry::getRegistryRoot()->setProperty("N97FBPowerReleaseMap",check,sizeof(check));
 	if(record[4]!=static_cast<uint32_t>(Display13Power::Status::Complete) && record[7]==1)
-		dobs("N97FBFirstPowerCheck",check,sizeof(check));
+		IORegistryEntry::getRegistryRoot()->setProperty("N97FBFirstPowerCheck",check,sizeof(check));
 	if(disableEngine)wrapAlderLakeNEngineDisable(power);
 	// Wake native work only after dropping the display owner lock AND finishing
 	// a last-PG engine stop; do not let a queued getPG race that stop. Only open
@@ -10168,11 +10704,31 @@ void XE::wrapAlderLakeNPowerGetPG(void *p,uint32_t d) { adlnPowerReference(p,1,d
 void XE::wrapAlderLakeNPowerPutPG(void *p,uint32_t d) { adlnPowerReference(p,2,d); }
 void XE::wrapAlderLakeNPowerGetDDI(void *p,uint32_t d) { adlnPowerReference(p,3,d); }
 void XE::wrapAlderLakeNPowerPutDDI(void *p,uint32_t d) { adlnPowerReference(p,4,d); }
-void XE::wrapAlderLakeNPowerGetAUX(void *p,uint32_t d) { adlnPowerReference(p,5,d); }
+void XE::wrapAlderLakeNPowerGetAUX(void *p,uint32_t d) {
+    // Capture only the first DSI AUX-A caller. Port's forwarding entry tail
+    // calls this method, so frame zero also identifies its native caller.
+    static bool captured=false;
+    const bool capture=callbackXE && callbackXE->adlnOutputWiring.dsi==1 && d==0 &&
+        __sync_bool_compare_and_swap(&captured,false,true);
+    uint64_t record[6] {1,d,0,UINT64_MAX,0,0};
+    if(capture) {
+        const auto caller=reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+        const auto base=callbackXE->display13DPImage;
+        record[2]=base && caller>=base && caller-base<0xC8000;
+        if(record[2])record[3]=caller-base;
+        record[4]=p==display13FBPower.power;
+        IORegistryEntry::getRegistryRoot()->setProperty("WEXDSIFirstAUXCaller",record,sizeof(record));
+    }
+    const bool complete=adlnPowerReference(p,5,d);
+    if(capture) {
+        record[5]=complete ? 1 : 2;
+        IORegistryEntry::getRegistryRoot()->setProperty("WEXDSIFirstAUXCaller",record,sizeof(record));
+    }
+}
 void XE::wrapAlderLakeNPowerPutAUX(void *p,uint32_t d) { adlnPowerReference(p,6,d); }
 
 IOService *XE::wrapAlderLakeNRejectedAcceleratorProbe(IOService *,IOService *,SInt32 *) {
-	dobs("N97NativeProbeBlocked",true);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97NativeProbeBlocked",true);
 	return nullptr;
 }
 bool XE::processAlderLakeNRejectedAccelerator(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
@@ -10185,23 +10741,23 @@ bool XE::processAlderLakeNRejectedAccelerator(KernelPatcher &patcher,size_t inde
 		KernelPatcher::RouteRequest route {"__ZN16IntelAccelerator5probeEP9IOServicePi",wrapAlderLakeNRejectedAcceleratorProbe,orgTGLAcceleratorProbe};
 		ready=patcher.routeMultiple(index,&route,1,address,size);
 	}
-	dobs("N97RejectedAcceleratorGuardReady",ready);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97RejectedAcceleratorGuardReady",ready);
 	patcher.clearError();return ready;
 }
 
 // ADLP_LOAD_ONLY_HOOKS: these replacements never call the original methods.
 IOService *XE::rejectADLPFramebufferProbe(IOService *,IOService *,SInt32 *) {
-    dobs("ADLPFramebufferProbeRejected",true);
+    IORegistryEntry::getRegistryRoot()->setProperty("ADLPFramebufferProbeRejected",true);
     SYSLOG("igfx","ADL-P load-only: framebuffer probe rejected before native entry");
     return nullptr;
 }
 IOService *XE::rejectADLPAcceleratorProbe(IOService *,IOService *,SInt32 *) {
-    dobs("ADLPAcceleratorProbeRejected",true);
+    IORegistryEntry::getRegistryRoot()->setProperty("ADLPAcceleratorProbeRejected",true);
     SYSLOG("igfx","ADL-P load-only: accelerator probe rejected before native entry");
     return nullptr;
 }
 bool XE::rejectADLPStart(IOService *,IOService *) {
-    dobs("ADLPLoadOnlyUnexpectedStart",true);
+    IORegistryEntry::getRegistryRoot()->setProperty("ADLPLoadOnlyUnexpectedStart",true);
     return false;
 }
 bool XE::processADLPLoadOnly(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
@@ -10230,8 +10786,8 @@ bool XE::processADLPLoadOnly(KernelPatcher &patcher,size_t index,mach_vm_address
         ready=patcher.routeMultipleShort(index,routes,arrsize(routes),address,size);
     }
     patcher.clearError();
-    dobs(fb?"ADLPFramebufferLoadOnlyReady":"ADLPAcceleratorLoadOnlyReady",ready);
-    if(adlpDisplaySelected && !fb)dobs("ADLPFBOnlyAcceleratorBlocked",ready);
+    IORegistryEntry::getRegistryRoot()->setProperty(fb?"ADLPFramebufferLoadOnlyReady":"ADLPAcceleratorLoadOnlyReady",ready);
+    if(adlpDisplaySelected && !fb)IORegistryEntry::getRegistryRoot()->setProperty("ADLPFBOnlyAcceleratorBlocked",ready);
     SYSLOG("igfx","ADL-P load-only: %s probe/start barriers ready=%u",fb?"framebuffer":"accelerator",ready);
     return ready;
 }
@@ -10275,9 +10831,9 @@ bool XE::processAlderLakeNLoadOnly(KernelPatcher &patcher, size_t index, mach_vm
 	if (ready && checkKernelArgument("-wex-adln-parent-entry"))
 	 ready=probeRequested && processAlderLakeNParentBoundary(patcher,index,address,size);
 	tglAcceleratorReady=ready;
-	dobs("N97LoadOnlyPatchReady",ready);
-	dobs("N97LoadOnlySKUReady",probeRequested && skuReady);
-	dobs("N97LoadOnlyFullPatchesSkipped",true);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97LoadOnlyPatchReady",ready);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97LoadOnlySKUReady",probeRequested && skuReady);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97LoadOnlyFullPatchesSkipped",true);
 	patcher.clearError();
 	return true;
 }
@@ -10303,7 +10859,7 @@ bool XE::processAlderLakeNParentBoundary(KernelPatcher &patcher, size_t index, m
 	if (ready && checkKernelArgument("-wex-adln-task-stage"))
 	 ready=display13StageReady && processAlderLakeNTaskBoundary(patcher,index,address,size);
 	adlnParentBoundaryReady=ready;
-	dobs("N97ParentBoundaryPatchReady",ready);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97ParentBoundaryPatchReady",ready);
 	patcher.clearError();
 	return ready;
 }
@@ -10328,8 +10884,8 @@ bool XE::processAlderLakeNConfigStage(KernelPatcher &patcher, size_t index, mach
 	 ready=ready && *reinterpret_cast<const mach_vm_address_t *>(address+0xD18F8)==replacement;
 	}
 	adlnConfigStageReady=ready;
-	dobs("N97ConfigEventVtableRouted",ready);
-	dobs("N97ConfigStagePatchReady",ready);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97ConfigEventVtableRouted",ready);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97ConfigStagePatchReady",ready);
 	patcher.clearError();
 	return ready;
 }
@@ -10378,10 +10934,10 @@ bool XE::processXELPMemoryStage(KernelPatcher &patcher, size_t index, mach_vm_ad
 	}
 	xelpMemoryStageReady=ready;
 	auto root=IORegistryEntry::getRegistryRoot();
-	dobs("N97MemoryStagePatchReady",ready);
-	dobs("N97NativeGOPPTEPreservation",ready);
-	dobs("TGLGGTT64Writes",ready);
-	dobs("TGLURBBankTopologyReady",ready);
+	root->setProperty("N97MemoryStagePatchReady",ready);
+	root->setProperty("N97NativeGOPPTEPreservation",ready);
+	root->setProperty("TGLGGTT64Writes",ready);
+	root->setProperty("TGLURBBankTopologyReady",ready);
 	patcher.clearError();
 	return ready;
 }
@@ -10405,7 +10961,7 @@ bool XE::processAlderLakeNEventStage(KernelPatcher &patcher, size_t index, mach_
 	}
 	ready=ready && patcher.routeMultiple(index,&route,1,address,size);
 	adlnEventStageReady=ready;
-	dobs("N97EventStagePatchReady",ready);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97EventStagePatchReady",ready);
 	patcher.clearError();
 	return ready;
 }
@@ -10431,7 +10987,7 @@ bool XE::processDisplay13Stage(KernelPatcher &patcher, size_t index, mach_vm_add
 	 }
 	}
 	display13StageReady=ready;
-	dobs("N97DisplayStagePatchReady",ready);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97DisplayStagePatchReady",ready);
 	return ready;
 }
 
@@ -10452,11 +11008,12 @@ bool XE::processAlderLakeNTaskBoundary(KernelPatcher &patcher, size_t index, mac
 	 ready=ready && *reinterpret_cast<const mach_vm_address_t *>(address+0xD1A40)==replacement;
 	}
 	adlnTaskBoundaryReady=ready;
-	dobs("N97TaskBoundaryPatchReady",ready);
+	IORegistryEntry::getRegistryRoot()->setProperty("N97TaskBoundaryPatchReady",ready);
 	return ready;
 }
 
 bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
+ if(adlnDetected && tglAcceleratorRequested)dsiBackingHooksReady=processDSIBackingHooks(patcher,index,address,size);
  // Framebuffer-only mode must never enter the donor accelerator probe.
  // The bring-up payload omits this bundle; also reject it if already present.
  if (!tglAcceleratorRequested) {
@@ -10468,11 +11025,11 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
   patcher.clearError();
   KernelPatcher::RouteRequest route(symbol,wrapTGLAcceleratorProbe,orgTGLAcceleratorProbe);
   if (ready) ready=patcher.routeMultiple(index,&route,1,address,size);
-  dobs("WhateverXeNoAccelGuardReady",ready);
+  IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeNoAccelGuardReady",ready);
   patcher.clearError();return ready;
  }
  const bool surfaceABIReady=tglInstallSonomaSurfaceABI(patcher,index,address,size,false);
- dobs("TGLSonomaSurfaceAcceleratorReady",surfaceABIReady);
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLSonomaSurfaceAcceleratorReady",surfaceABIReady);
  if(adlnDetected && (checkKernelArgument("-wex-adln-kernel-ctx") || adlnNativeRCSProfileRequested))adlnPrepareRCSProfile(patcher,index,address,size);
    // Serialize only the two direct stores in detectEDRAM. The original
    // forcewake and 1000ms sleep remain outside the shared gate.
@@ -10494,9 +11051,9 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
      known=!memcmp(site,after,sizeof(after));
     }
     __atomic_store_n(&tglPcodeAcceleratorReady,known,__ATOMIC_RELEASE);
-    dobs("TGLPcodeAcceleratorReady",known);
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLPcodeAcceleratorReady",known);
     if (known) if (auto live=OSSerializer::forTarget(nullptr,tglPcodeEDRAMSerialize)) {
-     dobs("TGLPcodeEDRAMLive",live);live->release();
+     IORegistryEntry::getRegistryRoot()->setProperty("TGLPcodeEDRAMLive",live);live->release();
     }
     patcher.clearError();
    }
@@ -10531,7 +11088,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				}
 				patcher.clearError();
 			}
-			dobs("TGLAcceleratorSKUPatch", skuReady);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLAcceleratorSKUPatch", skuReady);
 			// r135: TGL B0 object-preemption topology corruption (Vol14 UP3 p53).
 			// One native immediate feeds both CS_DEBUG_MODE1 and CS_CHICKEN1.
 			// Keep its write mask and compute-preemption fields; clear only bit0.
@@ -10588,10 +11145,10 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				patcher.applyLookupPatch(&patch,ffModeSite,sizeof(ffModeFind)+1);
 				ffModeOK=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(ffModeSite,ffModeReplace,sizeof(ffModeReplace));
 			}
-			dobs("TGLFFModeTimerReady",ffModeOK);
-			dobs("TGLFFDOPClockDisableReady",ffDopOK);
-			dobs("TGLObjectPreemptionGlobalReady",selectorOK);
-			dobs("TGLObjectPreemptionDisabledReady",objectPreemptOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLFFModeTimerReady",ffModeOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLFFDOPClockDisableReady",ffDopOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLObjectPreemptionGlobalReady",selectorOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLObjectPreemptionDisabledReady",objectPreemptOK);
 			patcher.clearError();
 			// r116: GT2 with 80 EU has ten enabled subslices, but the donor
 			// recognizes only twelve and leaves hwInfo+0x54 (URB banks) zero.
@@ -10610,7 +11167,8 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			uint8_t urbReplaceAlderLakeN[] {0x83,0xFE,0x01,0x75,0x59,0x83,0xFA,0x04,0x75,0x54,0x41,0xC7,0x87,0x64,0x11,0x00,0x00,0x04,0x00,0x00,0x00};
 			if (adlnDetected) { urbReplaceAlderLakeN[7]=adlnNativeSubslices;urbReplaceAlderLakeN[17]=adlnL3Banks; }
             if(display12SmallGTDetected) {urbReplaceAlderLakeN[7]=display12SmallGT.nativeSubslices;urbReplaceAlderLakeN[17]=display12SmallGT.l3Banks;}
-			const auto urbReplacement = (adlnDetected || XELP::display12SmallGT(xeProfile.gt)) ? urbReplaceAlderLakeN :
+            if(tglGT2Detected) {urbReplaceAlderLakeN[7]=tglGT2Resources.nativeSubslices;urbReplaceAlderLakeN[17]=tglGT2Resources.l3Banks;}
+			const auto urbReplacement = (adlnDetected || XELP::display12SmallGT(xeProfile.gt) || tglGT2Detected) ? urbReplaceAlderLakeN :
 				(xeProfile.gt==XELP::GT::TGLG4 ? urbReplaceG4 : urbReplace);
 			auto gpuInfo=patcher.solveSymbol<mach_vm_address_t>(index,
 				"__ZN16IntelAccelerator10getGPUInfoEv",address,size);
@@ -10623,7 +11181,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				patcher.applyLookupPatch(&patch,urbSite,sizeof(urbFind)+1);
 				urbReady=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(urbSite,urbReplacement,sizeof(urbFind));
 			}
-			dobs("TGLURBBankTopologyReady",urbReady);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLURBBankTopologyReady",urbReady);
 			patcher.clearError();
 			// r124: resolve_ccs places its state at cursor+4096-alignedSize,
 			// but asks the pool for only two DWORDs. After the 0x9B8-byte init
@@ -10649,7 +11207,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				patcher.applyLookupPatch(&patch,ccsSite,sizeof(ccsFind)+1);
 				ccsReady=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(ccsSite,ccsReplace,sizeof(ccsReplace));
 			}
-			dobs("TGLCCSPageReservationReady",ccsReady);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLCCSPageReservationReady",ccsReady);
 			patcher.clearError();
 			// r287: HiZ resolve lays out commands/state relative to cursor+4096,
 			// but requests only the *remaining* pool space, so the pool never
@@ -10669,7 +11227,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				patcher.applyLookupPatch(&patch,hizSite,sizeof(hizFind)+1);
 				hizReady=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(hizSite,hizReplace,sizeof(hizReplace));
 			}
-			dobs("TGLHiZPageReservationReady",hizReady);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLHiZPageReservationReady",hizReady);
 			patcher.clearError();
 			// The original block emits type2 with Fast Clear Enable=0, a
 			// forbidden pairing. Only this exact emitter's type2 gains bit8.
@@ -10687,7 +11245,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				patcher.routeBlock(reinterpret_cast<mach_vm_address_t>(ccsPSSite),jump,sizeof(jump));
 				ccsPSReady=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(ccsPSSite,jump,sizeof(jump));
 			}
-			dobs("TGLCCSFastClearZeroReady",ccsPSReady);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLCCSFastClearZeroReady",ccsPSReady);
 			patcher.clearError();
 			bool ggttOK=size>0x10730 &&
 				patcher.solveSymbol<mach_vm_address_t>(index,"__ZN25IGHardwareGlobalPageTable8mapRangeERK14IGAddressRangeyy",address,size)==address+0x10324 &&
@@ -10726,7 +11284,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 						!memcmp(site,replace,sizeof(replace));
 					if(!systemFlagsOK)break;
 				}
-				dobs("N97NativeGGTTSystemFlagsReady",systemFlagsOK);
+				IORegistryEntry::getRegistryRoot()->setProperty("N97NativeGGTTSystemFlagsReady",systemFlagsOK);
 			}
 			ggttOK=ggttOK && systemFlagsOK;
 			// Gen12 GGTT bit1 selects local memory. Preserve the entire GOP /
@@ -10747,10 +11305,10 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 					patcher.applyLookupPatch(&patch,site,sizeof(find)+1);
 					reservedOK=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(site,replace,sizeof(replace));
 				}
-				dobs("N97NativeGOPPTEPreservation",reservedOK);
+				IORegistryEntry::getRegistryRoot()->setProperty("N97NativeGOPPTEPreservation",reservedOK);
 			}
 			ggttOK=ggttOK && reservedOK;
-			dobs("TGLGGTT64Writes",ggttOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLGGTT64Writes",ggttOK);
 			patcher.clearError();
 
 			KernelPatcher::RouteRequest observations[] {
@@ -10763,7 +11321,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			};
 			const bool observed = patcher.solveSymbol<mach_vm_address_t>(index,"__ZN16IntelAccelerator4stopEP9IOService",address,size)==address+0x263C8 &&
 				patcher.routeMultiple(index, observations, arrsize(observations), address, size);
-			dobs("TGLWEGAcceleratorObservationsRouted", observed);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGAcceleratorObservationsRouted", observed);
 			bool adlnObserved=true;
 			if (adlnDetected) {
 				const uint8_t callbackEntry[] {0x55,0x48,0x89,0xE5,0x48,0x8B,0xBF,0x48,0x12,0,0};
@@ -10782,7 +11340,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 					adlnObserved=adlnObserved && patcher.solveSymbol<mach_vm_address_t>(index,native[i].symbol,address,size)==address+offsets[i];
 				patcher.clearError();
 				adlnObserved=adlnObserved && patcher.routeMultiple(index,native,arrsize(native),address,size);
-				dobs("N97NativeObservationsRouted",adlnObserved);
+				IORegistryEntry::getRegistryRoot()->setProperty("N97NativeObservationsRouted",adlnObserved);
 				IOLog("AlderLakeN native donor hooks=%u\n",adlnObserved);
 			}
 			patcher.clearError();
@@ -10790,7 +11348,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				wrapTGLAcceleratorStart, orgTGLAcceleratorStart);
 			const bool ok = patcher.routeMultiple(index, &request, 1, address, size);
 			SYSLOG("igfx", "TGL accelerator start route=%d", ok);
-			dobs("TGLWEGAcceleratorStartRouted", ok);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGAcceleratorStartRouted", ok);
 			// Check native helper bytes BEFORE existing GuC diagnostic routes.
 			// PRM Vol2c part1 pp121-124: valid + force even for empty ring restore.
 			const uint8_t cpsAllocHead[] {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50,0x41,0x89,0xce,0x41,0x89,0xd7,0x49,0x89,0xf4};
@@ -10818,7 +11376,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 			};
 			patcher.clearError();
 			const bool gucOK = patcher.routeMultiple(index, gucRequests, arrsize(gucRequests), address, size);
-			dobs("TGLGuCDiagnosticRouted", gucOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCDiagnosticRouted", gucOK);
 			// Guard every byte of the replaced straight-line write block; resume
 			// before its first branch. Never relocate a branch or kernel wait call.
 			const uint8_t dmaWrites[] {0x44,0x89,0xAF,0x10,0xC3,0,0,0x44,0x89,0xBF,0,0xC3,0,0,
@@ -10836,7 +11394,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				patcher.routeBlock(reinterpret_cast<mach_vm_address_t>(site),jump,sizeof(jump));
 				dmaWriteOK=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(site,jump,sizeof(jump));
 			}
-			dobs("TGLGuCDMAWriteObservationRouted",dmaWriteOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCDMAWriteObservationRouted",dmaWriteOK);
 			bool hostOK=true;
 			if (checkKernelArgument("-disablegfxfirmware")) {
 				KernelPatcher::RouteRequest host[] {
@@ -10884,7 +11442,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 					patcher.routeBlock(reinterpret_cast<mach_vm_address_t>(loadSite),jump,sizeof(jump));
 					hostOK=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(loadSite,jump,sizeof(jump));
 				}
-				dobs("TGLHostObservationRouted",hostOK);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLHostObservationRouted",hostOK);
 				patcher.clearError();
 				if (hostOK)
 					hostOK=installTGLCSB12(patcher,index,address,size);
@@ -10916,11 +11474,11 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
               ready=patcher.routeMultiple(index,trace,arrsize(trace),address,size);
              }
              patcher.clearError();adlnQueueTraceEnabled=ready;
-             dobs("N97QueueTraceReady",ready);
+             IORegistryEntry::getRegistryRoot()->setProperty("N97QueueTraceReady",ready);
             }
 			tglAlderLakeNContextPublishEnabled=adlnDetected && checkKernelArgument("-wex-adln-ctx-publish") &&
 			 hostOK && tglVM.enabled && !checkKernelArgument("-wex-adln-kernel-ctx");
-			dobs("N97ContextPublishReady",tglAlderLakeNContextPublishEnabled);
+			IORegistryEntry::getRegistryRoot()->setProperty("N97ContextPublishReady",tglAlderLakeNContextPublishEnabled);
 			// r112 (qualified r108 correction): the wired descriptor pool consumes whole pages without rounding.
 			// TGL requests D240 bytes but writes through D210; ICL requests 9000.
 			// Change only this context's allocation parameter, after constructors.
@@ -10949,7 +11507,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				KernelPatcher::RouteRequest copy[] {{fastCopy,wrapTGLFastCopy,orgTGLFastCopy}};
 				copyOK=patcher.routeMultiple(index,copy,arrsize(copy),address,size);
 			}
-			dobs("TGLTileXCopyRouted",copyOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLTileXCopyRouted",copyOK);
 			// r310: separate initialization at first-copy entry, after construction.
 			// r209 submitted the native initialization as its own batch, as the
 			// ICL lifecycle does. TGL leaves a completed BBE-terminated init
@@ -10982,9 +11540,9 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
                 KernelPatcher::RouteRequest route[] {{blitSubmit,wrapTGLBlitDeferredInit,orgTGLBlitDeferredInit}};
                 if(blitInitOK) blitInitOK=patcher.routeMultiple(index,route,arrsize(route),address,size);
 			}
-			dobs("TGLBlitInitialBatchReady",blitInitOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLBlitInitialBatchReady",blitInitOK);
             if(blitInitOK) if(auto live=OSSerializer::forTarget(nullptr,tglBlitDeferredSerialize)) {
-             dobs("TGLBlitDeferredInitLive",live);live->release();
+             IORegistryEntry::getRegistryRoot()->setProperty("TGLBlitDeferredInitLive",live);live->release();
             }
 			patcher.clearError();
 
@@ -10999,9 +11557,9 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				auxAlignOK=patcher.routeMultiple(index,aux,arrsize(aux),address,size);
 			}
 			patcher.clearError();
-			dobs("TGLCCSAlignmentReady",auxAlignOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLCCSAlignmentReady",auxAlignOK);
 			if (auto live=OSSerializer::forTarget(nullptr,tglCCSAlignmentSerialize)) {
-				dobs("TGLCCSAlignmentLive",live);live->release();
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLCCSAlignmentLive",live);live->release();
 			}
 			// Keep IOSurface device-cache allocation uncompressed. The donor
 			// enables it again when the last external display disappears, even
@@ -11034,7 +11592,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 					patcher.clearError();
 				}
 			}
-			dobs("TGLIOSurfaceCCSPolicyReady",iosCCSOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLIOSurfaceCCSPolicyReady",iosCCSOK);
 			// r119: retain native RCS flush -> stamp order and all runtime address/
 			// notification fields. Gen12 flushes HDC before completion; Linux v6.12
 			// gen12_emit_fini_breadcrumb_rcs also requires DepthStall (1409600907).
@@ -11073,10 +11631,10 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				patcher.applyLookupPatch(&patch,site,sizeof(flushFind[n])+1);
 				flushOK=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(site,flushReplace[n],sizeof(flushReplace[n]));
 			}
-			dobs("TGLRCSCompletionFlushReady",flushOK);
-			dobs("TGLRenderPassFlushReady",flushOK);
-			dobs("TGLRenderPassTileFlushReady",flushOK);
-			dobs("TGLRenderPassConstAlternativeReady",flushOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLRCSCompletionFlushReady",flushOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLRenderPassFlushReady",flushOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLRenderPassTileFlushReady",flushOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLRenderPassConstAlternativeReady",flushOK);
 			// The outer RCS completion emitter is separate from the render-pass
 			// emitter above. Apply the same Vol14 constant-cache alternative to
 			// its stamp and optional notification packets on the qualified Tahoe
@@ -11086,7 +11644,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				(XELP::kernelOS(version)==XELP::OS::Tahoe);
 			const bool completionCacheRequested=tahoeTrialScope && !(tglTahoeDisabledTrials&1);
 			const bool contextCacheRequested=tahoeTrialScope && !(tglTahoeDisabledTrials&2);
-			dobs("TGLTahoeDisabledTrials",tglTahoeDisabledTrials,32);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLTahoeDisabledTrials",tglTahoeDisabledTrials,32);
 			// Preserve native submission; use its one-shot force-restore flag only
 			// for a witnessed equal-tail resubmission of the active first item.
 			const uint8_t sameTailFlag[] {0x41,0x80,0xBD,0xC9,0,0,0,0,0x74,0x10,0x41,0xC6,0x85,0xC9,0,0,0,0,0x89,0xC8,0x83,0xC8,0x04,0x89,0x45,0xC0};
@@ -11095,7 +11653,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				!memcmp(reinterpret_cast<void *>(address+0x3A7B6),sameTailFlag,sizeof(sameTailFlag));
 			patcher.clearError();
 			tglSameTailRestoreEnabled=tglSameTailEnabled && !(tglTahoeDisabledTrials&4);
-			dobs("TGLSameTailRestoreReady",tglSameTailRestoreEnabled);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLSameTailRestoreReady",tglSameTailRestoreEnabled);
 			// The public TGL register definition identifies colored GSYNC at
 			// B0A0[2]. Restrict this repair trial to the physical TGL B0 target,
 			// exact Tahoe kernel/donor and the qualified strong-UC mapping.
@@ -11103,12 +11661,12 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				xeProfile.identity==0x9A498086 && xeProfile.revision==1 && !xeProfile.overridden();
 			tglGSYNCObserveReady=gsyncQualified;
 			tglGSYNCReady=gsyncQualified && !(tglTahoeDisabledTrials&8);
-			dobs("TGLGSYNCDisableReady",tglGSYNCReady);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLGSYNCDisableReady",tglGSYNCReady);
 			if(tglGSYNCObserveReady)if(auto live=OSSerializer::forTarget(nullptr,tglGSYNCSerialize)) {
-				dobs("TGLGSYNCLive",live);live->release();
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLGSYNCLive",live);live->release();
 			}
 			if(tglSameTailEnabled)if(auto live=OSSerializer::forTarget(nullptr,tglSameTailSerialize)) {
-				dobs("TGLSameTailLive",live);live->release();
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLSameTailLive",live);live->release();
 			}
 			bool completionCacheOK=!completionCacheRequested;
 			if(completionCacheRequested) {
@@ -11132,8 +11690,8 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				}
 				patcher.clearError();
 			}
-			dobs("TGLCompletionConstAlternativeRequested",completionCacheRequested);
-			dobs("TGLCompletionConstAlternativeReady",completionCacheRequested && completionCacheOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLCompletionConstAlternativeRequested",completionCacheRequested);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLCompletionConstAlternativeReady",completionCacheRequested && completionCacheOK);
 			const char *cpsRestore="__ZN17IGHardwareContext20restoreFromSafeImageEv";
 			const uint8_t cpsRestoreHead[] {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50};
 			const uint8_t cpsRestoreCall[] {0x4c,0x89,0xef,0xe8,0x61,0x2,0x0,0x0};
@@ -11157,7 +11715,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				cpsOK=patcher.routeMultiple(index,route,arrsize(route),address,size);
 			}
 			patcher.clearError();
-			dobs("TGLCPSColorPipeReady",cpsOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLCPSColorPipeReady",cpsOK);
 			// Linux Gen12 Wa_18022495364: an INDIRECT_CTX cache invalidation,
 			// distinct from ring PIPE_CONTROL. Keep the per-context batch intact.
 			bool contextCacheOK=!contextCacheRequested;
@@ -11175,7 +11733,7 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				patcher.clearError();
 			}
 			tglContextCacheEnabled=contextCacheRequested && contextCacheOK;
-			dobs("TGLContextCacheIndirectReady",tglContextCacheEnabled);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLContextCacheIndirectReady",tglContextCacheEnabled);
 			// The native RCS constructor initializes RPCS with ENABLE alone.
 			// Request the one TGL slice explicitly, as intel_sseu_make_rpcs does.
 			// Preserve the instruction and native ownership/lifetime of the image.
@@ -11190,15 +11748,15 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				 !memcmp(reinterpret_cast<void *>(address+0x7C313),TGLRPCS::Replace,sizeof(TGLRPCS::Replace));
 			}
 			patcher.clearError();
-			dobs("TGLRPCSFullSliceReady",tglRPCSPowerReady);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLRPCSFullSliceReady",tglRPCSPowerReady);
 			if(tglRPCSPowerReady)if(auto live=OSSerializer::forTarget(nullptr,tglRPCSPowerSerialize)) {
-				dobs("TGLRPCSPowerLive",live);live->release();
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLRPCSPowerLive",live);live->release();
 			}
             if(adlnDetected && checkKernelArgument("-wex-adln-golden-source")) {
              adlnOwnedGoldenEnabled=cpsOK && !checkKernelArgument("-wex-adln-kernel-ctx") && !checkKernelArgument("-wex-adln-golden-raw");
-             dobs("N97OwnedGoldenReady",adlnOwnedGoldenEnabled);
+             IORegistryEntry::getRegistryRoot()->setProperty("N97OwnedGoldenReady",adlnOwnedGoldenEnabled);
              if(auto capture=OSSerializer::forTarget(nullptr,adlnOwnedGoldenSerialize)) {
-              dobs("N97OwnedGoldenCapture",capture);capture->release();
+              IORegistryEntry::getRegistryRoot()->setProperty("N97OwnedGoldenCapture",capture);capture->release();
              }
             }
 			if(adlnDetected && checkKernelArgument("-wex-adln-golden-raw")) {
@@ -11213,19 +11771,19 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				 ok=patcher.routeMultiple(index,route,arrsize(route),address,size);
 				}
 				patcher.clearError();tglAlderLakeNGoldenEnabled=ok;
-				dobs("N97GoldenRawReady",ok);
+				IORegistryEntry::getRegistryRoot()->setProperty("N97GoldenRawReady",ok);
 				if(auto live=OSSerializer::forTarget(nullptr,tglAlderLakeNGoldenSerialize)) {
-				 dobs("N97GoldenRawCapture",live);live->release();
+				 IORegistryEntry::getRegistryRoot()->setProperty("N97GoldenRawCapture",live);live->release();
 				}
 			}
 			if(auto live=OSSerializer::forTarget(nullptr,tglCPSSerialize)) {
-				dobs("TGLCPSColorPipeLive",live);live->release();
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLCPSColorPipeLive",live);live->release();
 			}
 			if(auto live=OSSerializer::forTarget(nullptr,tglEarlyReadSerialize)) {
-				dobs("TGLEarlyReadLive",live);live->release();
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLEarlyReadLive",live);live->release();
 			}
 			if(auto live=OSSerializer::forTarget(nullptr,tglStateRedirectSerialize)) {
-				dobs("TGLStateRedirectLive",live);live->release();
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLStateRedirectLive",live);live->release();
 			}
 			// Reserve the extra two DWORDs through the same virtual space method
 			// used by waitForSpace. Validate the native dispatch/pending-bit contract.
@@ -11254,9 +11812,9 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				tlbPreparserOK=patcher.routeMultiple(index,tlb,arrsize(tlb),address,size);
 			}
 			patcher.clearError();
-			dobs("TGLRCSTLBPreparserReady",tlbPreparserOK);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLRCSTLBPreparserReady",tlbPreparserOK);
 			if(auto live=OSSerializer::forTarget(nullptr,tglRCSTLBSerialize)) {
-				dobs("TGLRCSTLBPreparserLive",live);live->release();
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLRCSTLBPreparserLive",live);live->release();
 			}
             const char *baseSpace="__ZN20IGHardwareRingBuffer16getFlushTLBSpaceEv";
             const char *baseWrite="__ZN20IGHardwareRingBuffer13writeFlushTLBEv";
@@ -11290,13 +11848,13 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
              semaphoreTLBOK=patcher.routeMultiple(index,routes,arrsize(routes),address,size);
             }
             patcher.clearError();
-            dobs("TGLSemaphoreTLBReady",semaphoreTLBOK);
+            IORegistryEntry::getRegistryRoot()->setProperty("TGLSemaphoreTLBReady",semaphoreTLBOK);
             if(auto live=OSSerializer::forTarget(nullptr,tglSemaphoreSerialize)) {
-             dobs("TGLSemaphoreTLBLive",live);live->release();
+             IORegistryEntry::getRegistryRoot()->setProperty("TGLSemaphoreTLBLive",live);live->release();
             }
 			// r120: failure-path capture only. Native dumpBatchBuffer is a stub;
 			// reuse the native pending resource cache and saved debug registers.
-			/*const char *hangDump="__ZN20IGHardwareRingBuffer14dumpRingBufferER14debugRegisters";
+			const char *hangDump="__ZN20IGHardwareRingBuffer14dumpRingBufferER14debugRegisters";
 			const uint8_t hangHead[] {0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50};
 			bool hangOK=tglVM.nofault && size>0x46780 &&
 				patcher.solveSymbol<mach_vm_address_t>(index,hangDump,address,size)==address+0x4657C &&
@@ -11308,10 +11866,10 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 				KernelPatcher::RouteRequest hook[] {{hangDump,wrapTGLHangRingDump,orgTGLHangRingDump}};
 				hangOK=patcher.routeMultiple(index,hook,arrsize(hook),address,size);
 			}
-			dobs("TGLHangBatchCaptureReady",hangOK);*/
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLHangBatchCaptureReady",hangOK);
             // Exact failure-only wake call. Native STOP, wake ownership and all
             // other callers remain unchanged; no instrumentation in normal submits.
-           /* if((XELP::kernelOS(version)==XELP::OS::Tahoe)) {
+            if((XELP::kernelOS(version)==XELP::OS::Tahoe)) {
              const uint8_t before[] {0x41,0x89,0xf6,0x49,0x89,0xff,0x48,0x8b,0x7f,0x10,0xbe,1,0,0,0,0xba,7,0,0,0,0xe8,0x8e,0x22,0xfd,0xff};
              const uint8_t stop[] {0x42,0xc7,0x04,0x20,1,0,1,0};
              bool ok=hangOK && size>0x569c6 &&
@@ -11326,9 +11884,9 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
               ok=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(reinterpret_cast<void *>(address+0x56997),call,sizeof(call));
              }
              patcher.clearError();tglHangPreStopReady=ok;
-             dobs("TGLHangPreStopReady",ok);
-             dobs("TGLSubmitHistoryReady",ok && tglSameTailEnabled);
-            }*/
+             IORegistryEntry::getRegistryRoot()->setProperty("TGLHangPreStopReady",ok);
+             IORegistryEntry::getRegistryRoot()->setProperty("TGLSubmitHistoryReady",ok && tglSameTailEnabled);
+            }
 
 			// r123: the TGL caller loops reset -> extra stamp -> one-second wait
 			// while IOAccel holds its recovery locks. A stopped consumer fills its
@@ -11362,18 +11920,73 @@ bool XE::processTGLAccelerator(KernelPatcher &patcher, size_t index, mach_vm_add
 					recoveryOK=patcher.routeMultiple(index,hook,arrsize(hook),address,size);
 				}
 				if (recoveryOK) if (auto live=OSSerializer::forTarget(nullptr,tglRecoverySerialize)) {
-					dobs("TGLRecoveryLive",live);live->release();
+					IORegistryEntry::getRegistryRoot()->setProperty("TGLRecoveryLive",live);live->release();
 				}
 			}
-			dobs("TGLRecoverySinglePassRequested",recoveryRequested);
-			dobs("TGLRecoverySinglePassReady",recoveryRequested && recoveryOK);
-			tglAcceleratorReady = surfaceABIReady && adlnObserved && skuReady && urbReady && ccsReady && hizReady && ccsPSReady && ggttOK && observed && ok && gucOK && dmaWriteOK && hostOK && scratchOK && blitInitOK && tglMMIOUCReady && copyOK && auxAlignOK && iosCCSOK && ffModeOK && cpsOK && flushOK && tlbPreparserOK && semaphoreTLBOK && recoveryOK && completionCacheOK && contextCacheOK;
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLRecoverySinglePassRequested",recoveryRequested);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLRecoverySinglePassReady",recoveryRequested && recoveryOK);
+			tglAcceleratorReady = surfaceABIReady && adlnObserved && skuReady && urbReady && ccsReady && hizReady && ccsPSReady && ggttOK && observed && ok && gucOK && dmaWriteOK && hostOK && scratchOK && blitInitOK && tglMMIOUCReady && copyOK && auxAlignOK && iosCCSOK && ffModeOK && cpsOK && flushOK && tlbPreparserOK && semaphoreTLBOK && hangOK && recoveryOK && completionCacheOK && contextCacheOK;
 			// r201: resource/copy diagnostics are absent, not admission requirements.
-			dobs("TGLResourceDiagnosticsRemoved",true);
-			dobs("TGLAcceleratorAdmissionReady", tglAcceleratorReady);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLResourceDiagnosticsRemoved",true);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLAcceleratorAdmissionReady", tglAcceleratorReady);
 			patcher.clearError();
    tglRecordStartOrder(2,nullptr);
 			return true;
+}
+
+bool XE::processDisplay13Shutdown(KernelPatcher &p,size_t index,mach_vm_address_t address,size_t size) {
+ const char *symbol="__ZN31AppleIntelFramebufferController10hwShutdownEP21AppleIntelFramebuffer";
+ const uint8_t entry[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec,0x18};
+ const uint8_t powerCall[]={0xe8,0x3b,0x97,0,0};
+ const auto target=p.solveSymbol<mach_vm_address_t>(index,symbol,address,size);p.clearError();
+ const auto delta=static_cast<int64_t>(reinterpret_cast<uintptr_t>(wrapDisplay13Shutdown)-(target+5));
+ bool known=size>0x51d4b && target==address+0x5173a &&
+  !memcmp(reinterpret_cast<const void *>(target),entry,sizeof(entry)) &&
+  !memcmp(reinterpret_cast<const void *>(address+0x51d24),powerCall,sizeof(powerCall)) && delta==static_cast<int32_t>(delta);
+ if(known) {
+  KernelPatcher::RouteRequest route(symbol,wrapDisplay13Shutdown,orgDisplay13Shutdown);
+  known=p.routeMultipleShort(index,&route,1,address,size);p.clearError();
+  if(known)display13ShutdownPowerCaller=address+0x51d29;
+ }
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13ShutdownReady",known);
+ return known;
+}
+
+void XE::finishDisplay13TCShutdown(void *controller) {
+ auto self=callbackXE;auto &c=display13FBPower;
+ if(!c.lock || !self->display13FBTCHooksReady)return;
+ IOLockLock(c.lock);
+ if(controller!=c.controller || !c.tcSupported || !c.bridge.begun || c.bridge.state.suspended) {IOLockUnlock(c.lock);return;}
+ // Native mode0 resets the port outside the owner lock. Serialize against
+ // hotplug on the same workloop, using the existing nonblocking gate API.
+ auto gate=c.workLoop;bool acquired=false;
+ bool gated=gate && Display13FBMemory::field<IOWorkLoop *>(controller,0xE00)==gate &&
+  self->adlnWorkLoopInGate && self->adlnWorkLoopTryClose && self->adlnWorkLoopOpen;
+ if(gated && !reinterpret_cast<bool (*)(const IOWorkLoop *)>(self->adlnWorkLoopInGate)(gate))
+  gated=acquired=reinterpret_cast<bool (*)(IOWorkLoop *)>(self->adlnWorkLoopTryClose)(gate);
+ uint32_t record[8] {1,static_cast<uint32_t>(gated),0,0,0,0,0,0};
+ if(gated)for(unsigned tc=0;tc<4;++tc) {
+  auto port=c.tcObject[tc];
+  // Other framebuffers may not have shut down yet. Their live references
+  // remain intact; a later hwShutdown handles them after link/PLL stop.
+  if(!port || c.tcBusy[tc] || c.tcSignalReady[tc] ||
+     c.bridge.nativeDDIRefs(tc+3) || c.bridge.nativeAUXRefs(tc+3))continue;
+  port->retain();record[2]|=1U<<tc;IOLockUnlock(c.lock);
+  const auto result=wrapDisplay13TCMode(port,0);port->release();IOLockLock(c.lock);
+  record[4+tc]=result;if(!result)record[3]|=1U<<tc;
+ }
+ IOLockUnlock(c.lock);
+ if(acquired)reinterpret_cast<void (*)(IOWorkLoop *)>(self->adlnWorkLoopOpen)(gate);
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXDisplay13TCShutdown",record,sizeof(record));
+}
+
+uint32_t XE::wrapDisplay13Shutdown(void *controller,void *fb) {
+ const auto result=FunctionCast(wrapDisplay13Shutdown,callbackXE->orgDisplay13Shutdown)(controller,fb);
+ // hwShutdown is called by the donor only for system power-off/restart.
+ // A disconnected sink's hotplug path already does this; a connected sink
+ // still needs mode0 after its scanout/link stop, even while another FB lives.
+ if(!result)finishDisplay13TCShutdown(controller);
+ return result;
 }
 
 // One entry owns donor ABI/lifecycle repairs for every hardware backend.
@@ -11389,13 +12002,16 @@ bool XE::processFramebufferKext(KernelPatcher &patcher,size_t index,mach_vm_addr
  KernelPatcher::RouteRequest gate(symbol,wrapFramebufferStart,orgFramebufferStart);
  const bool routed=patcher.routeMultiple(index,&gate,1,address,size);patcher.clearError();
  if(!routed)return false;
+ if(display13FramebufferRequested)
+  processDisplay13Shutdown(patcher,index,address,size);
+
  framebufferDonorCommonReady=processFramebufferCommon(patcher,index,address,size);
  // Install hardware routes even after a common failure so their diagnostics
  // remain available. The common start gate never enters native startup then.
  framebufferBackendInstalled=display13FramebufferRequested ?
   processDisplay13Framebuffer(patcher,index,address,size) : processKextFull(patcher,index,address,size);
  uint32_t record[]={1,routed,framebufferDonorCommonReady,framebufferBackendInstalled};
- dobs("WEXFramebufferInstallation",record,sizeof(record));
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXFramebufferInstallation",record,sizeof(record));
  return true;
 }
 
@@ -11411,7 +12027,7 @@ bool XE::processFramebufferCommon(KernelPatcher &patcher,size_t index,mach_vm_ad
  patcher.clearError();
  if(probe) {
   // Slot repair is common; the target retains the existing hardware adapter.
-  auto replacement=display13FramebufferRequested ? xelpProviderProbe : reinterpret_cast<mach_vm_address_t>(wrapTGLProbePort);
+  auto replacement=display13FramebufferRequested ? reinterpret_cast<mach_vm_address_t>(wrapDisplay13ProbeMode) : reinterpret_cast<mach_vm_address_t>(wrapTGLProbePort);
   patcher.routeBlock(table+0x188,reinterpret_cast<uint8_t *>(&replacement),sizeof(replacement));
   probe=patcher.getError()==KernelPatcher::Error::NoError && *reinterpret_cast<mach_vm_address_t *>(table+0x188)==replacement;
   patcher.clearError();
@@ -11442,12 +12058,12 @@ bool XE::processFramebufferCommon(KernelPatcher &patcher,size_t index,mach_vm_ad
  const bool ready=tglSonomaSurfaceFramebufferReady && tglPlatformNVRAMReady && probe && tglFramebufferInitReady && laneReady && agdc && runtime && framebufferTrainingHooksReady;
  uint32_t record[]={4,tglPlatformNVRAMReady,probe,tglFramebufferInitReady,tglSonomaSurfaceFramebufferReady,laneReady,agdc,runtime,framebufferTrainingHooksReady,ready};
  auto root=IORegistryEntry::getRegistryRoot();
- dobs("WEXFramebufferCommonHooks",record,sizeof(record));
- dobs("TGLSonomaSurfaceFramebufferReady",tglSonomaSurfaceFramebufferReady);
- dobs("TGLHDMILaneRoute317",laneReady);
- dobs("TGLHDMILaneGuard316",framebufferLaneCaller!=0);
- dobs("TGLWEGProbeVtableFixed",probe);
- dobs("TGLWEGFramebufferInitRouted",tglFramebufferInitReady);
+ root->setProperty("WEXFramebufferCommonHooks",record,sizeof(record));
+ root->setProperty("TGLSonomaSurfaceFramebufferReady",tglSonomaSurfaceFramebufferReady);
+ root->setProperty("TGLHDMILaneRoute317",laneReady);
+ root->setProperty("TGLHDMILaneGuard316",framebufferLaneCaller!=0);
+ root->setProperty("TGLWEGProbeVtableFixed",probe);
+ root->setProperty("TGLWEGFramebufferInitRouted",tglFramebufferInitReady);
  return ready;
 }
 
@@ -11465,8 +12081,13 @@ bool XE::wrapFramebufferStart(IOService *that,IOService *provider) {
  IORecursiveLockUnlock(s->tglPathPoolLock);
  if(comboClockTransaction.lock) {
   IORecursiveLockLock(comboClockTransaction.lock);
-  comboClockTransaction.allocation={};
+  const bool reset=comboClockTransaction.allocation.reset();
   IORecursiveLockUnlock(comboClockTransaction.lock);
+  if(!reset) {
+   IORecursiveLockLock(s->tglPathPoolLock);s->framebufferStartInProgress=false;IORecursiveLockUnlock(s->tglPathPoolLock);
+   if(that)that->setProperty("WEXFramebufferRetainedClockOwner",true);
+   return false;
+  }
  }
  const bool native=s->display13FramebufferRequested ? wrapDisplay13FramebufferStart(that,provider) : wrapTGLFramebufferStart(that,provider);
  IORecursiveLockLock(s->tglPathPoolLock);
@@ -11486,9 +12107,9 @@ bool XE::wrapFramebufferInit(IOService *fb,IOService *controller,uint32_t index)
  fb->setProperty("WEXFramebufferManagersBound",bound);
  if(callbackXE->display13FramebufferRequested)fb->setProperty("N97FBManagersBound",bound);
  auto root=IORegistryEntry::getRegistryRoot();
- dobs("TGLWEGFramebufferManagerBound",bound);
- dobs("TGLWEGPlaneManagersBound",bound?15:0,32);
- dobs("TGLWEGScalerManagersBound",bound?6:0,32);
+ root->setProperty("TGLWEGFramebufferManagerBound",bound);
+ root->setProperty("TGLWEGPlaneManagersBound",bound?15:0,32);
+ root->setProperty("TGLWEGScalerManagersBound",bound?6:0,32);
  return bound;
 }
 
@@ -11506,7 +12127,7 @@ bool XE::wrapFramebufferComputeLanes(void *argument,const void *timing,uint32_t 
  const bool corrected=XELPDonor::skipHDMIDPLanes(callbackXE->framebufferHDMIEligible(config),true,native,available,*lanes);
  if(corrected) {
   static uint32_t count {};
-  dobs("TGLHDMILaneCorrections316",__sync_add_and_fetch(&count,1),32);
+  IORegistryEntry::getRegistryRoot()->setProperty("TGLHDMILaneCorrections316",__sync_add_and_fetch(&count,1),32);
  }
  return native || corrected;
 }
@@ -11523,9 +12144,9 @@ XELP::LinkRequirements XE::framebufferLinkRequirements(void *port,uint32_t mode)
  using R=XELP::LinkRequirements;
  if(self->display13FramebufferRequested) {
   if(!Display13FBTopology::selected(self->adlnPlatform,config,self->adlnOutputWiring) ||
-     mode!=(ddi>=3?4U:1U))return req;
+     mode!=(ddi>=3?((self->adlnOutputWiring.typeC&(1U<<ddi))?3U:4U):1U))return req;
   req={self->xeProfile.display,ddi>=3?R::PHY::TC:R::PHY::Combo,
-   (self->adlnOutputWiring.dp&(1U<<ddi))?R::Protocol::FixedDP:R::Protocol::HDMI};
+   (self->adlnOutputWiring.links()&(1U<<ddi))?R::Protocol::FixedDP:R::Protocol::HDMI};
  } else {
   // ADL-S TC-numbered DDIs are Combo; native mode alone is not a PHY ID.
   const bool bound=config==reinterpret_cast<const uint32_t *>(reinterpret_cast<const uint8_t *>(self->tglPlatformCopy)+0x20+24*ddi);
@@ -11560,7 +12181,7 @@ bool XE::processFramebufferPortWait(KernelPatcher &patcher,size_t index,mach_vm_
  patcher.applyLookupPatch(&change,wait,sizeof(after)+1);
  const bool ready=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(wait,after,sizeof(after));
  patcher.clearError();
- dobs("WEXExternalLinkWaitReady",ready);
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXExternalLinkWaitReady",ready);
  return ready;
 }
 
@@ -11579,7 +12200,7 @@ bool XE::processFramebufferDonorRuntime(KernelPatcher &patcher,size_t index,mach
    !memcmp(reinterpret_cast<void *>(address+XELPDonor::DDIReleaseOffset),XELPDonor::DDIReleaseAfter,sizeof(XELPDonor::DDIReleaseAfter));
   patcher.clearError();
  }
- dobs("WEXDonorDDIRequestReady",ddiRequestReady);
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXDonorDDIRequestReady",ddiRequestReady);
 
  {
   const char *symbol="__ZN15AppleIntelHDCP24initEP21AppleIntelDisplayPath";
@@ -11593,7 +12214,7 @@ bool XE::processFramebufferDonorRuntime(KernelPatcher &patcher,size_t index,mach
    !memcmp(reinterpret_cast<void *>(address+0x8B726),use,sizeof(use));
   KernelPatcher::RouteRequest route(symbol,wrapTGLHDCP2Init,orgTGLHDCP2Init);
   hdcpReady=known && patcher.routeMultiple(index,&route,1,address,size);patcher.clearError();
-  dobs("TGLWEGHDCP2InitRouted",hdcpReady);
+  IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGHDCP2InitRouted",hdcpReady);
  }
  // DONOR_PANEL_PROPERTY_BEGIN
  {
@@ -11612,7 +12233,7 @@ bool XE::processFramebufferDonorRuntime(KernelPatcher &patcher,size_t index,mach
 					tglPanelPowerPropertyReady = patcher.getError()==KernelPatcher::Error::NoError &&
 						!memcmp(site,replacement,sizeof(replacement));
 				}
-				dobs("TGLPanelPowerPropertyGuard",tglPanelPowerPropertyReady);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLPanelPowerPropertyGuard",tglPanelPowerPropertyReady);
 				patcher.clearError();
  }
  // DONOR_PANEL_PROPERTY_END
@@ -11648,13 +12269,13 @@ bool XE::processFramebufferDonorRuntime(KernelPatcher &patcher,size_t index,mach
                     "__ZN19AppleIntelMEIDriver16writeMessageToMEEPvPjhhb",
                     wrapTGLMEIWrite,orgTGLMEIWrite);
                 meiReady=known && patcher.routeMultiple(index,&control,1,address,size);
-                dobs("WEXMEIControlWriteReady",meiReady);
-				dobs("TGLMEITXFIFOReadbackR364", known);
+                IORegistryEntry::getRegistryRoot()->setProperty("WEXMEIControlWriteReady",meiReady);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLMEITXFIFOReadbackR364", known);
 				patcher.clearError();
 			}
  framebufferDonorRuntimeReady=comboClockTransaction.lock && hdcpReady && tglPanelPowerPropertyReady && meiReady && ddiRequestReady &&
   processFramebufferPortWait(patcher,index,address,size);
- dobs("WEXFramebufferDonorRuntimeReady",framebufferDonorRuntimeReady);
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXFramebufferDonorRuntimeReady",framebufferDonorRuntimeReady);
  return framebufferDonorRuntimeReady;
 }
 
@@ -11696,9 +12317,9 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
      patcher.clearError();
     }
     __atomic_store_n(&tglPcodeFBReady,known && patcher.routeMultiple(index,requests,arrsize(requests),address,size),__ATOMIC_RELEASE);
-    dobs("TGLPcodeFBReady",tglPcodeFBReady);
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLPcodeFBReady",tglPcodeFBReady);
     if (tglPcodeFBReady) if (auto live=OSSerializer::forTarget(nullptr,tglPcodeGateSerialize)) {
-     dobs("TGLPcodeGateLive",live);live->release();
+     IORegistryEntry::getRegistryRoot()->setProperty("TGLPcodeGateLive",live);live->release();
     }
     patcher.clearError();
    }
@@ -11707,7 +12328,7 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
    if(tglAcceleratorRequested && checkKernelArgument("-disablegfxfirmware") &&
       !checkKernelArgument("-wex-no-host-rps")) {
     const bool ready=xelpInstallHostRPS(patcher,index,address,size);
-    dobs("TGLHostRPSReady",ready);
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLHostRPSReady",ready);
     patcher.clearError();
    }
 
@@ -11715,7 +12336,7 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 			tglConnectionImageSize = size;
 			tglConnectionLock = IOSimpleLockAlloc();
 
-			dobs("TGLPlatformNVRAMABIReady", tglPlatformNVRAMReady);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLPlatformNVRAMABIReady", tglPlatformNVRAMReady);
 			if (tglHDMIB) {
 				// r319: the donor's combo PLL tables still contain ICL MMIO
 				// addresses. TGL moved DPLL0/1 CFGCR0/1 (Linux v6.12 i915_reg.h).
@@ -11735,7 +12356,7 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 					patcher.applyLookupPatch(&patch, site, sizeof(before) + 1);
 					ready = !memcmp(site, after, sizeof(after));
 				}
-				dobs("TGLHDMIComboPLLReady", ready);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLHDMIComboPLLReady", ready);
                 adlsPLLTableReady=adlsDisplaySelected && ready;
 				patcher.clearError();
 			}
@@ -11759,9 +12380,925 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 					!memcmp(reinterpret_cast<void *>(address + 0x6C658), reference, sizeof(reference)) &&
 					!memcmp(reinterpret_cast<void *>(address + 0x6D95D), write, sizeof(write));
 				tglComboPLLFractionCaller = known ? address + 0x6D973 : 0;
-				dobs("TGLComboPLLFractionReady", known);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLComboPLLFractionReady", known);
 				patcher.clearError();
 			}
+			{
+				const auto fn = patcher.solveSymbol<mach_vm_address_t>(index,
+					"__ZN19AppleIntelPowerWell22hwSetPowerWellStateAuxEbj", address, size);
+				const uint32_t ends[] {0x5CAB6,0x5CAF5,0x5D0C9,0x5D108};
+				uint8_t write[] {0xbe,0x30,0x20,0x16,0x00,0x89,0xc2,0xff,0x91,0x30,0x01,0x00,0x00};
+				bool known = size >= 0x5D108 && fn == address + 0x5CA12;
+				for (unsigned i=0; known && i<arrsize(ends); ++i) {
+					const uint32_t reg = i&1 ? 0x6C030 : 0x162030;
+					memcpy(write+1,&reg,sizeof(reg));
+					known = !memcmp(reinterpret_cast<void *>(address+ends[i]-sizeof(write)),write,sizeof(write));
+				}
+				tglComboAUXGateReady = known;
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLComboAUXGateReady", known);
+				patcher.clearError();
+			}
+			if (tglHDMIB) {
+				// Exact donor hwDoGMBusRequest+0x335: it passes the assembled
+				// GMBUS0 value as an MMIO address and the bus number as data.
+				// Fix argument construction, retaining the native virtual write.
+				// Only a profiling-counter increment is omitted for space.
+				static const uint8_t find[] {
+					0x48,0x8B,0x45,0x80,0x48,0x01,0x05,0x3C,0xC5,0x08,0x00,
+					0xC1,0xE6,0x07,0x0B,0x75,0x88,0x49,0x8B,0x7D,0x00,
+					0x48,0x8B,0x07,0x8B,0x55,0xCC,0xFF,0x90,0x30,0x01,0x00,0x00};
+				static const uint8_t replace[] {
+					0xC1,0xE6,0x07,0x0B,0x75,0x88,0x89,0xF2,0xBE,0x00,0x51,0x0C,0x00,
+					0x49,0x8B,0x7D,0x00,0x48,0x8B,0x07,0xFF,0x90,0x30,0x01,0x00,0x00,
+					0x90,0x90,0x90,0x90,0x90,0x90,0x90};
+				static_assert(sizeof(find) == sizeof(replace), "GMBUS patch length");
+				auto fn = patcher.solveSymbol<mach_vm_address_t>(index,
+					"__ZN31AppleIntelFramebufferController16hwDoGMBusRequestEjjP12IOI2CRequest", address, size);
+				auto site = reinterpret_cast<uint8_t *>(fn + 0x335);
+				if (fn == address + 0x53A7C && size > 0x53DD2 && !memcmp(site, find, sizeof(find))) {
+					KernelPatcher::LookupPatch patch {currentFramebuffer, find, replace, sizeof(find), 1};
+					patcher.applyLookupPatch(&patch, site, sizeof(find) + 1);
+					tglGMBusReady = !memcmp(site, replace, sizeof(replace));
+				}
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLGMBusArgumentPatch", tglGMBusReady);
+				patcher.clearError();
+				// GMBUS_SW_CLR_INT is bit31, not bit0 (slave-read direction).
+				// The following native write of zero deasserts the reset.
+				static const uint8_t resetFind[] {0xBE,0x04,0x51,0x0C,0x00,0xBA,0x01,0x00,0x00,0x00,0xFF,0x90,0x30,0x01,0x00,0x00};
+				static const uint8_t resetReplace[] {0xBE,0x04,0x51,0x0C,0x00,0xBA,0x00,0x00,0x00,0x80,0xFF,0x90,0x30,0x01,0x00,0x00};
+				auto reset = reinterpret_cast<uint8_t *>(fn + 0x2E0);
+				bool resetReady = false;
+				if (fn == address + 0x53A7C && size > 0x53DD2 && !memcmp(reset, resetFind, sizeof(resetFind))) {
+					KernelPatcher::LookupPatch patch {currentFramebuffer, resetFind, resetReplace, sizeof(resetFind), 1};
+					patcher.applyLookupPatch(&patch, reset, sizeof(resetFind) + 1);
+					resetReady = !memcmp(reset, resetReplace, sizeof(resetReplace));
+				}
+				tglGMBusReady &= resetReady;
+				tglGMBusFunction = fn;
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLGMBusResetPatch", resetReady);
+				patcher.clearError();
+				KernelPatcher::RouteRequest readObserve(
+					"__ZN31AppleIntelRegisterAccessManager14ReadRegister32Em", wrapTGLRegisterRead, orgTGLRegisterRead);
+				const bool readRouted = patcher.routeMultiple(index, &readObserve, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteGMBusStatus", readRouted);
+				patcher.clearError();
+				KernelPatcher::RouteRequest observe(
+					"__ZN31AppleIntelFramebufferController16hwDoGMBusRequestEjjP12IOI2CRequest", wrapTGLGMBus, orgTGLGMBus);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteGMBus", routed);
+				patcher.clearError();
+			}
+
+            processNativePanel(patcher,index,address,size);
+
+			if (tglActive) {
+
+				if (framebufferPatchFlags.bits.FPFStolenMemorySize) {
+					const auto fn = patcher.solveSymbol(index, "__ZN31AppleIntelFramebufferController16getOSInformationEv", address, size);
+					// Selected platform +0x14 is copied to controller +0xDE8
+					// before FBMemMgr_Init constructs the GGTT display pool.
+					const uint8_t expected[] {0x8B,0x70,0x14,0x89,0xB3,0xE8,0x0D,0x00,0x00};
+					tglStolenMemoryReady = fn == address + 0x40B22 && size > 0x40CF2 &&
+						!memcmp(reinterpret_cast<void *>(fn + 0x1C7), expected, sizeof(expected));
+					IORegistryEntry::getRegistryRoot()->setProperty("TGLStolenMemoryGuard", tglStolenMemoryReady);
+					patcher.clearError();
+				}
+				KernelPatcher::RouteRequest topology("__ZN31AppleIntelFramebufferController16getOSInformationEv", wrapTGLGetOSInformation, orgTGLGetOSInformation);
+				tglTopologyReady = patcher.routeMultiple(index, &topology, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteTopology", tglTopologyReady);
+				patcher.clearError();
+			}
+
+			{
+				KernelPatcher::RouteRequest hdcp[] {
+					{"__ZN15AppleIntelHDCP113dispatchEventENS_10HDCP1EventE", wrapTGLHDCP1Dispatch, orgTGLHDCP1Dispatch},
+					{"__ZN15AppleIntelHDCP117timerEventHandlerEP18IOTimerEventSource", wrapTGLHDCP1Timer, orgTGLHDCP1Timer}
+				};
+				const bool routed = patcher.routeMultiple(index, hdcp, arrsize(hdcp), address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGHDCP1ObservationsRouted", routed);
+				patcher.clearError();
+			}
+			if (checkKernelArgument("-disablegfxfirmware")) {
+				KernelPatcher::RouteRequest irq[] {
+					{"__ZN31AppleIntelFramebufferController18hwEnableInterruptsEv",wrapTGLFBEnableIRQ,orgTGLFBEnableIRQ},
+					{"__ZN31AppleIntelFramebufferController13setupWorkLoopEP10IOWorkLoop",wrapTGLFBSetupIRQ,orgTGLFBSetupIRQ}
+				};
+				tglFBIRQReady=patcher.solveSymbol<mach_vm_address_t>(index,"__ZN31AppleIntelFramebufferController18hwEnableInterruptsEv",address,size)==address+0x755CA &&
+					patcher.solveSymbol<mach_vm_address_t>(index,"__ZN31AppleIntelFramebufferController13setupWorkLoopEP10IOWorkLoop",address,size)==address+0x43B86;
+				if (tglFBIRQReady) tglFBIRQReady=patcher.routeMultiple(index,irq,arrsize(irq),address,size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLFBIRQRouted",tglFBIRQReady);patcher.clearError();
+			}
+
+			{
+				KernelPatcher::RouteRequest observe("__ZN21AppleIntelFramebuffer11getDDCBlockEijjjPhPy", wrapTGLTopDDC, orgTGLTopDDC);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteTopDDC", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN14AppleIntelPort11getDDCBlockEjPhb", wrapTGLPortDDC, orgTGLPortDDC);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRoutePortDDC", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController13StreamGetEDIDEP19AGDCStreamGetEDID_tS1_", wrapTGLStreamEDID, orgTGLStreamEDID);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteStreamEDID", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController9FBSetEDIDEP19AGDCFBSetEDIDData_t", wrapTGLSetEDID, orgTGLSetEDID);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteSetEDID", routed);
+				patcher.clearError();
+			}
+			{
+
+				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController22SetFbStatusOnNextProbeEP14AGDCFBOnline_t", wrapTGLFBOnline, orgTGLFBOnline);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteFBOnline", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController20RegisterAGDCCallbackEP25AGDCRegisterLinkControl_t", wrapTGLAGDCRegister, orgTGLAGDCRegister);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteAGDCRegister", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN21AppleIntelFramebuffer25getAttributeForConnectionEijPm", wrapTGLConnectionAttr, orgTGLConnectionAttr);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteConnectionAttr", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController16GetGPUCapabilityEP19AGDCGPUCapability_t", wrapTGLGPUCapability, orgTGLGPUCapability);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteGPUCapability", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController13GetLinkConfigEP16AGDCLinkConfig_tS1_", wrapTGLLinkConfig, orgTGLLinkConfig);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteLinkConfig", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN20IntelFBClientControl11doAttributeEjPmmS0_S0_P25IOExternalMethodArguments", wrapTGLClientAttribute, orgTGLClientAttribute);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteClientAttribute", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController16GetStreamRequestEP19AGDCStreamRequest_tS1_", wrapTGLStreamRequest, orgTGLStreamRequest);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteStreamRequest", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN21AppleIntelFramebuffer16enableControllerEv", wrapTGLFBEnable, orgTGLFBEnable);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteFBEnable", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN21AppleIntelFramebuffer12getAttributeEjPm", wrapTGLFBGetAttr, orgTGLFBGetAttr);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteFBGetAttr", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN21AppleIntelFramebuffer12setAttributeEjm", wrapTGLFBSetAttr, orgTGLFBSetAttr);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteFBSetAttr", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController18GetStreamAccessAUXEP21AGDCStreamAccessAUX_tS1_", wrapTGLAGDCAUX, orgTGLAGDCAUX);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteAGDCAUX", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController13GetPortStatusEP16AGDCPortStatus_tS1_", wrapTGLAGDCPortStatus, orgTGLAGDCPortStatus);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteAGDCPortStatus", routed);
+				patcher.clearError();
+				if (tglInactivePorts) {
+					KernelPatcher::SolveRequest port("__ZN14AppleIntelPort14getPortByIndexEj", tglPortByIndex);
+					const bool solved = patcher.solveMultiple(index, &port, 1, address, size);
+					if (!solved) tglPortByIndex = 0;
+					IORegistryEntry::getRegistryRoot()->setProperty("TGLInactivePortsReady", routed && solved);
+					patcher.clearError();
+				}
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN17AppleIntelPortHAL10enablePortEv", wrapTGLEnablePort, orgTGLEnablePort);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteEnablePort", routed);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGObservationRevision", 79, 32);
+				patcher.clearError();
+				const auto disable = patcher.solveSymbol<mach_vm_address_t>(index,
+					"__ZN17AppleIntelPortHAL11disablePortEv",address,size);
+				static const uint8_t entry[] {0x55,0x48,0x89,0xE5,0x53,0x50,0x48,0x89,0xFB};
+				static const uint8_t buffer[] {0x8B,0xB7,0x90,0x05,0x00,0x00};
+				const bool known = size>=0x5FCB7 && disable==address+0x5FC56 &&
+					!memcmp(reinterpret_cast<void *>(disable),entry,sizeof(entry)) &&
+					!memcmp(reinterpret_cast<void *>(address+0x5FC6D),buffer,sizeof(buffer));
+				patcher.clearError();
+				KernelPatcher::RouteRequest release("__ZN17AppleIntelPortHAL11disablePortEv",wrapTGLDisablePort,orgTGLDisablePort);
+				tglComboAUXLifetimeReady=routed && known && patcher.routeMultiple(index,&release,1,address,size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLComboAUXLifetimeReady",tglComboAUXLifetimeReady);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest routes[] {
+					{"__ZN31AppleIntelFramebufferController19hwSetupCursorMemoryEv", wrapTGLCursorSetup, orgTGLCursorSetup},
+					{"__ZN31AppleIntelFramebufferController10restoreGTTEv", wrapTGLRestoreGTT, orgTGLRestoreGTT},
+					{"__ZN31AppleIntelFramebufferController16hwSetCursorImageEP21AppleIntelFramebufferP20IOHardwareCursorInfo", wrapTGLCursorImage, orgTGLCursorImage}
+				};
+				const bool routed = patcher.routeMultiple(index, routes, arrsize(routes), address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLCursorLifetimeRouted", routed);
+				patcher.clearError();
+			}
+			if (tglPG1Poll) {
+				mach_vm_address_t fn {};
+				KernelPatcher::SolveRequest symbol("__ZN19AppleIntelPowerWell21hwSetPowerWellStatePGEbj", fn);
+				const uint8_t expected[] {0xBE,0x00,0x20,0x04,0x00,0xE8,0x3D,0x2A,0x00,0x00,0x0F,0xBA,0xE0,0x1A};
+				bool ready = patcher.solveMultiple(index, &symbol, 1, address, size) &&
+					fn == address + 0x5B640 && size > 0x5B90B &&
+					!memcmp(reinterpret_cast<void *>(fn + 0x2BD), expected, sizeof(expected));
+				patcher.clearError();
+				if (ready && !orgTGLRegisterRead) {
+					KernelPatcher::RouteRequest read("__ZN31AppleIntelRegisterAccessManager14ReadRegister32Em", wrapTGLRegisterRead, orgTGLRegisterRead);
+					ready = patcher.routeMultiple(index, &read, 1, address, size);
+					patcher.clearError();
+				}
+				if (ready) tglPG1FuseReadCaller = fn + 0x2C7;
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLPG1PollReady", ready);
+				const bool fuseReady=ready && size>=0x5B640+0x6E1 &&
+					XELPDonor::powerWellFuseSites(reinterpret_cast<const uint8_t *>(fn),size-0x5B640);
+				if(fuseReady)tglPGFuseWaitFunction=fn;
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLPG234PollReady",fuseReady);
+				if(!fuseReady)SYSLOG("igfx","PG2/3/4 fuse wait: donor sites unavailable");
+			}
+            if(adlsDisplaySelected) {
+                const auto symbol="__ZN17AppleIntelPortHAL4initEP10PortConfig";
+                const uint8_t entry[]={0x55,0x48,0x89,0xE5,0x41,0x56,0x53,0x49,0x89,0xFE};
+                const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,symbol,address,size);
+                const bool known=fn==address+0x5F058 && size>0x5F9F4 &&
+                    !memcmp(reinterpret_cast<void *>(fn),entry,sizeof(entry));
+                patcher.clearError();
+                KernelPatcher::RouteRequest route(symbol,wrapADLSPortInit,orgADLSPortInit);
+                adlsPortInitReady=known && patcher.routeMultiple(index,&route,1,address,size);
+                IORegistryEntry::getRegistryRoot()->setProperty("ADLSPortInitReady",adlsPortInitReady);
+                patcher.clearError();
+            }
+			{
+				KernelPatcher::RouteRequest routes[] {
+					{"__ZN17AppleIntelPortHAL14enableComboPhyEv", wrapTGLEnableCombo, orgTGLEnableCombo},
+					{"__ZN19AppleIntelPowerWell19enableDisplayEngineEv", wrapTGLEngineEnable, orgTGLEngineEnable},
+					{"__ZN19AppleIntelPowerWell20disableDisplayEngineEv", wrapTGLEngineDisable, orgTGLEngineDisable},
+					{"__ZN21AppleIntelFramebuffer21allocateScanoutMemoryEv", wrapTGLScanoutAllocate, orgTGLScanoutAllocate},
+					{"__ZN21AppleIntelFramebuffer18setupScanoutMemoryEv", wrapTGLScanoutSetup, orgTGLScanoutSetup},
+					{"__ZN15AppleIntelPlane11updatePlaneEb", wrapTGLPlaneUpdate, orgTGLPlaneUpdate},
+					{"__ZN15AppleIntelPlane10setupPlaneEP21AppleIntelDisplayPath", wrapTGLPlaneSetup, orgTGLPlaneSetup},
+					{"__ZN31AppleIntelFramebufferController12setColorModeEP21AppleIntelFramebufferP21AppleIntelDisplayPathjjbPK29IODetailedTimingInformationV2", wrapTGLColorMode, orgTGLColorMode},
+					{"__ZN21AppleIntelFramebuffer19getPixelInformationEiiiP18IOPixelInformation", wrapTGLPixelInfo, orgTGLPixelInfo},
+					{"__ZN21AppleIntelFramebuffer16getApertureRangeEi", wrapTGLAperture, orgTGLAperture}
+				};
+				const bool routed = patcher.routeMultiple(index, routes, arrsize(routes), address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteScanoutPower", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest routes[] {
+					{"__ZN21AppleIntelDisplayPath31configurePipePostCSCGamma_10BitEP19FlipTransactionArgs10IGColorCtl", wrapTGLGamma10, orgTGLGamma10},
+					{"__ZN31AppleIntelRegisterAccessManager15WriteRegister32Emj", wrapTGLRegisterWrite, orgTGLRegisterWrite}
+				};
+				const bool routed = patcher.routeMultiple(index, routes, arrsize(routes), address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteGammaWrites", routed);
+				patcher.clearError();
+			}
+			{
+				tglStreamLock = IOSimpleLockAlloc();
+				tglProgramLock = IOSimpleLockAlloc();
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLProgramEnabled", tglProgramEnabled);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLProgramReady", tglProgramLock != nullptr);
+				KernelPatcher::RouteRequest route("__ZN31AppleIntelRegisterAccessManager19FastWriteRegister32Emj", wrapTGLFastRegisterWrite, orgTGLFastRegisterWrite);
+				const bool routed = tglStreamLock && patcher.routeMultiple(index, &route, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteStreamAck", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest route("__ZN14AppleIntelPort15writeRegister32Ejj", wrapTGLPortWriteReg, orgTGLPortWriteReg);
+				const bool routed = patcher.routeMultiple(index, &route, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteLaneStagger", routed);
+				patcher.clearError();
+			}
+			{
+    // The qualified body only chooses DP_MODE bits6:7 and writes both banks.
+    // Exclude only the relocated logging-call displacement from the comparison.
+    static const uint8_t dpModeBody[] {
+    0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x54,0x53,0x48,0xFF,0x05,0x86,0x23,
+    0x08,0x00,0x48,0xFF,0x05,0xDF,0x21,0x08,0x00,0x48,0x8B,0x87,0x48,0x05,0x00,0x00,
+    0x83,0x78,0x0C,0x01,0x75,0x1A,0x49,0x89,0xFC,0x48,0xFF,0x05,0x78,0x23,0x08,0x00,
+    0x48,0xFF,0x05,0x19,0x20,0x08,0x00,0x83,0xBF,0x50,0x05,0x00,0x00,0x02,0x75,0x09,
+    0x5B,0x41,0x5C,0x41,0x5E,0x41,0x5F,0x5D,0xC3,0x48,0xFF,0x05,0x50,0x23,0x08,0x00,
+    0x49,0x8B,0x04,0x24,0x4C,0x89,0xE7,0xFF,0x90,0xA0,0x01,0x00,0x00,0x89,0xC3,0x4C,
+    0x89,0xE7,0xBE,0x48,0x00,0x00,0x00,0xE8,0x24,0xFE,0xFF,0xFF,0x41,0x89,0xC6,0x4C,
+    0x89,0xE7,0xBE,0x49,0x00,0x00,0x00,0xE8,0x14,0xFE,0xFF,0xFF,0x41,0x89,0xC7,0xFF,
+    0xCB,0x83,0xFB,0x0E,0x77,0x6D,0x48,0x8D,0x05,0xE7,0x00,0x00,0x00,0x48,0x63,0x0C,
+    0x98,0x48,0x01,0xC1,0xFF,0xE1,0x48,0xFF,0x05,0x1B,0x23,0x08,0x00,0xB8,0x3F,0xFF,
+    0xFF,0xFF,0x41,0x21,0xC7,0x41,0x21,0xC6,0xE9,0x9E,0x00,0x00,0x00,0x48,0xFF,0x05,
+    0xFC,0x22,0x08,0x00,0xB8,0x3F,0xFF,0xFF,0xFF,0x41,0x21,0xC7,0x41,0x21,0xC6,0x41,
+    0x83,0xCE,0x40,0xE9,0x83,0x00,0x00,0x00,0x48,0xFF,0x05,0xF1,0x22,0x08,0x00,0x41,
+    0x81,0xE7,0x3F,0xFF,0xFF,0xFF,0x41,0x81,0xCE,0xC0,0x00,0x00,0x00,0xEB,0x6C,0x48,
+    0xFF,0x05,0xEA,0x22,0x08,0x00,0xB8,0x3F,0xFF,0xFF,0xFF,0x41,0x21,0xC6,0x41,0x21,
+    0xC7,0xEB,0x58,0x48,0x8D,0x3D,0x1A,0xBE,0x04,0x00,0x48,0x8D,0x35,0xE5,0x48,0x04,
+    0x00,0x31,0xC0,0xE8,0x00,0x00,0x00,0x00,0xEB,0x41,0x48,0xFF,0x05,0xC7,0x22,0x08,
+    0x00,0x41,0x81,0xE6,0x3F,0xFF,0xFF,0xFF,0x41,0x81,0xCF,0xC0,0x00,0x00,0x00,0xEB,
+    0x2A,0x48,0xFF,0x05,0xB8,0x22,0x08,0x00,0xB8,0xC0,0x00,0x00,0x00,0x41,0x09,0xC6,
+    0x41,0x09,0xC7,0xEB,0x16,0x48,0xFF,0x05,0x8C,0x22,0x08,0x00,0xB8,0x3F,0xFF,0xFF,
+    0xFF,0x41,0x21,0xC6,0x41,0x21,0xC7,0x41,0x83,0xCF,0x40,0x4C,0x89,0xE7,0xBE,0x48,
+    0x00,0x00,0x00,0x44,0x89,0xF2,0xE8,0xEB,0xFD,0xFF,0xFF,0x4C,0x89,0xE7,0xBE,0x49,
+    0x00,0x00,0x00,0x44,0x89,0xFA,0x5B,0x41,0x5C,0x41,0x5E,0x41,0x5F,0x5D,0xE9,0xD3,
+    0xFD,0xFF,0xFF,0x90,0x22,0xFF,0xFF,0xFF,0x39,0xFF,0xFF,0xFF,0x54,0xFF,0xFF,0xFF,
+    0x6B,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,
+    0xC1,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,
+    0x96,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0xAD,0xFF,0xFF,0xFF,
+    };
+    const auto modeFn=patcher.solveSymbol<mach_vm_address_t>(index,
+     "__ZN17AppleIntelPortHAL12setDklDPModeEv",address,size);
+    const bool known=size>=0x60AE0 && modeFn==address+0x60930 &&
+     !memcmp(reinterpret_cast<const void *>(modeFn),dpModeBody,0x104) &&
+     !memcmp(reinterpret_cast<const void *>(modeFn+0x108),dpModeBody+0x108,sizeof(dpModeBody)-0x108);
+    patcher.clearError();
+				KernelPatcher::RouteRequest route("__ZN17AppleIntelPortHAL12setDklDPModeEv", wrapTGLSetDklDPMode, orgTGLSetDklDPMode);
+				const bool routed = patcher.routeMultiple(index, &route, 1, address, size);
+    tglDPModeReplaceReady=known && routed;
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLDPModeReplaceReady",tglDPModeReplaceReady);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteDklDPMode", routed);
+				patcher.clearError();
+			}
+			{
+				// This donor body only reads the lane mask and updates DP_MODE bits 5:1.
+				// Validate the entire body before allowing the no-write preservation path.
+				static const uint8_t expected[] = {
+					0x55, 0x48, 0x89, 0xE5, 0x41, 0x57, 0x41, 0x56, 0x41, 0x55, 0x41, 0x54, 0x53, 0x50, 0x48, 0xFF,
+					0x05, 0x9F, 0x25, 0x08, 0x00, 0x48, 0xFF, 0x05, 0x58, 0x24, 0x08, 0x00, 0x48, 0x8B, 0x87, 0x48,
+					0x05, 0x00, 0x00, 0x83, 0x78, 0x0C, 0x01, 0x75, 0x1A, 0x48, 0x89, 0xFB, 0x48, 0xFF, 0x05, 0x91,
+					0x25, 0x08, 0x00, 0x48, 0xFF, 0x05, 0x92, 0x22, 0x08, 0x00, 0x83, 0xBF, 0x50, 0x05, 0x00, 0x00,
+					0x02, 0x75, 0x0F, 0x48, 0x83, 0xC4, 0x08, 0x5B, 0x41, 0x5C, 0x41, 0x5D, 0x41, 0x5E, 0x41, 0x5F,
+					0x5D, 0xC3, 0x41, 0x89, 0xF5, 0x48, 0xFF, 0x05, 0x60, 0x25, 0x08, 0x00, 0x48, 0x8B, 0x03, 0x48,
+					0x89, 0xDF, 0xFF, 0x90, 0xA0, 0x01, 0x00, 0x00, 0x41, 0x89, 0xC4, 0x48, 0x89, 0xDF, 0xBE, 0x48,
+					0x00, 0x00, 0x00, 0xE8, 0x94, 0x00, 0x00, 0x00, 0x41, 0x89, 0xC6, 0x48, 0x89, 0xDF, 0xBE, 0x49,
+					0x00, 0x00, 0x00, 0xE8, 0x84, 0x00, 0x00, 0x00, 0x41, 0x89, 0xC7, 0x45, 0x84, 0xED, 0x74, 0x2B,
+					0x48, 0xFF, 0x05, 0x35, 0x25, 0x08, 0x00, 0x41, 0xF6, 0xC4, 0x03, 0x74, 0x0B, 0x48, 0xFF, 0x05,
+					0x30, 0x25, 0x08, 0x00, 0x41, 0x83, 0xCE, 0x3E, 0x41, 0xF6, 0xC4, 0x0C, 0x74, 0x2F, 0x48, 0xFF,
+					0x05, 0x27, 0x25, 0x08, 0x00, 0x41, 0x83, 0xCF, 0x3E, 0xEB, 0x22, 0x41, 0xF6, 0xC4, 0x03, 0x74,
+					0x0B, 0x48, 0xFF, 0x05, 0x1C, 0x25, 0x08, 0x00, 0x41, 0x83, 0xE6, 0xC1, 0x41, 0xF6, 0xC4, 0x0C,
+					0x74, 0x0B, 0x48, 0xFF, 0x05, 0x13, 0x25, 0x08, 0x00, 0x41, 0x83, 0xE7, 0xC1, 0x48, 0x89, 0xDF,
+					0xBE, 0x48, 0x00, 0x00, 0x00, 0x44, 0x89, 0xF2, 0xE8, 0xD5, 0x00, 0x00, 0x00, 0x48, 0x89, 0xDF,
+					0xBE, 0x49, 0x00, 0x00, 0x00, 0x44, 0x89, 0xFA, 0x48, 0x83, 0xC4, 0x08, 0x5B, 0x41, 0x5C, 0x41,
+					0x5D, 0x41, 0x5E, 0x41, 0x5F, 0x5D, 0xE9, 0xB7, 0x00, 0x00, 0x00,
+				};
+				const auto fn = patcher.solveSymbol<mach_vm_address_t>(index,
+					"__ZN17AppleIntelPortHAL17setPhyClockGatingEb", address, size);
+				const bool known = size >= 0x606B4 + sizeof(expected) && fn == address + 0x606B4 &&
+					!memcmp(reinterpret_cast<const void *>(fn), expected, sizeof(expected));
+				patcher.clearError();
+				KernelPatcher::RouteRequest route("__ZN17AppleIntelPortHAL17setPhyClockGatingEb", wrapTGLPhyClockGating, orgTGLPhyClockGating);
+				const bool routed = patcher.routeMultiple(index, &route, 1, address, size);
+				tglPhyClockPreserveReady = known && routed;
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLPhyClockPreserveReady", tglPhyClockPreserveReady);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRoutePhyClockGating", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observations[] {
+					{"__ZN21AppleIntelDisplayPath22setLinkTrainingPatternE19LinkTrainingPattern", wrapTGLTrainingPattern, orgTGLTrainingPattern},
+					{"__ZN19AppleIntelPowerWell22hwSetPowerWellStateDDIEbj", wrapTGLPowerDDIState, orgTGLPowerDDIState}
+				};
+				const bool routed = patcher.routeMultiple(index, observations, arrsize(observations), address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteActivationObservations", routed);
+				patcher.clearError();
+			}
+			{
+    const bool auxTrial=checkKernelArgument("-wex-tc-aux") && checkKernelArgument("-wex-tc-bootstrap");
+    const uint32_t offsets[] {0x1CC72,0x1CEB0,0x1D2B6};
+    const char *names[] {"__ZN14AppleIntelPort7readAUXEjPvj","__ZN14AppleIntelPort8writeAUXEjPvj","__ZN14AppleIntelPort13runI2COverAUXENS_11AUX_CommandEPjjh"};
+    const uint8_t entries[3][16] {{0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec},{0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec},{0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec}};
+    bool auxKnown=auxTrial && size>=0x1D2C6;
+    if(auxKnown)for(unsigned i=0;i<3;++i){
+     const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,names[i],address,size);
+     auxKnown&=fn==address+offsets[i] && !memcmp(reinterpret_cast<const void *>(address+offsets[i]),entries[i],16);
+    }
+    patcher.clearError();
+				KernelPatcher::RouteRequest observations[] {
+					{"__ZN14AppleIntelPort12linkTrainingEP18AGDCDPPortConfig_t", wrapTGLPortTraining, orgTGLPortTraining},
+					{"__ZN31AppleIntelFramebufferController9LightUpDPEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2", wrapTGLLightUpDP, orgTGLLightUpDP},
+					{"__ZN31AppleIntelFramebufferController11LightUpTMDSEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2", wrapTGLLightUpTMDS, orgTGLLightUpTMDS},
+					{"__ZN31AppleIntelFramebufferController14disableDisplayEP21AppleIntelFramebufferP21AppleIntelDisplayPathh", wrapTGLDisableDisplay, orgTGLDisableDisplay},
+					{"__ZN31AppleIntelFramebufferController10enablePipeEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2", wrapTGLEnablePipe, orgTGLEnablePipe},
+					{"__ZN14AppleIntelPort7readAUXEjPvj", wrapTGLReadAUX, orgTGLReadAUX},
+					{"__ZN14AppleIntelPort8writeAUXEjPvj", wrapTGLWriteAUX, orgTGLWriteAUX}
+				};
+				const bool routed = patcher.routeMultiple(index, observations, arrsize(observations), address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRoutePathObservations", routed);
+				patcher.clearError();
+    if(auxKnown && routed && orgTGLReadAUX && orgTGLWriteAUX){
+     KernelPatcher::RouteRequest route(names[2],wrapTGLI2CAUX,orgTGLI2CAUX);
+     tglBootstrapAUXReady=patcher.routeMultiple(index,&route,1,address,size);
+     patcher.clearError();
+    }
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLBootstrapAUXReady",tglBootstrapAUXReady);
+			}
+			{
+				KernelPatcher::RouteRequest observations[] {
+					{"__ZN21AppleIntelFramebuffer20freeDisplayResourcesEv", wrapTGLFreeResources, orgTGLFreeResources},
+					{"__ZN21AppleIntelFramebuffer24freeDisplayPathResourcesEP21AppleIntelDisplayPath", wrapTGLFreePathResources, orgTGLFreePathResources},
+					{"__ZN21AppleIntelFramebuffer24allocateDisplayResourcesEv", wrapTGLAllocateResources, orgTGLAllocateResources},
+					{"__ZN21AppleIntelFramebuffer14disableDisplayEb", wrapTGLFBDisable, orgTGLFBDisable},
+					{"__ZN31AppleIntelFramebufferController31releaseResourceConfigurationSetEP28AGDCFBReleaseConfiguration_t", wrapTGLReleaseResources, orgTGLReleaseResources},
+					{"__ZN31AppleIntelFramebufferController30commitResourceConfigurationSetEP30AGDCResourceConfigurationSet_tS1_", wrapTGLCommitResources, orgTGLCommitResources},
+					{"__ZN31AppleIntelFramebufferController28testResourceConfigurationSetEP30AGDCResourceConfigurationSet_tS1_", wrapTGLTestResources, orgTGLTestResources},
+					{"__ZN21AppleIntelFramebuffer17attachDisplayPathEP21AppleIntelDisplayPath", wrapTGLAttachPath, orgTGLAttachPath}
+				};
+				const bool routed = patcher.routeMultiple(index, observations, arrsize(observations), address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteResourceObservations", routed);
+				patcher.clearError();
+			}
+			{
+				KernelPatcher::RouteRequest observe("__ZN28AppleIntelMEClientController7connectEP15MEIDriverData_t", wrapTGLMEConnect, orgTGLMEConnect);
+				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteMEConnectTiming", routed);
+				patcher.clearError();
+			}
+
+			tglMEILock = IOSimpleLockAlloc();
+			if (tglMEILock) {
+				KernelPatcher::RouteRequest observations[] {
+					{"__ZN19AppleIntelMEIDriver16handleDriverInitEv", wrapTGLMEIInit, orgTGLMEIInit},
+					{"__ZN19AppleIntelMEIDriver15handleInterruptEP22IOInterruptEventSourcei", wrapTGLMEIInterrupt, orgTGLMEIInterrupt},
+					{"__ZN19AppleIntelMEIDriver15filterInterruptEP28IOFilterInterruptEventSource", wrapTGLMEIFilter, orgTGLMEIFilter},
+					{"__ZN19AppleIntelMEIDriver16readHeaderFromMEEv", wrapTGLMEIHeader, orgTGLMEIHeader},
+					{"__ZN19AppleIntelMEIDriver17readMessageFromMEEPvPjPh", wrapTGLMEIRead, orgTGLMEIRead}
+				};
+				const bool routed = patcher.routeMultiple(index, observations, arrsize(observations), address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteMEIProtocol", routed);
+				if (routed) if (auto live = OSSerializer::forTarget(nullptr, tglMEILiveSerialize)) {
+					IORegistryEntry::getRegistryRoot()->setProperty("TGLMEILive", live);
+					live->release();
+				}
+				patcher.clearError();
+			}
+			tglDekelLock = IOSimpleLockAlloc();
+			if (tglDekelLock) {
+				KernelPatcher::RouteRequest phy[] {
+					{"__ZN17AppleIntelPortHAL15ReadDekelPhyRegEj", wrapTGLReadDekel, orgTGLReadDekel},
+					{"__ZN17AppleIntelPortHAL16WriteDekelPhyRegEjj", wrapTGLWriteDekel, orgTGLWriteDekel}
+				};
+				tglDekelReady = patcher.routeMultiple(index, phy, 2, address, size);
+			}
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGDekelRouted", tglDekelReady);
+			{
+				static const uint32_t expected[10][3] {
+					{7,0,0}, {5,0,15}, {2,0,11}, {0,0,25}, {5,0,0},
+					{2,0,5}, {0,0,0}, {2,0,20}, {0,0,11}, {0,0,0}
+				};
+				const auto table = patcher.solveSymbol<mach_vm_address_t>(index,
+					"__ZN17AppleIntelPortHAL27fVoltageSwingTableForDklPhyE", address, size);
+				const auto fn = patcher.solveSymbol<mach_vm_address_t>(index,
+					"__ZN17AppleIntelPortHAL29setVoltageSwingAndPreEmphasisEjjP15PortDriveConfig", address, size);
+				const bool known = size >= 0x99DC0 + sizeof(expected) &&
+					table == address + 0x99DC0 && fn == address + 0x60AE0 &&
+					!memcmp(reinterpret_cast<const void *>(table), expected, sizeof(expected));
+				patcher.clearError();
+				KernelPatcher::RouteRequest route("__ZN17AppleIntelPortHAL29setVoltageSwingAndPreEmphasisEjjP15PortDriveConfig",
+					wrapTGLSignalLevels, orgTGLSignalLevels);
+				const bool routed = known && tglDekelReady && patcher.routeMultiple(index, &route, 1, address, size);
+				// Exact combo ABI: PCS lane0 read, final lane power word and
+				// native success return. Do not infer the layout from a symbol alone.
+				static const uint8_t pcsABI[] {0x8B,0xB3,0x20,0x06,0x00,0x00};
+				static const uint8_t lanesABI[] {0x8B,0xB3,0xC8,0x05,0x00,0x00};
+				static const uint8_t successABI[] {0x31,0xC0,0x48,0x83,0xC4,0x28};
+				tglComboSignalReady = routed && size >= 0x6147E &&
+					!memcmp(reinterpret_cast<void *>(address+0x60EB9),pcsABI,sizeof(pcsABI)) &&
+					!memcmp(reinterpret_cast<void *>(address+0x61468),lanesABI,sizeof(lanesABI)) &&
+					!memcmp(reinterpret_cast<void *>(address+0x61478),successABI,sizeof(successABI));
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLComboSignalReady",tglComboSignalReady);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteSignalLevels", routed);
+				patcher.clearError();
+			}
+
+			patcher.clearError();
+			KernelPatcher::RouteRequest ddcRequest("__ZN21AppleIntelFramebuffer13fbGetDDCBlockEjPhPyjP21AppleIntelDisplayPath",
+				wrapTGLFBDDC, orgTGLFBDDC);
+			const bool ddcOK = patcher.routeMultiple(index, &ddcRequest, 1, address, size);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGFBDDCObservationRouted", ddcOK);
+			patcher.clearError();
+			KernelPatcher::RouteRequest edidRequests[] {
+				{"__ZN14AppleIntelPort19displayPortReadEDIDEjjPhj", wrapTGLEDID, orgTGLEDID},
+				{"__ZN14AppleIntelPort14probePortStateEv", wrapTGLPortState, orgTGLPortState}
+			};
+			const bool edidOK = patcher.routeMultiple(index, edidRequests, 2, address, size);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGEDIDObservationRouted", edidOK);
+			patcher.clearError();
+			KernelPatcher::RouteRequest auxRequests[] {
+				{"__ZN14AppleIntelPort15setDPPowerStateEh", wrapTGLDPPower, orgTGLDPPower},
+				{"__ZN14AppleIntelPort14getDPSinkCountEPh", wrapTGLSinkCount, orgTGLSinkCount}
+			};
+			const bool auxOK = patcher.routeMultiple(index, auxRequests, 2, address, size);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGAUXObservationRouted", auxOK);
+			patcher.clearError();
+			{
+				KernelPatcher::RouteRequest lanes("__ZN14AppleIntelPort21setupOptimalLaneCountEPK29IODetailedTimingInformationV2j",
+					wrapTGLOptimalLaneCount, orgTGLOptimalLaneCount);
+				const bool routed = patcher.routeMultiple(index, &lanes, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGOptimalLanesRouted", routed);
+				patcher.clearError();
+			}
+			tglAUXLock = IOSimpleLockAlloc();
+			tglDisplayTraceEnabled=checkKernelArgument("-wex-display-trace");
+   tglInitTransitionTrace(tglDisplayTraceEnabled);
+			if (tglConnectionLock) {
+				KernelPatcher::RouteRequest link("__ZN14AppleIntelPort15checkLinkStatusEv",
+					wrapTGLCheckLinkStatus, orgTGLCheckLinkStatus);
+				const bool routed = patcher.routeMultiple(index, &link, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGConnectionObservationRouted", routed);
+				patcher.clearError();
+			}
+			if (tglTrainingLeaseRequested) {
+				KernelPatcher::SolveRequest symbols[] {
+					{"__ZN17AppleIntelPortHAL11disablePortEv", tglDisablePort},
+					{"__ZN31AppleIntelFramebufferController13disableClocksEP14AppleIntelPortS1_", tglDisableClocks}
+				};
+				tglTrainingLeaseReady = framebufferTrainingHooksReady &&
+					patcher.solveMultiple(index, symbols, arrsize(symbols), address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteTrainingLease", tglTrainingLeaseReady);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLTrainingFreePath320", tglTrainingLeaseReady);
+				patcher.clearError();
+			}
+			if (tglClockOrderRequested) {
+				// Exact donor: clock write, then port disable, 8us, path-form
+				// disableClocks, and finally the port-form entry routed below.
+				const uint8_t site[] {0x8D,0x34,0x85,0x40,0x61,0x04,0x00,0x48,0x8B,0x07,0xFF,0x90,0x30,0x01,0x00,0x00};
+				const uint8_t entry[] {0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x54,0x53,0x49,0x89,0xD7};
+				bool ready = tglTrainingLeaseReady && orgTGLRegisterWrite && orgTGLDisableDisplay && orgTGLPathLookup &&
+					tglDisableClocks == address + 0x6DAE6 && size > 0x6DB04 &&
+					!memcmp(reinterpret_cast<void *>(address + 0x4D980), site, sizeof(site)) &&
+					!memcmp(reinterpret_cast<void *>(tglDisableClocks), entry, sizeof(entry));
+				if (ready) {
+					KernelPatcher::RouteRequest route("__ZN31AppleIntelFramebufferController13disableClocksEP14AppleIntelPortS1_",
+						wrapTGLDisableClocks, orgTGLDisableClocks);
+					ready = patcher.routeMultiple(index, &route, 1, address, size);
+				}
+				patcher.clearError();
+                if(ready && !adlsDisplaySelected) {
+                    const char *name="__ZN31AppleIntelFramebufferController12enableClocksEP14AppleIntelPortS1_P11ClockParams";
+                    const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,name,address,size);patcher.clearError();
+                    const uint8_t prefix[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53};
+                    ready=orgTGLRegisterRead && comboClockTransaction.lock && fn==address+0x6CE10 && !memcmp(reinterpret_cast<void *>(fn),prefix,sizeof(prefix));
+                    KernelPatcher::RouteRequest enable(name,wrapTGLComboEnableClocks,orgComboEnableClocks);
+                    ready=ready && patcher.routeMultiple(index,&enable,1,address,size);patcher.clearError();
+                }
+				if (ready) tglClockOffCaller = address + 0x4D990;
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLClockOrderReady", ready);
+			}
+			{
+				KernelPatcher::SolveRequest symbols[] {
+					{"__ZN19AppleIntelPowerWell17enablePowerWellPGEj", tglEnablePG},
+					{"__ZN19AppleIntelPowerWell18disablePowerWellPGEj", tglDisablePG}
+				};
+				if (patcher.solveMultiple(index, symbols, arrsize(symbols), address, size)) {
+					KernelPatcher::RouteRequest routes[] {
+						{"__ZN19AppleIntelPowerWell18enablePowerWellAuxEj", wrapTGLEnableAUXPower, orgTGLEnableAUXPower},
+						{"__ZN19AppleIntelPowerWell19disablePowerWellAuxEj", wrapTGLDisableAUXPower, orgTGLDisableAUXPower}
+					};
+					tglAUXParentReady = patcher.routeMultiple(index, routes, arrsize(routes), address, size);
+				}
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGAUXParentPower", tglAUXParentReady);
+				patcher.clearError();
+			}
+   // Resolve the base setter, never the HAL setter with fixed FIA writes.
+   // This prepares the native ABI bridge only. It does not admit Mode users.
+   {
+    mach_vm_address_t base {},auxGet {},auxPut {},global {};
+    KernelPatcher::SolveRequest symbols[] {
+     {"__ZN14AppleIntelPort11setPortModeENS_8PortModeE",base},
+     {"__ZN14AppleIntelPort18enablePowerWellAuxEv",auxGet},
+     {"__ZN14AppleIntelPort19disablePowerWellAuxEv",auxPut},
+     {"_gController",global}
+    };
+    const bool solved=patcher.solveMultiple(index,symbols,arrsize(symbols),address,size);
+    // Entry bytes contain no load-time relocations. The exact offsets and
+    // body-facing object accesses are covered by the donor ABI replay test.
+    static const uint8_t tcBaseEntry[] {0x55,0x48,0x89,0xe5,0x41,0x56,0x53,0x89,0xf3,0x49,0x89,0xfe,0x48,0xff,0x05,0x45};
+    static const uint8_t tcAuxGetEntry[] {0x55,0x48,0x89,0xe5,0x48,0xff,0x05,0xaf,0x96,0x0b,0x00,0x48,0xff,0x05,0xd8,0x8f};
+    static const uint8_t tcAuxPutEntry[] {0x55,0x48,0x89,0xe5,0x48,0xff,0x05,0x7b,0x96,0x0b,0x00,0x48,0xff,0x05,0x9c,0x8f};
+    static const uint8_t tcPGGetEntry[] {0x55,0x48,0x89,0xe5,0x53,0x50,0x48,0x89,0xfb,0x48,0xff,0x05,0xac,0x5e,0x08,0x00};
+    static const uint8_t tcPGPutEntry[] {0x55,0x48,0x89,0xe5,0x53,0x50,0x48,0x89,0xfb,0x48,0xff,0x05,0x5a,0x67,0x08,0x00};
+    auto &f=tglTCNativeFunctions;
+    f.qualified=solved && size>0x5BEEC && base==address+0x1B4C8 && auxGet==address+0x1D23E && auxPut==address+0x1D27A &&
+     tglEnablePG==address+0x5BEDC && tglDisablePG==address+0x5B366 && global>=address && global-address+sizeof(void *)<=size &&
+     !memcmp(reinterpret_cast<void *>(base),tcBaseEntry,sizeof(tcBaseEntry)) &&
+     !memcmp(reinterpret_cast<void *>(auxGet),tcAuxGetEntry,sizeof(tcAuxGetEntry)) &&
+     !memcmp(reinterpret_cast<void *>(auxPut),tcAuxPutEntry,sizeof(tcAuxPutEntry)) &&
+     !memcmp(reinterpret_cast<void *>(tglEnablePG),tcPGGetEntry,sizeof(tcPGGetEntry)) &&
+     !memcmp(reinterpret_cast<void *>(tglDisablePG),tcPGPutEntry,sizeof(tcPGPutEntry));
+    if(f.qualified){
+     f.baseMode=reinterpret_cast<uint32_t (*)(void *,uint32_t)>(base);
+     f.getAux=reinterpret_cast<void (*)(void *)>(auxGet);f.putAux=reinterpret_cast<void (*)(void *)>(auxPut);
+     f.getPG=reinterpret_cast<void (*)(void *,uint32_t)>(tglEnablePG);f.putPG=reinterpret_cast<void (*)(void *,uint32_t)>(tglDisablePG);
+     f.portByDDI=reinterpret_cast<void *(*)(uint32_t)>(tglPortByDDI);f.controllerSlot=reinterpret_cast<void **>(global);
+    }
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLTCNativeABIReady",f.complete());
+    patcher.clearError();
+   }
+   if(checkKernelArgument("-wex-tc-bootstrap")) {
+    const uint8_t initBytes[] {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec,0x18,0x48,0xff,0x05,0xe8,0x76,0x08,0x00},getBytes[] {0x55,0x48,0x89,0xe5,0x53,0x50,0x48,0x89,0xfb,0x48,0xff,0x05,0xac,0x5e,0x08,0x00,0x85,0xf6,0x74,0x18,0xb8,0x01,0x00,0x00},putBytes[] {0x55,0x48,0x89,0xe5,0x53,0x50,0x48,0x89,0xfb,0x48,0xff,0x05,0x5a,0x67,0x08,0x00,0x85,0xf6,0x74,0x23,0xb8,0x01,0x00,0x00};
+    const auto init=patcher.solveSymbol<mach_vm_address_t>(index,"__ZN19AppleIntelPowerWell4initEP31AppleIntelFramebufferController",address,size);
+    const bool known=size>0x5BEF4 && init==address+0x59F88 && tglEnablePG==address+0x5BEDC && tglDisablePG==address+0x5B366 &&
+     !memcmp(reinterpret_cast<void *>(init),initBytes,sizeof(initBytes)) &&
+     !memcmp(reinterpret_cast<void *>(tglEnablePG),getBytes,sizeof(getBytes)) &&
+     !memcmp(reinterpret_cast<void *>(tglDisablePG),putBytes,sizeof(putBytes));
+    patcher.clearError();
+    KernelPatcher::RouteRequest route("__ZN19AppleIntelPowerWell4initEP31AppleIntelFramebufferController",wrapTGLPowerInit,orgTGLPowerInit);
+    tglBootReadoutReady=known && patcher.routeMultiple(index,&route,1,address,size);
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLBootReadoutReady",tglBootReadoutReady);
+    patcher.clearError();
+   }
+			if (tglAUXLock) {
+				KernelPatcher::RouteRequest aux("__ZN17AppleIntelPortHAL13runAUXCommandEN14AppleIntelPort11AUX_CommandEPjjb", wrapTGLRunAUX, orgTGLRunAUX);
+				const bool routed = patcher.routeMultiple(index, &aux, 1, address, size);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteAUXCommands", routed);
+				patcher.clearError();
+			}
+   // This donor resets the software mode to zero on FIA-ready timeout,
+   // but returns the earlier successful base setter's result. Qualify that
+   // exact failure and return path before repairing its API contract.
+   const auto hotplug=patcher.solveSymbol<mach_vm_address_t>(index,
+    "__ZN31AppleIntelFramebufferController20invokeHotplugHandlerEjN14AppleIntelPort8PortModeE",address,size);
+   const uint8_t hotplugModeCall[] {0x49,0x8b,0x07,0x4c,0x89,0xff,0x89,0xde,0xff,0x90,0x38,0x01,0x00,0x00};
+   if(hotplug==address+0x748D4 && size>0x74A59 &&
+      !memcmp(reinterpret_cast<const void *>(hotplug+0x177),hotplugModeCall,sizeof(hotplugModeCall)))
+    tglNativeLegacyHPDCaller=hotplug+0x185;
+   IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeNativeLegacyHPDReady",tglNativeLegacyHPDCaller!=0);
+   patcher.clearError();
+   static const uint8_t modeEntry[] {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec,0x18,0x41,0x89,0xf7,0x48,0x89,0xfb,0x48};
+   static const uint8_t modeFailure[] {0x48,0x89,0xdf,0x31,0xf6,0xff,0x55,0xc8,0x44,0x8b,0x65,0xd4,0xe9,0xd8,0,0,0};
+   static const uint8_t modeReturn[] {0x44,0x89,0xe0,0x48,0x83,0xc4,0x18,0x5b,0x41,0x5c,0x41,0x5d,0x41,0x5e,0x41,0x5f,0x5d,0xc3};
+   const auto modeFn=patcher.solveSymbol<mach_vm_address_t>(index,
+    "__ZN17AppleIntelPortHAL11setPortModeEN14AppleIntelPort8PortModeE",address,size);
+   const bool modeKnown=size>=0x60120 && modeFn==address+0x5FCB8 &&
+    !memcmp(reinterpret_cast<const void *>(modeFn),modeEntry,sizeof(modeEntry)) &&
+    !memcmp(reinterpret_cast<const void *>(address+0x5FFEB),modeFailure,sizeof(modeFailure)) &&
+    !memcmp(reinterpret_cast<const void *>(address+0x6010E),modeReturn,sizeof(modeReturn));
+   patcher.clearError();
+			KernelPatcher::RouteRequest modeRequest("__ZN17AppleIntelPortHAL11setPortModeEN14AppleIntelPort8PortModeE",
+				wrapTGLSetPortMode, orgTGLSetPortMode);
+			const bool modeOK = patcher.routeMultiple(index, &modeRequest, 1, address, size);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGModeObservationRouted", modeOK);
+   if(modeKnown && modeOK && !tglModeTransitionLock) tglModeTransitionLock=IORecursiveLockAlloc();
+   IORegistryEntry::getRegistryRoot()->setProperty("TGLModeSerializationReady",
+    modeKnown && modeOK && tglModeTransitionLock!=nullptr);
+   // Match each original direct call before enabling the coordinate adapter.
+   // Route availability is insufficient evidence for this donor-specific ABI.
+   const uint32_t fiaSites[]={0x5FD28,0x5FDF4,0x5FEE5,0x6000B,0x600CF};
+   const uint8_t fiaCalls[][5]={{0xE8,0x61,0x01,0xFC,0xFF},{0xE8,0xAF,0,0xFC,0xFF},
+    {0xE8,0xA4,0xFF,0xFB,0xFF},{0xE8,0x7E,0xFE,0xFB,0xFF},{0xE8,0xD4,0xFD,0xFB,0xFF}};
+   bool fiaKnown=modeKnown && modeOK && tglModeTransitionLock && orgTGLPortWriteReg;
+   if(fiaKnown)for(unsigned i=0;i<arrsize(fiaSites);++i)
+    fiaKnown &= !memcmp(reinterpret_cast<const void *>(address+fiaSites[i]),fiaCalls[i],5);
+   if(fiaKnown){
+    KernelPatcher::RouteRequest read("__ZN14AppleIntelPort14readRegister32Ej",wrapTGLPortReadReg,orgTGLPortReadReg);
+    if(patcher.routeMultiple(index,&read,1,address,size)){tglNativeFiaBase=address;tglNativeFiaReady=true;}
+    patcher.clearError();
+   }
+   IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeNativeFiaReady",tglNativeFiaReady);
+   __atomic_store_n(&tglModeResultReady,modeKnown && modeOK,__ATOMIC_RELEASE);
+   IORegistryEntry::getRegistryRoot()->setProperty("TGLModeResultReady",tglModeResultReady);
+			patcher.clearError();
+			KernelPatcher::RouteRequest hpdRequest("__ZN17AppleIntelPortHAL11getHPDStateEv",
+				wrapTGLHPDState, orgTGLHPDState);
+			const bool hpdOK = patcher.routeMultiple(index, &hpdRequest, 1, address, size);
+   tglHPDHookReady=hpdOK;
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGHPDObservationRouted", hpdOK);
+			patcher.clearError();
+			KernelPatcher::RouteRequest laneRequest("__ZN17AppleIntelPortHAL26getDklPhyLaneConfigBitMaskEv",
+				wrapTGLLaneMask, orgTGLLaneMask);
+			const bool laneOK = patcher.routeMultiple(index, &laneRequest, 1, address, size);
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGFixedDPLaneMaskRouted", laneOK);
+			patcher.clearError();
+   // Qualify both lane functions before routing the modular DP-alt backend.
+   // TC5/6 remain excluded by the native mode-ready switch.
+   const uint8_t laneGetEntry[] {0x55,0x48,0x89,0xe5,0x41,0x56,0x53,0x48,0xff,0x5,0x56,0x28,0x8,0x0,0x48,0xff,0x5,0x47,0x28,0x8,0x0,0x48,0x8b,0x87};
+   const uint8_t laneSetEntry[] {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x54,0x53,0x48,0xff,0x5,0x8e,0x27,0x8,0x0,0x48,0xff,0x5,0x27,0x27,0x8};
+   if(laneOK && tglNativeFiaReady && size>0x606A0 &&
+      !memcmp(reinterpret_cast<const void *>(address+0x602CC),laneGetEntry,sizeof(laneGetEntry)) &&
+      !memcmp(reinterpret_cast<const void *>(address+0x603E8),laneSetEntry,sizeof(laneSetEntry))) {
+    KernelPatcher::RouteRequest lanes[] {
+     {"__ZN17AppleIntelPortHAL29getConfiguredDklPhyLaneConfigEv",wrapTGLConfiguredLanes,orgTGLConfiguredLanes},
+     {"__ZN17AppleIntelPortHAL15setFIALaneCountEj",wrapTGLFIALaneCount,orgTGLFIALaneCount}
+    };
+    tglDPAltFiaReady=patcher.routeMultiple(index,lanes,arrsize(lanes),address,size);
+    patcher.clearError();
+   }
+   IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeDPAltFiaReady",tglDPAltFiaReady);
+   if(adlsDisplaySelected) {
+    // Keep the physical DDI in every port/power/display object. Only the
+    // native Combo PLL indices are translated, under the firmware-route entry
+    // guards below (physical 0/3/4 >> 1 gives PHY 0/1/2). The removed instructions are profiling counters.
+    const uint8_t adlsClockOnFind[]={0x48,0xff,0x05,0xbe,0x86,0x07,0x00,0x48,0x63,0x00,0x48,0x83,0xf8,0x03};
+    const uint8_t adlsClockOnReplace[]={0x48,0x63,0x00,0x48,0xd1,0xe8,0x90,0x48,0x83,0xf8,0x03,0x0f,0x1f,0x00};
+    const uint8_t adlsClockSelectCPLLFind[]={0x83,0xc8,0x10};
+    const uint8_t adlsClockSelectCPLLReplace[]={0x83,0xc8,0x20};
+    const uint8_t adlsClockSelectCFind[]={0x83,0xf9,0x02};
+    const uint8_t adlsClockSelectCReplace[]={0x83,0xf9,0x04};
+    const uint8_t adlsClockSelectFind[]={0x83,0xf9,0x01};
+    const uint8_t adlsClockSelectReplace[]={0x83,0xf9,0x03};
+    const uint8_t adlsClockOffFind[]={0x48,0xff,0x05,0xe9,0x79,0x07,0x00,0x48,0x8b,0x8b,0x48,0x05,0x00,0x00,0x4c,0x63,0x21,0x49,0x83,0xfc,0x03};
+    const uint8_t adlsClockOffReplace[]={0x48,0x8b,0x8b,0x48,0x05,0x00,0x00,0x4c,0x63,0x21,0x49,0xd1,0xec,0x90,0x49,0x83,0xfc,0x03,0x0f,0x1f,0x00};
+    // ADL-S GMBUS uses pins 1,9..12. The wrapper admits VBT-wired
+    // pins only; extend the donor's legacy range check before MMIO.
+    const uint8_t adlsClockBusFind[]={0x83,0x7d,0xcc,0x08,0x72,0x2a};
+    const uint8_t adlsClockBusReplace[]={0x83,0x7d,0xcc,0x0d,0x72,0x2a};
+    const uint8_t entry[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53};
+    const auto symbol="__ZN31AppleIntelFramebufferController12enableClocksEP14AppleIntelPortS1_P11ClockParams";
+    const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,symbol,address,size);
+    bool ready=adlsPLLTableReady && comboClockTransaction.lock && tglTCNativeFunctions.complete() &&
+     orgTGLRegisterRead && orgTGLRegisterWrite && orgTGLDisableClocks && tglClockOffCaller && tglComboPLLFractionCaller &&
+     fn==address+0x6CE10 && size>0x6DCBD && !memcmp(reinterpret_cast<void *>(fn),entry,sizeof(entry));
+    struct Site {uint32_t offset;const uint8_t *find,*replace;size_t bytes;};
+    const Site sites[]={{0x6CFD3,adlsClockOnFind,adlsClockOnReplace,sizeof(adlsClockOnFind)},
+     {0x6D4A2,adlsClockSelectCPLLFind,adlsClockSelectCPLLReplace,sizeof(adlsClockSelectCPLLFind)},
+     {0x6D219,adlsClockSelectCFind,adlsClockSelectCReplace,sizeof(adlsClockSelectCFind)},
+     {0x6D222,adlsClockSelectFind,adlsClockSelectReplace,sizeof(adlsClockSelectFind)},
+     {0x6DCA8,adlsClockOffFind,adlsClockOffReplace,sizeof(adlsClockOffFind)},
+     {0x53B66,adlsClockBusFind,adlsClockBusReplace,sizeof(adlsClockBusFind)}};
+    for(const auto &site:sites)ready=ready && !memcmp(reinterpret_cast<void *>(address+site.offset),site.find,site.bytes);
+    patcher.clearError();
+    if(ready) {
+     KernelPatcher::RouteRequest route(symbol,wrapADLSEnableClocks,orgComboEnableClocks);
+     ready=patcher.routeMultiple(index,&route,1,address,size);patcher.clearError();
+     if(ready)for(const auto &site:sites) {
+      KernelPatcher::LookupPatch patch {currentFramebuffer,site.find,site.replace,site.bytes,1};
+      patcher.applyLookupPatch(&patch,reinterpret_cast<uint8_t *>(address+site.offset),site.bytes+1);
+      ready &= !memcmp(reinterpret_cast<void *>(address+site.offset),site.replace,site.bytes);
+      patcher.clearError();
+     }
+    }
+    adlsClockReady=ready;
+    IORegistryEntry::getRegistryRoot()->setProperty("ADLSClockReady",ready);
+    const char *pg="__ZN19AppleIntelPowerWell21hwSetPowerWellStatePGEbj";
+    const auto pgfn=patcher.solveSymbol<mach_vm_address_t>(index,pg,address,size);
+    const uint8_t pgentry[]={0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53};
+    adlsPowerReady=orgTGLPowerDDIState && pgfn==address+0x5B640 && size>0x5BD40 &&
+     !memcmp(reinterpret_cast<void *>(pgfn),pgentry,sizeof(pgentry));
+    patcher.clearError();
+    if(adlsPowerReady) {
+     KernelPatcher::RouteRequest route(pg,wrapADLSPowerPG,orgADLSPowerPG);
+     adlsPowerReady=patcher.routeMultiple(index,&route,1,address,size);patcher.clearError();
+    }
+    IORegistryEntry::getRegistryRoot()->setProperty("ADLSLanePowerReady",adlsPowerReady);
+    // Native startup remains closed if any required ADL-S adapter is absent.
+    const auto contract=XELP::DisplayContract::adls(display12Available(),adlsWiring.dp!=0,adlsWiring.panel!=0);
+    adlsDisplayHooksReady=contract.ready();
+    uint64_t contractRecord[]={1,contract.required,contract.available,contract.missing()};
+    IORegistryEntry::getRegistryRoot()->setProperty("ADLSDisplayStartupContract",contractRecord,sizeof(contractRecord));
+    IORegistryEntry::getRegistryRoot()->setProperty("ADLSDisplayHooksReady",adlsDisplayHooksReady);
+   }
+   tglRecordStartOrder(1,nullptr);
+			return true;
+		}
+		return false;
+	}
+	return false;
+}
+
+// Display13 panel operations use its own physical PG bridge. No display owner
+// lock spans a donor call: native AUX/clock callbacks reacquire that lock.
+void XE::processDisplay13Panel(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
+ if(!adlnOutputWiring.panel || !XELP::PanelPower::nativePPS0(firmwarePorts,xeProfile.family))return;
+ if(!tglAUXLock)tglAUXLock=IOSimpleLockAlloc();
+ if(!tglAUXLock)return;
+ processNativePanel(patcher,index,address,size);
+ if(size<0x508c4 || !tglEDPTranscoderReady || !tglPanelDepthReady || !tglPanelTimingReady || !display13PanelPWMReady || !tglSinkFramingReady)return;
+ const char *symbol="__ZN31AppleIntelFramebufferController15hwSetPanelPowerEj";
+ const uint8_t entry[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x53,0x48,0x83,0xec,0x28,0x89,0xf3,0x49,0x89,0xff};
+ const uint8_t configCall[]={0x8b,0xb7,0x48,0x0d,0x00,0x00,0xe8,0x30,0xb1,0xff,0xff,0x83,0xfb,0x02};
+ const auto target=patcher.solveSymbol(index,symbol,address,size);patcher.clearError();
+ if(size<=0x48B88 || target!=address+0x48652 ||
+    memcmp(reinterpret_cast<void *>(target),entry,sizeof(entry)) ||
+    memcmp(reinterpret_cast<void *>(address+0x4866b),configCall,sizeof(configCall)))return;
+ for(const auto &patch:Display13Panel::lightPatches)
+  if(memcmp(reinterpret_cast<void *>(address+patch.offset),patch.before,patch.size))return;
+ for(const auto &patch:Display13Panel::lightPatches) {
+  patcher.routeBlock(address+patch.offset,patch.after,patch.size);
+  const bool ok=patcher.getError()==KernelPatcher::Error::NoError &&
+   !memcmp(reinterpret_cast<void *>(address+patch.offset),patch.after,patch.size);
+  patcher.clearError();if(!ok)return;
+ }
+ if(!display13FBPower.panelLock)display13FBPower.panelLock=IOLockAlloc();
+ if(!display13FBPower.panelLock)return;
+ KernelPatcher::RouteRequest route(symbol,wrapDisplay13PanelPower,orgDisplay13PanelPower);
+ display13PanelPowerReady=patcher.routeMultipleShort(index,&route,1,address,size);
+ patcher.clearError();
+}
+// The caller holds c.lock. Only the retained controller/platform/map can own PPS0.
+bool XE::display13PanelTarget(void *controller) {
+ auto s=callbackXE;auto &c=display13FBPower;
+ return controller && controller==c.controller && controller==s->adlnTopologyController &&
+  s->display13FramebufferRequested && s->adlnOutputWiring.panel && s->display13PanelPowerReady &&
+  XELP::PanelPower::nativePPS0(s->firmwarePorts,s->xeProfile.family) &&
+  adlnWriterMappingBound() && !c.clockStopped && !c.clockFaulted && !c.panelFaulted &&
+  !c.bridge.state.faulted && !c.bridge.state.suspended &&
+  Display13FBMemory::field<void *>(controller,0xD40)==s->adlnPlatform &&
+  Display13FBMemory::field<void *>(controller,0xC8)==c.power &&
+  Display13FBMemory::field<void *>(controller,0xC40)==c.access &&
+  !Display13FBMemory::field<uint8_t>(controller,0x918) && !Display13FBMemory::field<void *>(controller,0xD0) &&
+  Display13Power::objectAssociations(c.power,0x80,controller,0x1C20);
+}
+bool XE::display13PanelHealthy() {
+ auto &c=display13FBPower;if(!c.lock)return false;IOLockLock(c.lock);
+ const bool ok=!c.panelFaulted && !c.clockFaulted;IOLockUnlock(c.lock);return ok;
+}
+bool XE::display13PanelPowerReference(bool acquire) {
+ auto &c=display13FBPower;Display13FBPanelIO io{c.map};
+ const auto r=acquire?c.bridge.getPG(io,1):c.bridge.putPG(io,1);
+ const bool ok=r.status==Display13Power::Status::Complete &&
+  Display13Power::publishObject(c.bridge,c.power,0x80,c.controller,0x1C20);
+ if(!ok)c.panelFaulted=true;return ok;
+}
+bool XE::display13PanelCapture(void *controller) {
+ auto &c=display13FBPower;if(!c.lock)return false;IOLockLock(c.lock);
+ Display13FBPanelIO io{c.map};bool ok=false;
+ if(display13PanelTarget(controller) && display13PanelPowerReference(true)) {
+  ok=c.panel.capture(io,callbackXE->firmwarePorts.panel);
+  if(ok)*reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(controller)+0xE60)=c.panel.pwm.period;
+  ok=display13PanelPowerReference(false) && ok;
+ }
+ IOLockUnlock(c.lock);return ok;
+}
+void XE::display13PanelTiming(void *controller,bool apply) {
+ if(!display13PanelCapture(controller) || !apply)return;
+ auto &c=display13FBPower;IOLockLock(c.lock);
+ if(display13PanelTarget(controller)) {
+  const auto plan=XELP::PanelPower::select(callbackXE->firmwarePorts.panel,
+   static_cast<uint32_t *>(static_cast<void *>(static_cast<uint8_t *>(controller)+0x1548)),c.panel.bios[0],c.panel.bios[1],c.panel.bios[2]);
+  if(plan.valid)memcpy(static_cast<uint8_t *>(controller)+0x1548,plan.fields,sizeof(plan.fields));
+  else c.panelFaulted=true;
+ }
+ IOLockUnlock(c.lock);
+}
+uint32_t XE::display13PanelBrightness(void *controller,uint32_t brightness) {
+ if(!display13PanelCapture(controller))return kIOReturnNotReady;
+ auto &c=display13FBPower;IOLockLock(c.lock);Display13FBPanelIO io{c.map};bool ok=false;uint32_t duty=0;
+ if(display13PanelTarget(controller) && c.panel.pwm.duty(brightness,duty) &&
+    display13PanelPowerReference(true)) {
+  io.write(0xC8258,duty);ok=io.read(0xC8258)==duty;
+  if(ok)*reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(controller)+0xE58)=brightness;
+  ok=display13PanelPowerReference(false) && ok;
+ }
+ IOLockUnlock(c.lock);return ok?0:kIOReturnNotReady;
+}
+void XE::display13PanelPWMEnable(void *access) {
+ auto &c=display13FBPower;if(!c.lock)return;IOLockLock(c.lock);Display13FBPanelIO io{c.map};
+ if(access==c.access && display13PanelTarget(c.controller) && c.panel.pwm.valid() &&
+    display13PanelPowerReference(true)) {
+  const auto value=0x80000000U|c.panel.pwm.polarity;
+  io.write(0xC8250,value);const bool ok=io.read(0xC8250)==value;
+  if(!display13PanelPowerReference(false) || !ok)c.panelFaulted=true;
+ }
+ IOLockUnlock(c.lock);
+}
+uint32_t XE::wrapDisplay13PanelPower(void *controller,uint32_t state) {
+ auto s=callbackXE;auto &c=display13FBPower;
+ if(!s->adlnOutputWiring.panel)return FunctionCast(wrapDisplay13PanelPower,s->orgDisplay13PanelPower)(controller,state);
+ if(!c.panelLock || !c.lock || !display13PanelCapture(controller))return kIOReturnNotReady;
+ IOLockLock(c.panelLock);IOLockLock(c.lock);Display13FBPanelIO io{c.map};Display13Panel::OnGate gate;
+ const bool owned=display13PanelTarget(controller) && display13PanelPowerReference(true);
+ const bool ready=owned && (state!=2 || gate.begin(io));
+ IOLockUnlock(c.lock);
+ const auto result=ready?FunctionCast(wrapDisplay13PanelPower,s->orgDisplay13PanelPower)(controller,state):uint32_t(kIOReturnNotReady);
+ IOLockLock(c.lock);
+ // Always restore the workaround before releasing our PG, also after failed on.
+ const bool restored=!owned || gate.finish(io);
+ bool ok=ready && restored;
+ if(owned) {
+  const auto status=io.read(0xC7200);
+  ok=ok && status!=UINT32_MAX && (state==2 ? (status&0x80000000U)!=0 : !(status&0x80000000U));
+  ok=display13PanelPowerReference(false) && ok;
+ }
+ if(!ok)c.panelFaulted=true;
+ IOLockUnlock(c.lock);IOLockUnlock(c.panelLock);
+ return ok?result:uint32_t(kIOReturnNotReady);
+}
+
+// Shared exact-donor panel corrections; physical adapters own admission.
+void XE::processNativePanel(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
 			{
 				// getDPCDInfo stores MAX_LANE_COUNT bit7 at port+0x10,
 				// but setupPort defaults enhanced framing to !MST.
@@ -11787,72 +13324,7 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 					!memcmp(reinterpret_cast<void *>(address + 0x1E328), capability, sizeof(capability)) &&
 					!memcmp(reinterpret_cast<void *>(address + 0x1B607), selection, sizeof(selection)) &&
 					!memcmp(reinterpret_cast<void *>(address + 0x1BC73), alternateSR, sizeof(alternateSR));
-				dobs("TGLSinkFramingReady", tglSinkFramingReady);
-				patcher.clearError();
-			}
-			{
-				const auto fn = patcher.solveSymbol<mach_vm_address_t>(index,
-					"__ZN19AppleIntelPowerWell22hwSetPowerWellStateAuxEbj", address, size);
-				const uint32_t ends[] {0x5CAB6,0x5CAF5,0x5D0C9,0x5D108};
-				uint8_t write[] {0xbe,0x30,0x20,0x16,0x00,0x89,0xc2,0xff,0x91,0x30,0x01,0x00,0x00};
-				bool known = size >= 0x5D108 && fn == address + 0x5CA12;
-				for (unsigned i=0; known && i<arrsize(ends); ++i) {
-					const uint32_t reg = i&1 ? 0x6C030 : 0x162030;
-					memcpy(write+1,&reg,sizeof(reg));
-					known = !memcmp(reinterpret_cast<void *>(address+ends[i]-sizeof(write)),write,sizeof(write));
-				}
-				tglComboAUXGateReady = known;
-				dobs("TGLComboAUXGateReady", known);
-				patcher.clearError();
-			}
-			if (tglHDMIB) {
-				// Exact donor hwDoGMBusRequest+0x335: it passes the assembled
-				// GMBUS0 value as an MMIO address and the bus number as data.
-				// Fix argument construction, retaining the native virtual write.
-				// Only a profiling-counter increment is omitted for space.
-				static const uint8_t find[] {
-					0x48,0x8B,0x45,0x80,0x48,0x01,0x05,0x3C,0xC5,0x08,0x00,
-					0xC1,0xE6,0x07,0x0B,0x75,0x88,0x49,0x8B,0x7D,0x00,
-					0x48,0x8B,0x07,0x8B,0x55,0xCC,0xFF,0x90,0x30,0x01,0x00,0x00};
-				static const uint8_t replace[] {
-					0xC1,0xE6,0x07,0x0B,0x75,0x88,0x89,0xF2,0xBE,0x00,0x51,0x0C,0x00,
-					0x49,0x8B,0x7D,0x00,0x48,0x8B,0x07,0xFF,0x90,0x30,0x01,0x00,0x00,
-					0x90,0x90,0x90,0x90,0x90,0x90,0x90};
-				static_assert(sizeof(find) == sizeof(replace), "GMBUS patch length");
-				auto fn = patcher.solveSymbol<mach_vm_address_t>(index,
-					"__ZN31AppleIntelFramebufferController16hwDoGMBusRequestEjjP12IOI2CRequest", address, size);
-				auto site = reinterpret_cast<uint8_t *>(fn + 0x335);
-				if (fn == address + 0x53A7C && size > 0x53DD2 && !memcmp(site, find, sizeof(find))) {
-					KernelPatcher::LookupPatch patch {currentFramebuffer, find, replace, sizeof(find), 1};
-					patcher.applyLookupPatch(&patch, site, sizeof(find) + 1);
-					tglGMBusReady = !memcmp(site, replace, sizeof(replace));
-				}
-				dobs("TGLGMBusArgumentPatch", tglGMBusReady);
-				patcher.clearError();
-				// GMBUS_SW_CLR_INT is bit31, not bit0 (slave-read direction).
-				// The following native write of zero deasserts the reset.
-				static const uint8_t resetFind[] {0xBE,0x04,0x51,0x0C,0x00,0xBA,0x01,0x00,0x00,0x00,0xFF,0x90,0x30,0x01,0x00,0x00};
-				static const uint8_t resetReplace[] {0xBE,0x04,0x51,0x0C,0x00,0xBA,0x00,0x00,0x00,0x80,0xFF,0x90,0x30,0x01,0x00,0x00};
-				auto reset = reinterpret_cast<uint8_t *>(fn + 0x2E0);
-				bool resetReady = false;
-				if (fn == address + 0x53A7C && size > 0x53DD2 && !memcmp(reset, resetFind, sizeof(resetFind))) {
-					KernelPatcher::LookupPatch patch {currentFramebuffer, resetFind, resetReplace, sizeof(resetFind), 1};
-					patcher.applyLookupPatch(&patch, reset, sizeof(resetFind) + 1);
-					resetReady = !memcmp(reset, resetReplace, sizeof(resetReplace));
-				}
-				tglGMBusReady &= resetReady;
-				tglGMBusFunction = fn;
-				dobs("TGLGMBusResetPatch", resetReady);
-				patcher.clearError();
-				KernelPatcher::RouteRequest readObserve(
-					"__ZN31AppleIntelRegisterAccessManager14ReadRegister32Em", wrapTGLRegisterRead, orgTGLRegisterRead);
-				const bool readRouted = patcher.routeMultiple(index, &readObserve, 1, address, size);
-				dobs("TGLWEGRouteGMBusStatus", readRouted);
-				patcher.clearError();
-				KernelPatcher::RouteRequest observe(
-					"__ZN31AppleIntelFramebufferController16hwDoGMBusRequestEjjP12IOI2CRequest", wrapTGLGMBus, orgTGLGMBus);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteGMBus", routed);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLSinkFramingReady", tglSinkFramingReady);
 				patcher.clearError();
 			}
 
@@ -11869,7 +13341,7 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 					!memcmp(reinterpret_cast<void *>(address+0x4FA13),call,sizeof(call));
 				KernelPatcher::RouteRequest route(symbol,wrapTGLModeTiming,orgTGLModeTiming);
 				tglPanelDepthReady=known && patcher.routeMultiple(index,&route,1,address,size);
-				dobs("TGLPanelDepthReady",tglPanelDepthReady);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLPanelDepthReady",tglPanelDepthReady);
 				patcher.clearError();
 			}
 
@@ -11888,12 +13360,12 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
      {"__ZN31AppleIntelFramebufferController21hwSetPanelPowerConfigEj",wrapTGLPanelConfig,orgTGLPanelConfig}
     };
     tglPanelTimingReady=known && patcher.routeMultiple(index,routes,2,address,size);
-    dobs("WEXPanelTimingReady",tglPanelTimingReady);
+    IORegistryEntry::getRegistryRoot()->setProperty("WEXPanelTimingReady",tglPanelTimingReady);
     patcher.clearError();
     // PANEL_TIMING_INSTALL_END
    }
 
-   if(adlsDisplaySelected) {
+   if(adlsDisplaySelected || (display13FramebufferRequested && adlnOutputWiring.panel)) {
     // ADLS_PANEL_PWM_INSTALL: preflight the native lifecycle and PWM enable site.
     const char *light="__ZN31AppleIntelFramebufferController10LightUpEDPEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2";
     const char *brightness="__ZN31AppleIntelFramebufferController14hwSetBacklightEj";
@@ -11915,7 +13387,8 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
      adlsPanelPWMReady=patcher.getError()==KernelPatcher::Error::NoError &&
       !memcmp(reinterpret_cast<void *>(address+0x507e9),bridge,sizeof(bridge));
     }
-    dobs("ADLSPanelPWMReady",adlsPanelPWMReady);
+    if(display13FramebufferRequested){display13PanelPWMReady=adlsPanelPWMReady;adlsPanelPWMReady=false;}
+    IORegistryEntry::getRegistryRoot()->setProperty("ADLSPanelPWMReady",adlsPanelPWMReady);
     patcher.clearError();
     // ADLS_PANEL_PWM_INSTALL_END
    }
@@ -11981,736 +13454,9 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 					}
 				}
 				tglEDPTranscoderReady = ready;
-				dobs("TGLEDPTranscoderReady",ready);
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLEDPTranscoderReady",ready);
 				patcher.clearError();
 			}
-			if (tglActive) {
-
-				if (framebufferPatchFlags.bits.FPFStolenMemorySize) {
-					const auto fn = patcher.solveSymbol(index, "__ZN31AppleIntelFramebufferController16getOSInformationEv", address, size);
-					// Selected platform +0x14 is copied to controller +0xDE8
-					// before FBMemMgr_Init constructs the GGTT display pool.
-					const uint8_t expected[] {0x8B,0x70,0x14,0x89,0xB3,0xE8,0x0D,0x00,0x00};
-					tglStolenMemoryReady = fn == address + 0x40B22 && size > 0x40CF2 &&
-						!memcmp(reinterpret_cast<void *>(fn + 0x1C7), expected, sizeof(expected));
-					dobs("TGLStolenMemoryGuard", tglStolenMemoryReady);
-					patcher.clearError();
-				}
-				KernelPatcher::RouteRequest topology("__ZN31AppleIntelFramebufferController16getOSInformationEv", wrapTGLGetOSInformation, orgTGLGetOSInformation);
-				tglTopologyReady = patcher.routeMultiple(index, &topology, 1, address, size);
-				dobs("TGLWEGRouteTopology", tglTopologyReady);
-				patcher.clearError();
-			}
-
-			{
-				KernelPatcher::RouteRequest hdcp[] {
-					{"__ZN15AppleIntelHDCP113dispatchEventENS_10HDCP1EventE", wrapTGLHDCP1Dispatch, orgTGLHDCP1Dispatch},
-					{"__ZN15AppleIntelHDCP117timerEventHandlerEP18IOTimerEventSource", wrapTGLHDCP1Timer, orgTGLHDCP1Timer}
-				};
-				const bool routed = patcher.routeMultiple(index, hdcp, arrsize(hdcp), address, size);
-				dobs("TGLWEGHDCP1ObservationsRouted", routed);
-				patcher.clearError();
-			}
-			if (checkKernelArgument("-disablegfxfirmware")) {
-				KernelPatcher::RouteRequest irq[] {
-					{"__ZN31AppleIntelFramebufferController18hwEnableInterruptsEv",wrapTGLFBEnableIRQ,orgTGLFBEnableIRQ},
-					{"__ZN31AppleIntelFramebufferController13setupWorkLoopEP10IOWorkLoop",wrapTGLFBSetupIRQ,orgTGLFBSetupIRQ}
-				};
-				tglFBIRQReady=patcher.solveSymbol<mach_vm_address_t>(index,"__ZN31AppleIntelFramebufferController18hwEnableInterruptsEv",address,size)==address+0x755CA &&
-					patcher.solveSymbol<mach_vm_address_t>(index,"__ZN31AppleIntelFramebufferController13setupWorkLoopEP10IOWorkLoop",address,size)==address+0x43B86;
-				if (tglFBIRQReady) tglFBIRQReady=patcher.routeMultiple(index,irq,arrsize(irq),address,size);
-				dobs("TGLFBIRQRouted",tglFBIRQReady);patcher.clearError();
-			}
-
-			{
-				KernelPatcher::RouteRequest observe("__ZN21AppleIntelFramebuffer11getDDCBlockEijjjPhPy", wrapTGLTopDDC, orgTGLTopDDC);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteTopDDC", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN14AppleIntelPort11getDDCBlockEjPhb", wrapTGLPortDDC, orgTGLPortDDC);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRoutePortDDC", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController13StreamGetEDIDEP19AGDCStreamGetEDID_tS1_", wrapTGLStreamEDID, orgTGLStreamEDID);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteStreamEDID", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController9FBSetEDIDEP19AGDCFBSetEDIDData_t", wrapTGLSetEDID, orgTGLSetEDID);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteSetEDID", routed);
-				patcher.clearError();
-			}
-			{
-
-				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController22SetFbStatusOnNextProbeEP14AGDCFBOnline_t", wrapTGLFBOnline, orgTGLFBOnline);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteFBOnline", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController20RegisterAGDCCallbackEP25AGDCRegisterLinkControl_t", wrapTGLAGDCRegister, orgTGLAGDCRegister);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteAGDCRegister", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN21AppleIntelFramebuffer25getAttributeForConnectionEijPm", wrapTGLConnectionAttr, orgTGLConnectionAttr);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteConnectionAttr", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController16GetGPUCapabilityEP19AGDCGPUCapability_t", wrapTGLGPUCapability, orgTGLGPUCapability);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteGPUCapability", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController13GetLinkConfigEP16AGDCLinkConfig_tS1_", wrapTGLLinkConfig, orgTGLLinkConfig);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteLinkConfig", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN20IntelFBClientControl11doAttributeEjPmmS0_S0_P25IOExternalMethodArguments", wrapTGLClientAttribute, orgTGLClientAttribute);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteClientAttribute", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController16GetStreamRequestEP19AGDCStreamRequest_tS1_", wrapTGLStreamRequest, orgTGLStreamRequest);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteStreamRequest", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN21AppleIntelFramebuffer16enableControllerEv", wrapTGLFBEnable, orgTGLFBEnable);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteFBEnable", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN21AppleIntelFramebuffer12getAttributeEjPm", wrapTGLFBGetAttr, orgTGLFBGetAttr);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteFBGetAttr", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN21AppleIntelFramebuffer12setAttributeEjm", wrapTGLFBSetAttr, orgTGLFBSetAttr);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteFBSetAttr", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController18GetStreamAccessAUXEP21AGDCStreamAccessAUX_tS1_", wrapTGLAGDCAUX, orgTGLAGDCAUX);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteAGDCAUX", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN31AppleIntelFramebufferController13GetPortStatusEP16AGDCPortStatus_tS1_", wrapTGLAGDCPortStatus, orgTGLAGDCPortStatus);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteAGDCPortStatus", routed);
-				patcher.clearError();
-				if (tglInactivePorts) {
-					KernelPatcher::SolveRequest port("__ZN14AppleIntelPort14getPortByIndexEj", tglPortByIndex);
-					const bool solved = patcher.solveMultiple(index, &port, 1, address, size);
-					if (!solved) tglPortByIndex = 0;
-					dobs("TGLInactivePortsReady", routed && solved);
-					patcher.clearError();
-				}
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN17AppleIntelPortHAL10enablePortEv", wrapTGLEnablePort, orgTGLEnablePort);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteEnablePort", routed);
-				dobs("TGLWEGObservationRevision", 79, 32);
-				patcher.clearError();
-				const auto disable = patcher.solveSymbol<mach_vm_address_t>(index,
-					"__ZN17AppleIntelPortHAL11disablePortEv",address,size);
-				static const uint8_t entry[] {0x55,0x48,0x89,0xE5,0x53,0x50,0x48,0x89,0xFB};
-				static const uint8_t buffer[] {0x8B,0xB7,0x90,0x05,0x00,0x00};
-				const bool known = size>=0x5FCB7 && disable==address+0x5FC56 &&
-					!memcmp(reinterpret_cast<void *>(disable),entry,sizeof(entry)) &&
-					!memcmp(reinterpret_cast<void *>(address+0x5FC6D),buffer,sizeof(buffer));
-				patcher.clearError();
-				KernelPatcher::RouteRequest release("__ZN17AppleIntelPortHAL11disablePortEv",wrapTGLDisablePort,orgTGLDisablePort);
-				tglComboAUXLifetimeReady=routed && known && patcher.routeMultiple(index,&release,1,address,size);
-				dobs("TGLComboAUXLifetimeReady",tglComboAUXLifetimeReady);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest routes[] {
-					{"__ZN31AppleIntelFramebufferController19hwSetupCursorMemoryEv", wrapTGLCursorSetup, orgTGLCursorSetup},
-					{"__ZN31AppleIntelFramebufferController10restoreGTTEv", wrapTGLRestoreGTT, orgTGLRestoreGTT},
-					{"__ZN31AppleIntelFramebufferController16hwSetCursorImageEP21AppleIntelFramebufferP20IOHardwareCursorInfo", wrapTGLCursorImage, orgTGLCursorImage}
-				};
-				const bool routed = patcher.routeMultiple(index, routes, arrsize(routes), address, size);
-				dobs("TGLCursorLifetimeRouted", routed);
-				patcher.clearError();
-			}
-			if (tglPG1Poll) {
-				mach_vm_address_t fn {};
-				KernelPatcher::SolveRequest symbol("__ZN19AppleIntelPowerWell21hwSetPowerWellStatePGEbj", fn);
-				const uint8_t expected[] {0xBE,0x00,0x20,0x04,0x00,0xE8,0x3D,0x2A,0x00,0x00,0x0F,0xBA,0xE0,0x1A};
-				bool ready = patcher.solveMultiple(index, &symbol, 1, address, size) &&
-					fn == address + 0x5B640 && size > 0x5B90B &&
-					!memcmp(reinterpret_cast<void *>(fn + 0x2BD), expected, sizeof(expected));
-				patcher.clearError();
-				if (ready && !orgTGLRegisterRead) {
-					KernelPatcher::RouteRequest read("__ZN31AppleIntelRegisterAccessManager14ReadRegister32Em", wrapTGLRegisterRead, orgTGLRegisterRead);
-					ready = patcher.routeMultiple(index, &read, 1, address, size);
-					patcher.clearError();
-				}
-				if (ready) tglPG1FuseReadCaller = fn + 0x2C7;
-				dobs("TGLPG1PollReady", ready);
-				const bool fuseReady=ready && size>=0x5B640+0x6E1 &&
-					XELPDonor::powerWellFuseSites(reinterpret_cast<const uint8_t *>(fn),size-0x5B640);
-				if(fuseReady)tglPGFuseWaitFunction=fn;
-				dobs("TGLPG234PollReady",fuseReady);
-				if(!fuseReady)SYSLOG("igfx","PG2/3/4 fuse wait: donor sites unavailable");
-			}
-            if(adlsDisplaySelected) {
-                const auto symbol="__ZN17AppleIntelPortHAL4initEP10PortConfig";
-                const uint8_t entry[]={0x55,0x48,0x89,0xE5,0x41,0x56,0x53,0x49,0x89,0xFE};
-                const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,symbol,address,size);
-                const bool known=fn==address+0x5F058 && size>0x5F9F4 &&
-                    !memcmp(reinterpret_cast<void *>(fn),entry,sizeof(entry));
-                patcher.clearError();
-                KernelPatcher::RouteRequest route(symbol,wrapADLSPortInit,orgADLSPortInit);
-                adlsPortInitReady=known && patcher.routeMultiple(index,&route,1,address,size);
-                dobs("ADLSPortInitReady",adlsPortInitReady);
-                patcher.clearError();
-            }
-			{
-				KernelPatcher::RouteRequest routes[] {
-					{"__ZN17AppleIntelPortHAL14enableComboPhyEv", wrapTGLEnableCombo, orgTGLEnableCombo},
-					{"__ZN19AppleIntelPowerWell19enableDisplayEngineEv", wrapTGLEngineEnable, orgTGLEngineEnable},
-					{"__ZN19AppleIntelPowerWell20disableDisplayEngineEv", wrapTGLEngineDisable, orgTGLEngineDisable},
-					{"__ZN21AppleIntelFramebuffer21allocateScanoutMemoryEv", wrapTGLScanoutAllocate, orgTGLScanoutAllocate},
-					{"__ZN21AppleIntelFramebuffer18setupScanoutMemoryEv", wrapTGLScanoutSetup, orgTGLScanoutSetup},
-					{"__ZN15AppleIntelPlane11updatePlaneEb", wrapTGLPlaneUpdate, orgTGLPlaneUpdate},
-					{"__ZN15AppleIntelPlane10setupPlaneEP21AppleIntelDisplayPath", wrapTGLPlaneSetup, orgTGLPlaneSetup},
-					{"__ZN31AppleIntelFramebufferController12setColorModeEP21AppleIntelFramebufferP21AppleIntelDisplayPathjjbPK29IODetailedTimingInformationV2", wrapTGLColorMode, orgTGLColorMode},
-					{"__ZN21AppleIntelFramebuffer19getPixelInformationEiiiP18IOPixelInformation", wrapTGLPixelInfo, orgTGLPixelInfo},
-					{"__ZN21AppleIntelFramebuffer16getApertureRangeEi", wrapTGLAperture, orgTGLAperture}
-				};
-				const bool routed = patcher.routeMultiple(index, routes, arrsize(routes), address, size);
-				dobs("TGLWEGRouteScanoutPower", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest routes[] {
-					{"__ZN21AppleIntelDisplayPath31configurePipePostCSCGamma_10BitEP19FlipTransactionArgs10IGColorCtl", wrapTGLGamma10, orgTGLGamma10},
-					{"__ZN31AppleIntelRegisterAccessManager15WriteRegister32Emj", wrapTGLRegisterWrite, orgTGLRegisterWrite}
-				};
-				const bool routed = patcher.routeMultiple(index, routes, arrsize(routes), address, size);
-				dobs("TGLWEGRouteGammaWrites", routed);
-				patcher.clearError();
-			}
-			{
-				tglStreamLock = IOSimpleLockAlloc();
-				tglProgramLock = IOSimpleLockAlloc();
-				dobs("TGLProgramEnabled", tglProgramEnabled);
-				dobs("TGLProgramReady", tglProgramLock != nullptr);
-				KernelPatcher::RouteRequest route("__ZN31AppleIntelRegisterAccessManager19FastWriteRegister32Emj", wrapTGLFastRegisterWrite, orgTGLFastRegisterWrite);
-				const bool routed = tglStreamLock && patcher.routeMultiple(index, &route, 1, address, size);
-				dobs("TGLWEGRouteStreamAck", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest route("__ZN14AppleIntelPort15writeRegister32Ejj", wrapTGLPortWriteReg, orgTGLPortWriteReg);
-				const bool routed = patcher.routeMultiple(index, &route, 1, address, size);
-				dobs("TGLWEGRouteLaneStagger", routed);
-				patcher.clearError();
-			}
-			{
-    // The qualified body only chooses DP_MODE bits6:7 and writes both banks.
-    // Exclude only the relocated logging-call displacement from the comparison.
-    static const uint8_t dpModeBody[] {
-    0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x54,0x53,0x48,0xFF,0x05,0x86,0x23,
-    0x08,0x00,0x48,0xFF,0x05,0xDF,0x21,0x08,0x00,0x48,0x8B,0x87,0x48,0x05,0x00,0x00,
-    0x83,0x78,0x0C,0x01,0x75,0x1A,0x49,0x89,0xFC,0x48,0xFF,0x05,0x78,0x23,0x08,0x00,
-    0x48,0xFF,0x05,0x19,0x20,0x08,0x00,0x83,0xBF,0x50,0x05,0x00,0x00,0x02,0x75,0x09,
-    0x5B,0x41,0x5C,0x41,0x5E,0x41,0x5F,0x5D,0xC3,0x48,0xFF,0x05,0x50,0x23,0x08,0x00,
-    0x49,0x8B,0x04,0x24,0x4C,0x89,0xE7,0xFF,0x90,0xA0,0x01,0x00,0x00,0x89,0xC3,0x4C,
-    0x89,0xE7,0xBE,0x48,0x00,0x00,0x00,0xE8,0x24,0xFE,0xFF,0xFF,0x41,0x89,0xC6,0x4C,
-    0x89,0xE7,0xBE,0x49,0x00,0x00,0x00,0xE8,0x14,0xFE,0xFF,0xFF,0x41,0x89,0xC7,0xFF,
-    0xCB,0x83,0xFB,0x0E,0x77,0x6D,0x48,0x8D,0x05,0xE7,0x00,0x00,0x00,0x48,0x63,0x0C,
-    0x98,0x48,0x01,0xC1,0xFF,0xE1,0x48,0xFF,0x05,0x1B,0x23,0x08,0x00,0xB8,0x3F,0xFF,
-    0xFF,0xFF,0x41,0x21,0xC7,0x41,0x21,0xC6,0xE9,0x9E,0x00,0x00,0x00,0x48,0xFF,0x05,
-    0xFC,0x22,0x08,0x00,0xB8,0x3F,0xFF,0xFF,0xFF,0x41,0x21,0xC7,0x41,0x21,0xC6,0x41,
-    0x83,0xCE,0x40,0xE9,0x83,0x00,0x00,0x00,0x48,0xFF,0x05,0xF1,0x22,0x08,0x00,0x41,
-    0x81,0xE7,0x3F,0xFF,0xFF,0xFF,0x41,0x81,0xCE,0xC0,0x00,0x00,0x00,0xEB,0x6C,0x48,
-    0xFF,0x05,0xEA,0x22,0x08,0x00,0xB8,0x3F,0xFF,0xFF,0xFF,0x41,0x21,0xC6,0x41,0x21,
-    0xC7,0xEB,0x58,0x48,0x8D,0x3D,0x1A,0xBE,0x04,0x00,0x48,0x8D,0x35,0xE5,0x48,0x04,
-    0x00,0x31,0xC0,0xE8,0x00,0x00,0x00,0x00,0xEB,0x41,0x48,0xFF,0x05,0xC7,0x22,0x08,
-    0x00,0x41,0x81,0xE6,0x3F,0xFF,0xFF,0xFF,0x41,0x81,0xCF,0xC0,0x00,0x00,0x00,0xEB,
-    0x2A,0x48,0xFF,0x05,0xB8,0x22,0x08,0x00,0xB8,0xC0,0x00,0x00,0x00,0x41,0x09,0xC6,
-    0x41,0x09,0xC7,0xEB,0x16,0x48,0xFF,0x05,0x8C,0x22,0x08,0x00,0xB8,0x3F,0xFF,0xFF,
-    0xFF,0x41,0x21,0xC6,0x41,0x21,0xC7,0x41,0x83,0xCF,0x40,0x4C,0x89,0xE7,0xBE,0x48,
-    0x00,0x00,0x00,0x44,0x89,0xF2,0xE8,0xEB,0xFD,0xFF,0xFF,0x4C,0x89,0xE7,0xBE,0x49,
-    0x00,0x00,0x00,0x44,0x89,0xFA,0x5B,0x41,0x5C,0x41,0x5E,0x41,0x5F,0x5D,0xE9,0xD3,
-    0xFD,0xFF,0xFF,0x90,0x22,0xFF,0xFF,0xFF,0x39,0xFF,0xFF,0xFF,0x54,0xFF,0xFF,0xFF,
-    0x6B,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,
-    0xC1,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,
-    0x96,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0x7F,0xFF,0xFF,0xFF,0xAD,0xFF,0xFF,0xFF,
-    };
-    const auto modeFn=patcher.solveSymbol<mach_vm_address_t>(index,
-     "__ZN17AppleIntelPortHAL12setDklDPModeEv",address,size);
-    const bool known=size>=0x60AE0 && modeFn==address+0x60930 &&
-     !memcmp(reinterpret_cast<const void *>(modeFn),dpModeBody,0x104) &&
-     !memcmp(reinterpret_cast<const void *>(modeFn+0x108),dpModeBody+0x108,sizeof(dpModeBody)-0x108);
-    patcher.clearError();
-				KernelPatcher::RouteRequest route("__ZN17AppleIntelPortHAL12setDklDPModeEv", wrapTGLSetDklDPMode, orgTGLSetDklDPMode);
-				const bool routed = patcher.routeMultiple(index, &route, 1, address, size);
-    tglDPModeReplaceReady=known && routed;
-    dobs("TGLDPModeReplaceReady",tglDPModeReplaceReady);
-				dobs("TGLWEGRouteDklDPMode", routed);
-				patcher.clearError();
-			}
-			{
-				// This donor body only reads the lane mask and updates DP_MODE bits 5:1.
-				// Validate the entire body before allowing the no-write preservation path.
-				static const uint8_t expected[] = {
-					0x55, 0x48, 0x89, 0xE5, 0x41, 0x57, 0x41, 0x56, 0x41, 0x55, 0x41, 0x54, 0x53, 0x50, 0x48, 0xFF,
-					0x05, 0x9F, 0x25, 0x08, 0x00, 0x48, 0xFF, 0x05, 0x58, 0x24, 0x08, 0x00, 0x48, 0x8B, 0x87, 0x48,
-					0x05, 0x00, 0x00, 0x83, 0x78, 0x0C, 0x01, 0x75, 0x1A, 0x48, 0x89, 0xFB, 0x48, 0xFF, 0x05, 0x91,
-					0x25, 0x08, 0x00, 0x48, 0xFF, 0x05, 0x92, 0x22, 0x08, 0x00, 0x83, 0xBF, 0x50, 0x05, 0x00, 0x00,
-					0x02, 0x75, 0x0F, 0x48, 0x83, 0xC4, 0x08, 0x5B, 0x41, 0x5C, 0x41, 0x5D, 0x41, 0x5E, 0x41, 0x5F,
-					0x5D, 0xC3, 0x41, 0x89, 0xF5, 0x48, 0xFF, 0x05, 0x60, 0x25, 0x08, 0x00, 0x48, 0x8B, 0x03, 0x48,
-					0x89, 0xDF, 0xFF, 0x90, 0xA0, 0x01, 0x00, 0x00, 0x41, 0x89, 0xC4, 0x48, 0x89, 0xDF, 0xBE, 0x48,
-					0x00, 0x00, 0x00, 0xE8, 0x94, 0x00, 0x00, 0x00, 0x41, 0x89, 0xC6, 0x48, 0x89, 0xDF, 0xBE, 0x49,
-					0x00, 0x00, 0x00, 0xE8, 0x84, 0x00, 0x00, 0x00, 0x41, 0x89, 0xC7, 0x45, 0x84, 0xED, 0x74, 0x2B,
-					0x48, 0xFF, 0x05, 0x35, 0x25, 0x08, 0x00, 0x41, 0xF6, 0xC4, 0x03, 0x74, 0x0B, 0x48, 0xFF, 0x05,
-					0x30, 0x25, 0x08, 0x00, 0x41, 0x83, 0xCE, 0x3E, 0x41, 0xF6, 0xC4, 0x0C, 0x74, 0x2F, 0x48, 0xFF,
-					0x05, 0x27, 0x25, 0x08, 0x00, 0x41, 0x83, 0xCF, 0x3E, 0xEB, 0x22, 0x41, 0xF6, 0xC4, 0x03, 0x74,
-					0x0B, 0x48, 0xFF, 0x05, 0x1C, 0x25, 0x08, 0x00, 0x41, 0x83, 0xE6, 0xC1, 0x41, 0xF6, 0xC4, 0x0C,
-					0x74, 0x0B, 0x48, 0xFF, 0x05, 0x13, 0x25, 0x08, 0x00, 0x41, 0x83, 0xE7, 0xC1, 0x48, 0x89, 0xDF,
-					0xBE, 0x48, 0x00, 0x00, 0x00, 0x44, 0x89, 0xF2, 0xE8, 0xD5, 0x00, 0x00, 0x00, 0x48, 0x89, 0xDF,
-					0xBE, 0x49, 0x00, 0x00, 0x00, 0x44, 0x89, 0xFA, 0x48, 0x83, 0xC4, 0x08, 0x5B, 0x41, 0x5C, 0x41,
-					0x5D, 0x41, 0x5E, 0x41, 0x5F, 0x5D, 0xE9, 0xB7, 0x00, 0x00, 0x00,
-				};
-				const auto fn = patcher.solveSymbol<mach_vm_address_t>(index,
-					"__ZN17AppleIntelPortHAL17setPhyClockGatingEb", address, size);
-				const bool known = size >= 0x606B4 + sizeof(expected) && fn == address + 0x606B4 &&
-					!memcmp(reinterpret_cast<const void *>(fn), expected, sizeof(expected));
-				patcher.clearError();
-				KernelPatcher::RouteRequest route("__ZN17AppleIntelPortHAL17setPhyClockGatingEb", wrapTGLPhyClockGating, orgTGLPhyClockGating);
-				const bool routed = patcher.routeMultiple(index, &route, 1, address, size);
-				tglPhyClockPreserveReady = known && routed;
-				dobs("TGLPhyClockPreserveReady", tglPhyClockPreserveReady);
-				dobs("TGLWEGRoutePhyClockGating", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observations[] {
-					{"__ZN21AppleIntelDisplayPath22setLinkTrainingPatternE19LinkTrainingPattern", wrapTGLTrainingPattern, orgTGLTrainingPattern},
-					{"__ZN19AppleIntelPowerWell22hwSetPowerWellStateDDIEbj", wrapTGLPowerDDIState, orgTGLPowerDDIState}
-				};
-				const bool routed = patcher.routeMultiple(index, observations, arrsize(observations), address, size);
-				dobs("TGLWEGRouteActivationObservations", routed);
-				patcher.clearError();
-			}
-			{
-    const bool auxTrial=checkKernelArgument("-wex-tc-aux") && checkKernelArgument("-wex-tc-bootstrap");
-    const uint32_t offsets[] {0x1CC72,0x1CEB0,0x1D2B6};
-    const char *names[] {"__ZN14AppleIntelPort7readAUXEjPvj","__ZN14AppleIntelPort8writeAUXEjPvj","__ZN14AppleIntelPort13runI2COverAUXENS_11AUX_CommandEPjjh"};
-    const uint8_t entries[3][16] {{0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec},{0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec},{0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec}};
-    bool auxKnown=auxTrial && size>=0x1D2C6;
-    if(auxKnown)for(unsigned i=0;i<3;++i){
-     const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,names[i],address,size);
-     auxKnown&=fn==address+offsets[i] && !memcmp(reinterpret_cast<const void *>(address+offsets[i]),entries[i],16);
-    }
-    patcher.clearError();
-				KernelPatcher::RouteRequest observations[] {
-					{"__ZN14AppleIntelPort12linkTrainingEP18AGDCDPPortConfig_t", wrapTGLPortTraining, orgTGLPortTraining},
-					{"__ZN31AppleIntelFramebufferController9LightUpDPEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2", wrapTGLLightUpDP, orgTGLLightUpDP},
-					{"__ZN31AppleIntelFramebufferController11LightUpTMDSEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2", wrapTGLLightUpTMDS, orgTGLLightUpTMDS},
-					{"__ZN31AppleIntelFramebufferController14disableDisplayEP21AppleIntelFramebufferP21AppleIntelDisplayPathh", wrapTGLDisableDisplay, orgTGLDisableDisplay},
-					{"__ZN31AppleIntelFramebufferController10enablePipeEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2", wrapTGLEnablePipe, orgTGLEnablePipe},
-					{"__ZN14AppleIntelPort7readAUXEjPvj", wrapTGLReadAUX, orgTGLReadAUX},
-					{"__ZN14AppleIntelPort8writeAUXEjPvj", wrapTGLWriteAUX, orgTGLWriteAUX}
-				};
-				const bool routed = patcher.routeMultiple(index, observations, arrsize(observations), address, size);
-				dobs("TGLWEGRoutePathObservations", routed);
-				patcher.clearError();
-    if(auxKnown && routed && orgTGLReadAUX && orgTGLWriteAUX){
-     KernelPatcher::RouteRequest route(names[2],wrapTGLI2CAUX,orgTGLI2CAUX);
-     tglBootstrapAUXReady=patcher.routeMultiple(index,&route,1,address,size);
-     patcher.clearError();
-    }
-    dobs("TGLBootstrapAUXReady",tglBootstrapAUXReady);
-			}
-			{
-				KernelPatcher::RouteRequest observations[] {
-					{"__ZN21AppleIntelFramebuffer20freeDisplayResourcesEv", wrapTGLFreeResources, orgTGLFreeResources},
-					{"__ZN21AppleIntelFramebuffer24freeDisplayPathResourcesEP21AppleIntelDisplayPath", wrapTGLFreePathResources, orgTGLFreePathResources},
-					{"__ZN21AppleIntelFramebuffer24allocateDisplayResourcesEv", wrapTGLAllocateResources, orgTGLAllocateResources},
-					{"__ZN21AppleIntelFramebuffer14disableDisplayEb", wrapTGLFBDisable, orgTGLFBDisable},
-					{"__ZN31AppleIntelFramebufferController31releaseResourceConfigurationSetEP28AGDCFBReleaseConfiguration_t", wrapTGLReleaseResources, orgTGLReleaseResources},
-					{"__ZN31AppleIntelFramebufferController30commitResourceConfigurationSetEP30AGDCResourceConfigurationSet_tS1_", wrapTGLCommitResources, orgTGLCommitResources},
-					{"__ZN31AppleIntelFramebufferController28testResourceConfigurationSetEP30AGDCResourceConfigurationSet_tS1_", wrapTGLTestResources, orgTGLTestResources},
-					{"__ZN21AppleIntelFramebuffer17attachDisplayPathEP21AppleIntelDisplayPath", wrapTGLAttachPath, orgTGLAttachPath}
-				};
-				const bool routed = patcher.routeMultiple(index, observations, arrsize(observations), address, size);
-				dobs("TGLWEGRouteResourceObservations", routed);
-				patcher.clearError();
-			}
-			{
-				KernelPatcher::RouteRequest observe("__ZN28AppleIntelMEClientController7connectEP15MEIDriverData_t", wrapTGLMEConnect, orgTGLMEConnect);
-				const bool routed = patcher.routeMultiple(index, &observe, 1, address, size);
-				dobs("TGLWEGRouteMEConnectTiming", routed);
-				patcher.clearError();
-			}
-
-			tglMEILock = IOSimpleLockAlloc();
-			if (tglMEILock) {
-				KernelPatcher::RouteRequest observations[] {
-					{"__ZN19AppleIntelMEIDriver16handleDriverInitEv", wrapTGLMEIInit, orgTGLMEIInit},
-					{"__ZN19AppleIntelMEIDriver15handleInterruptEP22IOInterruptEventSourcei", wrapTGLMEIInterrupt, orgTGLMEIInterrupt},
-					{"__ZN19AppleIntelMEIDriver15filterInterruptEP28IOFilterInterruptEventSource", wrapTGLMEIFilter, orgTGLMEIFilter},
-					{"__ZN19AppleIntelMEIDriver16readHeaderFromMEEv", wrapTGLMEIHeader, orgTGLMEIHeader},
-					{"__ZN19AppleIntelMEIDriver17readMessageFromMEEPvPjPh", wrapTGLMEIRead, orgTGLMEIRead}
-				};
-				const bool routed = patcher.routeMultiple(index, observations, arrsize(observations), address, size);
-				dobs("TGLWEGRouteMEIProtocol", routed);
-				if (routed) if (auto live = OSSerializer::forTarget(nullptr, tglMEILiveSerialize)) {
-					dobs("TGLMEILive", live);
-					live->release();
-				}
-				patcher.clearError();
-			}
-			tglDekelLock = IOSimpleLockAlloc();
-			if (tglDekelLock) {
-				KernelPatcher::RouteRequest phy[] {
-					{"__ZN17AppleIntelPortHAL15ReadDekelPhyRegEj", wrapTGLReadDekel, orgTGLReadDekel},
-					{"__ZN17AppleIntelPortHAL16WriteDekelPhyRegEjj", wrapTGLWriteDekel, orgTGLWriteDekel}
-				};
-				tglDekelReady = patcher.routeMultiple(index, phy, 2, address, size);
-			}
-			dobs("TGLWEGDekelRouted", tglDekelReady);
-			{
-				static const uint32_t expected[10][3] {
-					{7,0,0}, {5,0,15}, {2,0,11}, {0,0,25}, {5,0,0},
-					{2,0,5}, {0,0,0}, {2,0,20}, {0,0,11}, {0,0,0}
-				};
-				const auto table = patcher.solveSymbol<mach_vm_address_t>(index,
-					"__ZN17AppleIntelPortHAL27fVoltageSwingTableForDklPhyE", address, size);
-				const auto fn = patcher.solveSymbol<mach_vm_address_t>(index,
-					"__ZN17AppleIntelPortHAL29setVoltageSwingAndPreEmphasisEjjP15PortDriveConfig", address, size);
-				const bool known = size >= 0x99DC0 + sizeof(expected) &&
-					table == address + 0x99DC0 && fn == address + 0x60AE0 &&
-					!memcmp(reinterpret_cast<const void *>(table), expected, sizeof(expected));
-				patcher.clearError();
-				KernelPatcher::RouteRequest route("__ZN17AppleIntelPortHAL29setVoltageSwingAndPreEmphasisEjjP15PortDriveConfig",
-					wrapTGLSignalLevels, orgTGLSignalLevels);
-				const bool routed = known && tglDekelReady && patcher.routeMultiple(index, &route, 1, address, size);
-				// Exact combo ABI: PCS lane0 read, final lane power word and
-				// native success return. Do not infer the layout from a symbol alone.
-				static const uint8_t pcsABI[] {0x8B,0xB3,0x20,0x06,0x00,0x00};
-				static const uint8_t lanesABI[] {0x8B,0xB3,0xC8,0x05,0x00,0x00};
-				static const uint8_t successABI[] {0x31,0xC0,0x48,0x83,0xC4,0x28};
-				tglComboSignalReady = routed && size >= 0x6147E &&
-					!memcmp(reinterpret_cast<void *>(address+0x60EB9),pcsABI,sizeof(pcsABI)) &&
-					!memcmp(reinterpret_cast<void *>(address+0x61468),lanesABI,sizeof(lanesABI)) &&
-					!memcmp(reinterpret_cast<void *>(address+0x61478),successABI,sizeof(successABI));
-				dobs("TGLComboSignalReady",tglComboSignalReady);
-				dobs("TGLWEGRouteSignalLevels", routed);
-				patcher.clearError();
-			}
-
-			patcher.clearError();
-			KernelPatcher::RouteRequest ddcRequest("__ZN21AppleIntelFramebuffer13fbGetDDCBlockEjPhPyjP21AppleIntelDisplayPath",
-				wrapTGLFBDDC, orgTGLFBDDC);
-			const bool ddcOK = patcher.routeMultiple(index, &ddcRequest, 1, address, size);
-			dobs("TGLWEGFBDDCObservationRouted", ddcOK);
-			patcher.clearError();
-			KernelPatcher::RouteRequest edidRequests[] {
-				{"__ZN14AppleIntelPort19displayPortReadEDIDEjjPhj", wrapTGLEDID, orgTGLEDID},
-				{"__ZN14AppleIntelPort14probePortStateEv", wrapTGLPortState, orgTGLPortState}
-			};
-			const bool edidOK = patcher.routeMultiple(index, edidRequests, 2, address, size);
-			dobs("TGLWEGEDIDObservationRouted", edidOK);
-			patcher.clearError();
-			KernelPatcher::RouteRequest auxRequests[] {
-				{"__ZN14AppleIntelPort15setDPPowerStateEh", wrapTGLDPPower, orgTGLDPPower},
-				{"__ZN14AppleIntelPort14getDPSinkCountEPh", wrapTGLSinkCount, orgTGLSinkCount}
-			};
-			const bool auxOK = patcher.routeMultiple(index, auxRequests, 2, address, size);
-			dobs("TGLWEGAUXObservationRouted", auxOK);
-			patcher.clearError();
-			{
-				KernelPatcher::RouteRequest lanes("__ZN14AppleIntelPort21setupOptimalLaneCountEPK29IODetailedTimingInformationV2j",
-					wrapTGLOptimalLaneCount, orgTGLOptimalLaneCount);
-				const bool routed = patcher.routeMultiple(index, &lanes, 1, address, size);
-				dobs("TGLWEGOptimalLanesRouted", routed);
-				patcher.clearError();
-			}
-			tglAUXLock = IOSimpleLockAlloc();
-			tglDisplayTraceEnabled=checkKernelArgument("-wex-display-trace");
-   tglInitTransitionTrace(tglDisplayTraceEnabled);
-			if (tglConnectionLock) {
-				KernelPatcher::RouteRequest link("__ZN14AppleIntelPort15checkLinkStatusEv",
-					wrapTGLCheckLinkStatus, orgTGLCheckLinkStatus);
-				const bool routed = patcher.routeMultiple(index, &link, 1, address, size);
-				dobs("TGLWEGConnectionObservationRouted", routed);
-				patcher.clearError();
-			}
-			if (tglTrainingLeaseRequested) {
-				KernelPatcher::SolveRequest symbols[] {
-					{"__ZN17AppleIntelPortHAL11disablePortEv", tglDisablePort},
-					{"__ZN31AppleIntelFramebufferController13disableClocksEP14AppleIntelPortS1_", tglDisableClocks}
-				};
-				tglTrainingLeaseReady = framebufferTrainingHooksReady &&
-					patcher.solveMultiple(index, symbols, arrsize(symbols), address, size);
-				dobs("TGLWEGRouteTrainingLease", tglTrainingLeaseReady);
-				dobs("TGLTrainingFreePath320", tglTrainingLeaseReady);
-				patcher.clearError();
-			}
-			if (tglClockOrderRequested) {
-				// Exact donor: clock write, then port disable, 8us, path-form
-				// disableClocks, and finally the port-form entry routed below.
-				const uint8_t site[] {0x8D,0x34,0x85,0x40,0x61,0x04,0x00,0x48,0x8B,0x07,0xFF,0x90,0x30,0x01,0x00,0x00};
-				const uint8_t entry[] {0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x54,0x53,0x49,0x89,0xD7};
-				bool ready = tglTrainingLeaseReady && orgTGLRegisterWrite && orgTGLDisableDisplay && orgTGLPathLookup &&
-					tglDisableClocks == address + 0x6DAE6 && size > 0x6DB04 &&
-					!memcmp(reinterpret_cast<void *>(address + 0x4D980), site, sizeof(site)) &&
-					!memcmp(reinterpret_cast<void *>(tglDisableClocks), entry, sizeof(entry));
-				if (ready) {
-					KernelPatcher::RouteRequest route("__ZN31AppleIntelFramebufferController13disableClocksEP14AppleIntelPortS1_",
-						wrapTGLDisableClocks, orgTGLDisableClocks);
-					ready = patcher.routeMultiple(index, &route, 1, address, size);
-				}
-				patcher.clearError();
-                if(ready && !adlsDisplaySelected) {
-                    const char *name="__ZN31AppleIntelFramebufferController12enableClocksEP14AppleIntelPortS1_P11ClockParams";
-                    const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,name,address,size);patcher.clearError();
-                    const uint8_t prefix[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53};
-                    ready=orgTGLRegisterRead && comboClockTransaction.lock && fn==address+0x6CE10 && !memcmp(reinterpret_cast<void *>(fn),prefix,sizeof(prefix));
-                    KernelPatcher::RouteRequest enable(name,wrapTGLComboEnableClocks,orgComboEnableClocks);
-                    ready=ready && patcher.routeMultiple(index,&enable,1,address,size);patcher.clearError();
-                }
-				if (ready) tglClockOffCaller = address + 0x4D990;
-				dobs("TGLClockOrderReady", ready);
-			}
-			{
-				KernelPatcher::SolveRequest symbols[] {
-					{"__ZN19AppleIntelPowerWell17enablePowerWellPGEj", tglEnablePG},
-					{"__ZN19AppleIntelPowerWell18disablePowerWellPGEj", tglDisablePG}
-				};
-				if (patcher.solveMultiple(index, symbols, arrsize(symbols), address, size)) {
-					KernelPatcher::RouteRequest routes[] {
-						{"__ZN19AppleIntelPowerWell18enablePowerWellAuxEj", wrapTGLEnableAUXPower, orgTGLEnableAUXPower},
-						{"__ZN19AppleIntelPowerWell19disablePowerWellAuxEj", wrapTGLDisableAUXPower, orgTGLDisableAUXPower}
-					};
-					tglAUXParentReady = patcher.routeMultiple(index, routes, arrsize(routes), address, size);
-				}
-				dobs("TGLWEGAUXParentPower", tglAUXParentReady);
-				patcher.clearError();
-			}
-   // Resolve the base setter, never the HAL setter with fixed FIA writes.
-   // This prepares the native ABI bridge only. It does not admit Mode users.
-   {
-    mach_vm_address_t base {},auxGet {},auxPut {},global {};
-    KernelPatcher::SolveRequest symbols[] {
-     {"__ZN14AppleIntelPort11setPortModeENS_8PortModeE",base},
-     {"__ZN14AppleIntelPort18enablePowerWellAuxEv",auxGet},
-     {"__ZN14AppleIntelPort19disablePowerWellAuxEv",auxPut},
-     {"_gController",global}
-    };
-    const bool solved=patcher.solveMultiple(index,symbols,arrsize(symbols),address,size);
-    // Entry bytes contain no load-time relocations. The exact offsets and
-    // body-facing object accesses are covered by the donor ABI replay test.
-    static const uint8_t tcBaseEntry[] {0x55,0x48,0x89,0xe5,0x41,0x56,0x53,0x89,0xf3,0x49,0x89,0xfe,0x48,0xff,0x05,0x45};
-    static const uint8_t tcAuxGetEntry[] {0x55,0x48,0x89,0xe5,0x48,0xff,0x05,0xaf,0x96,0x0b,0x00,0x48,0xff,0x05,0xd8,0x8f};
-    static const uint8_t tcAuxPutEntry[] {0x55,0x48,0x89,0xe5,0x48,0xff,0x05,0x7b,0x96,0x0b,0x00,0x48,0xff,0x05,0x9c,0x8f};
-    static const uint8_t tcPGGetEntry[] {0x55,0x48,0x89,0xe5,0x53,0x50,0x48,0x89,0xfb,0x48,0xff,0x05,0xac,0x5e,0x08,0x00};
-    static const uint8_t tcPGPutEntry[] {0x55,0x48,0x89,0xe5,0x53,0x50,0x48,0x89,0xfb,0x48,0xff,0x05,0x5a,0x67,0x08,0x00};
-    auto &f=tglTCNativeFunctions;
-    f.qualified=solved && size>0x5BEEC && base==address+0x1B4C8 && auxGet==address+0x1D23E && auxPut==address+0x1D27A &&
-     tglEnablePG==address+0x5BEDC && tglDisablePG==address+0x5B366 && global>=address && global-address+sizeof(void *)<=size &&
-     !memcmp(reinterpret_cast<void *>(base),tcBaseEntry,sizeof(tcBaseEntry)) &&
-     !memcmp(reinterpret_cast<void *>(auxGet),tcAuxGetEntry,sizeof(tcAuxGetEntry)) &&
-     !memcmp(reinterpret_cast<void *>(auxPut),tcAuxPutEntry,sizeof(tcAuxPutEntry)) &&
-     !memcmp(reinterpret_cast<void *>(tglEnablePG),tcPGGetEntry,sizeof(tcPGGetEntry)) &&
-     !memcmp(reinterpret_cast<void *>(tglDisablePG),tcPGPutEntry,sizeof(tcPGPutEntry));
-    if(f.qualified){
-     f.baseMode=reinterpret_cast<uint32_t (*)(void *,uint32_t)>(base);
-     f.getAux=reinterpret_cast<void (*)(void *)>(auxGet);f.putAux=reinterpret_cast<void (*)(void *)>(auxPut);
-     f.getPG=reinterpret_cast<void (*)(void *,uint32_t)>(tglEnablePG);f.putPG=reinterpret_cast<void (*)(void *,uint32_t)>(tglDisablePG);
-     f.portByDDI=reinterpret_cast<void *(*)(uint32_t)>(tglPortByDDI);f.controllerSlot=reinterpret_cast<void **>(global);
-    }
-    dobs("TGLTCNativeABIReady",f.complete());
-    patcher.clearError();
-   }
-   if(checkKernelArgument("-wex-tc-bootstrap")) {
-    const uint8_t initBytes[] {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec,0x18,0x48,0xff,0x05,0xe8,0x76,0x08,0x00},getBytes[] {0x55,0x48,0x89,0xe5,0x53,0x50,0x48,0x89,0xfb,0x48,0xff,0x05,0xac,0x5e,0x08,0x00,0x85,0xf6,0x74,0x18,0xb8,0x01,0x00,0x00},putBytes[] {0x55,0x48,0x89,0xe5,0x53,0x50,0x48,0x89,0xfb,0x48,0xff,0x05,0x5a,0x67,0x08,0x00,0x85,0xf6,0x74,0x23,0xb8,0x01,0x00,0x00};
-    const auto init=patcher.solveSymbol<mach_vm_address_t>(index,"__ZN19AppleIntelPowerWell4initEP31AppleIntelFramebufferController",address,size);
-    const bool known=size>0x5BEF4 && init==address+0x59F88 && tglEnablePG==address+0x5BEDC && tglDisablePG==address+0x5B366 &&
-     !memcmp(reinterpret_cast<void *>(init),initBytes,sizeof(initBytes)) &&
-     !memcmp(reinterpret_cast<void *>(tglEnablePG),getBytes,sizeof(getBytes)) &&
-     !memcmp(reinterpret_cast<void *>(tglDisablePG),putBytes,sizeof(putBytes));
-    patcher.clearError();
-    KernelPatcher::RouteRequest route("__ZN19AppleIntelPowerWell4initEP31AppleIntelFramebufferController",wrapTGLPowerInit,orgTGLPowerInit);
-    tglBootReadoutReady=known && patcher.routeMultiple(index,&route,1,address,size);
-    dobs("TGLBootReadoutReady",tglBootReadoutReady);
-    patcher.clearError();
-   }
-			if (tglAUXLock) {
-				KernelPatcher::RouteRequest aux("__ZN17AppleIntelPortHAL13runAUXCommandEN14AppleIntelPort11AUX_CommandEPjjb", wrapTGLRunAUX, orgTGLRunAUX);
-				const bool routed = patcher.routeMultiple(index, &aux, 1, address, size);
-				dobs("TGLWEGRouteAUXCommands", routed);
-				patcher.clearError();
-			}
-   // This donor resets the software mode to zero on FIA-ready timeout,
-   // but returns the earlier successful base setter's result. Qualify that
-   // exact failure and return path before repairing its API contract.
-   const auto hotplug=patcher.solveSymbol<mach_vm_address_t>(index,
-    "__ZN31AppleIntelFramebufferController20invokeHotplugHandlerEjN14AppleIntelPort8PortModeE",address,size);
-   const uint8_t hotplugModeCall[] {0x49,0x8b,0x07,0x4c,0x89,0xff,0x89,0xde,0xff,0x90,0x38,0x01,0x00,0x00};
-   if(hotplug==address+0x748D4 && size>0x74A59 &&
-      !memcmp(reinterpret_cast<const void *>(hotplug+0x177),hotplugModeCall,sizeof(hotplugModeCall)))
-    tglNativeLegacyHPDCaller=hotplug+0x185;
-   dobs("WhateverXeNativeLegacyHPDReady",tglNativeLegacyHPDCaller!=0);
-   patcher.clearError();
-   static const uint8_t modeEntry[] {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec,0x18,0x41,0x89,0xf7,0x48,0x89,0xfb,0x48};
-   static const uint8_t modeFailure[] {0x48,0x89,0xdf,0x31,0xf6,0xff,0x55,0xc8,0x44,0x8b,0x65,0xd4,0xe9,0xd8,0,0,0};
-   static const uint8_t modeReturn[] {0x44,0x89,0xe0,0x48,0x83,0xc4,0x18,0x5b,0x41,0x5c,0x41,0x5d,0x41,0x5e,0x41,0x5f,0x5d,0xc3};
-   const auto modeFn=patcher.solveSymbol<mach_vm_address_t>(index,
-    "__ZN17AppleIntelPortHAL11setPortModeEN14AppleIntelPort8PortModeE",address,size);
-   const bool modeKnown=size>=0x60120 && modeFn==address+0x5FCB8 &&
-    !memcmp(reinterpret_cast<const void *>(modeFn),modeEntry,sizeof(modeEntry)) &&
-    !memcmp(reinterpret_cast<const void *>(address+0x5FFEB),modeFailure,sizeof(modeFailure)) &&
-    !memcmp(reinterpret_cast<const void *>(address+0x6010E),modeReturn,sizeof(modeReturn));
-   patcher.clearError();
-			KernelPatcher::RouteRequest modeRequest("__ZN17AppleIntelPortHAL11setPortModeEN14AppleIntelPort8PortModeE",
-				wrapTGLSetPortMode, orgTGLSetPortMode);
-			const bool modeOK = patcher.routeMultiple(index, &modeRequest, 1, address, size);
-			dobs("TGLWEGModeObservationRouted", modeOK);
-   if(modeKnown && modeOK && !tglModeTransitionLock) tglModeTransitionLock=IORecursiveLockAlloc();
-   dobs("TGLModeSerializationReady",
-    modeKnown && modeOK && tglModeTransitionLock!=nullptr);
-   // Match each original direct call before enabling the coordinate adapter.
-   // Route availability is insufficient evidence for this donor-specific ABI.
-   const uint32_t fiaSites[]={0x5FD28,0x5FDF4,0x5FEE5,0x6000B,0x600CF};
-   const uint8_t fiaCalls[][5]={{0xE8,0x61,0x01,0xFC,0xFF},{0xE8,0xAF,0,0xFC,0xFF},
-    {0xE8,0xA4,0xFF,0xFB,0xFF},{0xE8,0x7E,0xFE,0xFB,0xFF},{0xE8,0xD4,0xFD,0xFB,0xFF}};
-   bool fiaKnown=modeKnown && modeOK && tglModeTransitionLock && orgTGLPortWriteReg;
-   if(fiaKnown)for(unsigned i=0;i<arrsize(fiaSites);++i)
-    fiaKnown &= !memcmp(reinterpret_cast<const void *>(address+fiaSites[i]),fiaCalls[i],5);
-   if(fiaKnown){
-    KernelPatcher::RouteRequest read("__ZN14AppleIntelPort14readRegister32Ej",wrapTGLPortReadReg,orgTGLPortReadReg);
-    if(patcher.routeMultiple(index,&read,1,address,size)){tglNativeFiaBase=address;tglNativeFiaReady=true;}
-    patcher.clearError();
-   }
-   dobs("WhateverXeNativeFiaReady",tglNativeFiaReady);
-   __atomic_store_n(&tglModeResultReady,modeKnown && modeOK,__ATOMIC_RELEASE);
-   dobs("TGLModeResultReady",tglModeResultReady);
-			patcher.clearError();
-			KernelPatcher::RouteRequest hpdRequest("__ZN17AppleIntelPortHAL11getHPDStateEv",
-				wrapTGLHPDState, orgTGLHPDState);
-			const bool hpdOK = patcher.routeMultiple(index, &hpdRequest, 1, address, size);
-   tglHPDHookReady=hpdOK;
-			dobs("TGLWEGHPDObservationRouted", hpdOK);
-			patcher.clearError();
-			KernelPatcher::RouteRequest laneRequest("__ZN17AppleIntelPortHAL26getDklPhyLaneConfigBitMaskEv",
-				wrapTGLLaneMask, orgTGLLaneMask);
-			const bool laneOK = patcher.routeMultiple(index, &laneRequest, 1, address, size);
-			dobs("TGLWEGFixedDPLaneMaskRouted", laneOK);
-			patcher.clearError();
-   // Qualify both lane functions before routing the modular DP-alt backend.
-   // TC5/6 remain excluded by the native mode-ready switch.
-   const uint8_t laneGetEntry[] {0x55,0x48,0x89,0xe5,0x41,0x56,0x53,0x48,0xff,0x5,0x56,0x28,0x8,0x0,0x48,0xff,0x5,0x47,0x28,0x8,0x0,0x48,0x8b,0x87};
-   const uint8_t laneSetEntry[] {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x54,0x53,0x48,0xff,0x5,0x8e,0x27,0x8,0x0,0x48,0xff,0x5,0x27,0x27,0x8};
-   if(laneOK && tglNativeFiaReady && size>0x606A0 &&
-      !memcmp(reinterpret_cast<const void *>(address+0x602CC),laneGetEntry,sizeof(laneGetEntry)) &&
-      !memcmp(reinterpret_cast<const void *>(address+0x603E8),laneSetEntry,sizeof(laneSetEntry))) {
-    KernelPatcher::RouteRequest lanes[] {
-     {"__ZN17AppleIntelPortHAL29getConfiguredDklPhyLaneConfigEv",wrapTGLConfiguredLanes,orgTGLConfiguredLanes},
-     {"__ZN17AppleIntelPortHAL15setFIALaneCountEj",wrapTGLFIALaneCount,orgTGLFIALaneCount}
-    };
-    tglDPAltFiaReady=patcher.routeMultiple(index,lanes,arrsize(lanes),address,size);
-    patcher.clearError();
-   }
-   dobs("WhateverXeDPAltFiaReady",tglDPAltFiaReady);
-   if(adlsDisplaySelected) {
-    // Keep the physical DDI in every port/power/display object. Only the
-    // native Combo PLL indices are translated, under the firmware-route entry
-    // guards below (physical 0/3/4 >> 1 gives PHY 0/1/2). The removed instructions are profiling counters.
-    const uint8_t adlsClockOnFind[]={0x48,0xff,0x05,0xbe,0x86,0x07,0x00,0x48,0x63,0x00,0x48,0x83,0xf8,0x03};
-    const uint8_t adlsClockOnReplace[]={0x48,0x63,0x00,0x48,0xd1,0xe8,0x90,0x48,0x83,0xf8,0x03,0x0f,0x1f,0x00};
-    const uint8_t adlsClockSelectCPLLFind[]={0x83,0xc8,0x10};
-    const uint8_t adlsClockSelectCPLLReplace[]={0x83,0xc8,0x20};
-    const uint8_t adlsClockSelectCFind[]={0x83,0xf9,0x02};
-    const uint8_t adlsClockSelectCReplace[]={0x83,0xf9,0x04};
-    const uint8_t adlsClockSelectFind[]={0x83,0xf9,0x01};
-    const uint8_t adlsClockSelectReplace[]={0x83,0xf9,0x03};
-    const uint8_t adlsClockOffFind[]={0x48,0xff,0x05,0xe9,0x79,0x07,0x00,0x48,0x8b,0x8b,0x48,0x05,0x00,0x00,0x4c,0x63,0x21,0x49,0x83,0xfc,0x03};
-    const uint8_t adlsClockOffReplace[]={0x48,0x8b,0x8b,0x48,0x05,0x00,0x00,0x4c,0x63,0x21,0x49,0xd1,0xec,0x90,0x49,0x83,0xfc,0x03,0x0f,0x1f,0x00};
-    // ADL-S GMBUS uses pins 1,9..12. The wrapper admits VBT-wired
-    // pins only; extend the donor's legacy range check before MMIO.
-    const uint8_t adlsClockBusFind[]={0x83,0x7d,0xcc,0x08,0x72,0x2a};
-    const uint8_t adlsClockBusReplace[]={0x83,0x7d,0xcc,0x0d,0x72,0x2a};
-    const uint8_t entry[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53};
-    const auto symbol="__ZN31AppleIntelFramebufferController12enableClocksEP14AppleIntelPortS1_P11ClockParams";
-    const auto fn=patcher.solveSymbol<mach_vm_address_t>(index,symbol,address,size);
-    bool ready=adlsPLLTableReady && comboClockTransaction.lock && tglTCNativeFunctions.complete() &&
-     orgTGLRegisterRead && orgTGLRegisterWrite && orgTGLDisableClocks && tglClockOffCaller && tglComboPLLFractionCaller &&
-     fn==address+0x6CE10 && size>0x6DCBD && !memcmp(reinterpret_cast<void *>(fn),entry,sizeof(entry));
-    struct Site {uint32_t offset;const uint8_t *find,*replace;size_t bytes;};
-    const Site sites[]={{0x6CFD3,adlsClockOnFind,adlsClockOnReplace,sizeof(adlsClockOnFind)},
-     {0x6D4A2,adlsClockSelectCPLLFind,adlsClockSelectCPLLReplace,sizeof(adlsClockSelectCPLLFind)},
-     {0x6D219,adlsClockSelectCFind,adlsClockSelectCReplace,sizeof(adlsClockSelectCFind)},
-     {0x6D222,adlsClockSelectFind,adlsClockSelectReplace,sizeof(adlsClockSelectFind)},
-     {0x6DCA8,adlsClockOffFind,adlsClockOffReplace,sizeof(adlsClockOffFind)},
-     {0x53B66,adlsClockBusFind,adlsClockBusReplace,sizeof(adlsClockBusFind)}};
-    for(const auto &site:sites)ready=ready && !memcmp(reinterpret_cast<void *>(address+site.offset),site.find,site.bytes);
-    patcher.clearError();
-    if(ready) {
-     KernelPatcher::RouteRequest route(symbol,wrapADLSEnableClocks,orgComboEnableClocks);
-     ready=patcher.routeMultiple(index,&route,1,address,size);patcher.clearError();
-     if(ready)for(const auto &site:sites) {
-      KernelPatcher::LookupPatch patch {currentFramebuffer,site.find,site.replace,site.bytes,1};
-      patcher.applyLookupPatch(&patch,reinterpret_cast<uint8_t *>(address+site.offset),site.bytes+1);
-      ready &= !memcmp(reinterpret_cast<void *>(address+site.offset),site.replace,site.bytes);
-      patcher.clearError();
-     }
-    }
-    adlsClockReady=ready;
-    dobs("ADLSClockReady",ready);
-    const char *pg="__ZN19AppleIntelPowerWell21hwSetPowerWellStatePGEbj";
-    const auto pgfn=patcher.solveSymbol<mach_vm_address_t>(index,pg,address,size);
-    const uint8_t pgentry[]={0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53};
-    adlsPowerReady=orgTGLPowerDDIState && pgfn==address+0x5B640 && size>0x5BD40 &&
-     !memcmp(reinterpret_cast<void *>(pgfn),pgentry,sizeof(pgentry));
-    patcher.clearError();
-    if(adlsPowerReady) {
-     KernelPatcher::RouteRequest route(pg,wrapADLSPowerPG,orgADLSPowerPG);
-     adlsPowerReady=patcher.routeMultiple(index,&route,1,address,size);patcher.clearError();
-    }
-    dobs("ADLSLanePowerReady",adlsPowerReady);
-    // Native startup remains closed if any required ADL-S adapter is absent.
-    const auto contract=XELP::DisplayContract::adls(display12Available(),adlsWiring.dp!=0,adlsWiring.panel!=0);
-    adlsDisplayHooksReady=contract.ready();
-    uint64_t contractRecord[]={1,contract.required,contract.available,contract.missing()};
-    dobs("ADLSDisplayStartupContract",contractRecord,sizeof(contractRecord));
-    dobs("ADLSDisplayHooksReady",adlsDisplayHooksReady);
-   }
-   tglRecordStartOrder(1,nullptr);
-			return true;
-		}
-		if (currentGraphics->loadIndex == index)
-			return processTGLAccelerator(patcher, index, address, size);
-		return false;
-	}
-	return false;
 }
 
 // Retain hwSetPanelPowerConfig's caller-serialization contract. The wrapper
@@ -12719,9 +13465,11 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 // branch can overwrite BIOS delays; reset on each native controller start.
 void XE::tglApplyPanelTiming(void *controller,bool apply) {
  auto s=callbackXE;
+ if(s->display13FramebufferRequested){display13PanelTiming(controller,apply);return;}
  auto c=static_cast<uint8_t *>(controller);
  const auto &v=s->firmwarePorts;
  if(!c || c!=s->tglObservationController || !s->tglActive || !s->tglPanelTimingReady ||
+    (XELP::displayAdapter(s->xeProfile.family)!=XELP::DisplayAdapter::TGL && !s->adlsDisplaySelected) ||
     !XELP::PanelPower::nativePPS0(v,s->xeProfile.family) || !s->tglTCNativeFunctions.complete() ||
     *s->tglTCNativeFunctions.controllerSlot!=controller || !s->orgTGLRegisterRead ||
     c[0x918] || *reinterpret_cast<void **>(c+0xD0) ||
@@ -12756,7 +13504,7 @@ void XE::tglApplyPanelTiming(void *controller,bool apply) {
  const auto plan=XELP::PanelPower::select(v.panel,reinterpret_cast<uint32_t *>(c+0x1548),bios[0],bios[1],bios[2]);
  if(plan.valid)memcpy(c+0x1548,plan.fields,sizeof(plan.fields));
  uint32_t detail[]={1,ddi,plan.valid,plan.fields[0],plan.fields[1],plan.fields[2],plan.fields[3],plan.fields[4]};
- dobs("WEXPanelTimingLast",detail,sizeof(detail));
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXPanelTimingLast",detail,sizeof(detail));
 }
 void XE::wrapTGLPanelConfig(void *controller,uint32_t config) {
  tglApplyPanelTiming(controller,false);
@@ -12801,14 +13549,18 @@ bool XE::adlsCapturePanelPWM(void *controller) {
 }
 uint32_t XE::wrapADLSLightUpEDP(void *controller,void *fb,void *path,const void *timing) {
  auto s=callbackXE;
+ if(s->display13FramebufferRequested && s->adlnOutputWiring.panel && !display13PanelCapture(controller))return kIOReturnNotReady;
  if(s->adlsDisplaySelected && s->adlsWiring.panel) {
   if(!adlsCapturePanelPWM(controller))return kIOReturnNotReady;
   *reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(controller)+0xE60)=s->adlsPanelPWM.period;
  }
- return FunctionCast(wrapADLSLightUpEDP,s->orgADLSLightUpEDP)(controller,fb,path,timing);
+ const auto result=FunctionCast(wrapADLSLightUpEDP,s->orgADLSLightUpEDP)(controller,fb,path,timing);
+ if(s->display13FramebufferRequested && !display13PanelHealthy())return kIOReturnNotReady;
+ return result;
 }
 uint32_t XE::wrapADLSPanelBacklight(void *controller,uint32_t brightness) {
  auto s=callbackXE;
+ if(s->display13FramebufferRequested && s->adlnOutputWiring.panel)return display13PanelBrightness(controller,brightness);
  if(!s->adlsDisplaySelected || !s->adlsWiring.panel)
   return FunctionCast(wrapADLSPanelBacklight,s->orgADLSPanelBacklight)(controller,brightness);
  void *access,*power;uint32_t duty;
@@ -12825,7 +13577,8 @@ uint32_t XE::wrapADLSPanelBacklight(void *controller,uint32_t brightness) {
  f.putPG(power,1);return ready?0:kIOReturnNotReady;
 }
 void XE::wrapADLSPanelPWMEnable(void *access) {
- auto s=callbackXE;uint32_t value=0x80000000;
+ auto s=callbackXE;
+ if(s->display13FramebufferRequested){display13PanelPWMEnable(access);return;}uint32_t value=0x80000000;
  if(s->adlsDisplaySelected && s->adlsWiring.panel) {
   void *expected,*power;
   if(!s->adlsPanelPWM.valid() || !adlsPanelPWMTarget(s->tglObservationController,expected,power) || access!=expected)return;
@@ -12837,7 +13590,7 @@ void XE::wrapADLSPanelPWMEnable(void *access) {
 bool XE::wrapTGLPanelPowerProperty(IORegistryEntry *framebuffer, const char *, OSObject *value) {
  if(framebuffer)return framebuffer->setProperty("AAPL,LCD-PowerState-ON",value);
  static uint32_t skipped {};
- dobs("TGLPanelPowerPropertySkipped",__sync_add_and_fetch(&skipped,1),32);
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLPanelPowerPropertySkipped",__sync_add_and_fetch(&skipped,1),32);
  return false;
 }
 
@@ -12859,12 +13612,12 @@ bool XE::wrapTGLGetOSInformation(void *controller) {
    memcpy(copy,platform,sizeof(self->tglPlatformCopy));
    *reinterpret_cast<uint32_t *>(copy+0x14)=requested;
    platform=copy;poolSize=requested;
-   dobs("TGLStolenMemoryApplied",requested,32);
+   IORegistryEntry::getRegistryRoot()->setProperty("TGLStolenMemoryApplied",requested,32);
   }
  }
  const uint32_t expectedPanel[]={0,0,0,0,2,0x18};
  if(!platform || platform[0x12]!=9 || memcmp(platform+0x20,expectedPanel,sizeof(expectedPanel))) {
-  dobs("TGLTopologyGuardFailed",true);
+  IORegistryEntry::getRegistryRoot()->setProperty("TGLTopologyGuardFailed",true);
   return false;
  }
  auto copy=reinterpret_cast<uint8_t *>(self->tglPlatformCopy);
@@ -12875,16 +13628,16 @@ bool XE::wrapTGLGetOSInformation(void *controller) {
     self->tglHDMIWiring.apply(copy,sizeof(self->tglPlatformCopy)) &&
     TGLComboDP::apply(self->tglComboDPMask,copy,sizeof(self->tglPlatformCopy));
  if(!self->tglHDMIWiringLoaded || !wiringApplied) {
-  dobs("TGLHDMIWiringGuardFailed",true);return false;
+  IORegistryEntry::getRegistryRoot()->setProperty("TGLHDMIWiringGuardFailed",true);return false;
  }
  auto config=reinterpret_cast<uint32_t *>(copy+0x20);
  platform=copy;self->tglHDMIWiringApplied=true;
- if(self->adlsDisplaySelected)dobs("ADLSDPWiringApplied",self->adlsWiring.dp,32);
- dobs("TGLHDMIWiringApplied",self->adlsDisplaySelected?self->adlsWiring.hdmi:self->tglHDMIWiring.hdmi,32);
+ if(self->adlsDisplaySelected)IORegistryEntry::getRegistryRoot()->setProperty("ADLSDPWiringApplied",self->adlsWiring.dp,32);
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLHDMIWiringApplied",self->adlsDisplaySelected?self->adlsWiring.hdmi:self->tglHDMIWiring.hdmi,32);
  // Preserve the existing TC2 machine's diagnostic names for old collectors.
- dobs("TGLHDMIBTopologyApplied",bool(self->tglHDMIWiring.hdmi&2));
- if(self->tglHDMIWiring.hdmi&2)dobs("TGLHDMIBPortConfig",config+6,24);
- dobs("TGLPortAConfig",config,24);
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLHDMIBTopologyApplied",bool(self->tglHDMIWiring.hdmi&2));
+ if(self->tglHDMIWiring.hdmi&2)IORegistryEntry::getRegistryRoot()->setProperty("TGLHDMIBPortConfig",config+6,24);
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLPortAConfig",config,24);
  return r;
 }
 
@@ -12912,18 +13665,18 @@ bool XE::tglLoadTCWiring(IOService *provider) {
  self->tglTCWiring=property ? (data?TGLTCWiring::fromProperty(data->getBytesNoCopy(),data->getLength()):TGLTCWiring{}) : TGLTCWiring::fromMasks(0,0,0);
  if(!property && XELP::displayAdapter(self->xeProfile.family)==XELP::DisplayAdapter::TGL)
   self->tglTCAutoCandidates=self->firmwarePorts.tglDPCandidates(self->tglAUXParentMask&0x78);
- dobs("WhateverXeTCDPCandidates",self->tglTCAutoCandidates,32);
+ IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeTCDPCandidates",self->tglTCAutoCandidates,32);
  // The qualified donor ready switch covers TC1..4. Resolve modular FIA
  // coordinates under TC-cold before admitting their mode3 transaction.
  if(!property && XELP::displayAdapter(self->xeProfile.family)==XELP::DisplayAdapter::TGL)
   self->tglDPAltCandidates=self->firmwarePorts.tglDPAltCandidates(self->tglAUXParentMask&0x78);
- dobs("WhateverXeDPAltCandidates",self->tglDPAltCandidates,32);
+ IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeDPAltCandidates",self->tglDPAltCandidates,32);
  const auto &w=self->tglTCWiring;
  uint32_t record[] {355,self->tglTCWiringExplicit,w.valid,w.legacy,w.typeC,w.excluded,
   self->tglAUXParentMask,w.valid?w.legacy&self->tglAUXParentMask:0,
   w.valid?w.legacy&~self->tglAUXParentMask:0,
   w.valid?TGLTCWiring::Mask&~(w.legacy|w.typeC|w.excluded):TGLTCWiring::Mask};
- dobs("TGLTCWiring",record,sizeof(record));
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLTCWiring",record,sizeof(record));
  return w.valid;
 }
 
@@ -12940,7 +13693,7 @@ bool XE::tglLoadHDMIWiring(IOService *provider) {
    self->adlsWiring=AlderLakeS::Wiring::fromFirmware(self->firmwarePorts);
    self->tglHDMIB=self->adlsWiring.valid && self->adlsWiring.selected();
    uint32_t routes[]={self->adlsWiring.hdmi,self->adlsWiring.dp,self->adlsWiring.excluded,AlderLakeS::ComboBackendMask,self->adlsWiring.panel};
-   dobs("ADLSFirmwareRoutes",routes,sizeof(routes));
+   IORegistryEntry::getRegistryRoot()->setProperty("ADLSFirmwareRoutes",routes,sizeof(routes));
   }
   return self->tglHDMIB;
  }
@@ -12954,9 +13707,9 @@ bool XE::tglLoadHDMIWiring(IOService *provider) {
  self->tglHDMIB=w.valid && w.hdmi && !(w.hdmi&~self->tglHDMIBackendMask);
  const bool admitted=w.supported(self->tglHDMIBackendMask,self->tglHDMIB);
  self->tglComboDPMask=admitted?TGLComboDP::fromFirmware(self->firmwarePorts,w.hdmi):0;
- dobs("TGLComboDPRoutes",self->tglComboDPMask,32);
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLComboDPRoutes",self->tglComboDPMask,32);
  uint32_t q[]={361,self->tglHDMIWiringExplicit,w.valid,w.hdmi,w.ddc[0],w.ddc[1],w.ddc[2],self->tglHDMIBackendMask,admitted};
- dobs("TGLHDMIWiring",q,sizeof(q));return admitted;
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLHDMIWiring",q,sizeof(q));return admitted;
 }
 
 XELP::DisplayContract::Mask XE::display12Available() const {
@@ -13036,6 +13789,11 @@ XELP::DisplayContract::Mask XE::display13Available() const {
  if(display13TrainingReady)a|=C::Training12;
  if(display13FramingReady)a|=C::Framing;
  if(!display13ClockOrderReady)a&=~C::ClockOrder;
+ if(display13PanelPowerReady && display13PanelProbeReady && tglPanelPowerPropertyReady)a|=C::PanelPower;
+ if(tglEDPTranscoderReady)a|=C::PanelTranscoder;
+ if(tglPanelDepthReady)a|=C::PanelDepth;
+ if(tglPanelTimingReady)a|=C::PanelTiming;
+ if(display13PanelPWMReady)a|=C::PanelPWM;
  return a;
 }
 
@@ -13066,7 +13824,7 @@ bool XE::adlsPrepareBoot(IOService *provider) {
  // rejects it. A partially retired pipe must not enter native startup.
  accepted=!result.writes || result.status==AlderLakeS::Boot::Status::Complete;
  __atomic_store_n(&self->adlsBootConsumersFailed,!accepted,__ATOMIC_RELEASE);
- dobs("ADLSBootConsumers",&result,sizeof(result));
+ IORegistryEntry::getRegistryRoot()->setProperty("ADLSBootConsumers",&result,sizeof(result));
  __atomic_store_n(&stage,2,__ATOMIC_RELEASE);return accepted;
 }
 
@@ -13077,30 +13835,30 @@ bool XE::wrapTGLFramebufferStart(IOService *that, IOService *provider) {
  }
  tglRecordStartOrder(3,that);
  if(tglTransitionLock)if(auto live=OSSerializer::forTarget(nullptr,tglTransitionSerialize)) {
-  dobs("WhateverXeTransitionLive",live);live->release();
+  IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeTransitionLive",live);live->release();
  }
  if(tglTransitionLock)if(auto live=OSSerializer::forTarget(nullptr,tglTransitionSerialize,reinterpret_cast<void *>(1))) {
-  dobs("WhateverXeTransitionFirst",live);live->release();
+  IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeTransitionFirst",live);live->release();
  }
  if(auto live=OSSerializer::forTarget(nullptr,tglDPCDSerialize)) {
-  dobs("WhateverXeDPCDLive",live);live->release();
+  IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeDPCDLive",live);live->release();
  }
  if(auto live=OSSerializer::forTarget(nullptr,tglComboAUXDecisionSerialize)) {
-  dobs("WhateverXeComboAUXDecisions",live);live->release();
+  IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeComboAUXDecisions",live);live->release();
  }
  for(uintptr_t ddi=0;ddi<=8;++ddi) {
   if(ddi==2)continue; // TGL combo A/B and TC D..I; no combo C.
   if(auto live=OSSerializer::forTarget(nullptr,tglAUXLiveSerialize,reinterpret_cast<void *>(ddi))) {
    char key[48];snprintf(key,sizeof(key),"WhateverXeAUXLive%u",static_cast<unsigned>(ddi));
-   dobs(key,live);live->release();
+   IORegistryEntry::getRegistryRoot()->setProperty(key,live);live->release();
   }
   if(auto live=OSSerializer::forTarget(nullptr,tglAUXControlSerialize,reinterpret_cast<void *>(ddi))) {
    char key[48];snprintf(key,sizeof(key),ddi<2 ? "WhateverXeAUXControl%u" : "WhateverXeTCControl%u",static_cast<unsigned>(ddi));
-   dobs(key,live);live->release();
+   IORegistryEntry::getRegistryRoot()->setProperty(key,live);live->release();
   }
  }
  if(auto live=OSSerializer::forTarget(nullptr,tglStartOrderSerialize)) {
-  dobs("TGLStartOrder",live);live->release();
+  IORegistryEntry::getRegistryRoot()->setProperty("TGLStartOrder",live);live->release();
  }
 
 	that->setProperty("TGLStartEntered", true);
@@ -13124,7 +13882,7 @@ bool XE::wrapTGLFramebufferStart(IOService *that, IOService *provider) {
  if(!contract.ready()) {
   for(uint64_t bit=1;bit;bit<<=1)if(contract.missing()&bit)
    SYSLOG("igfx","Display12 missing operation %s",XELP::DisplayContract::name(bit));
-  dobs("TGLFramebufferStartBlockedByVtable",true);
+  IORegistryEntry::getRegistryRoot()->setProperty("TGLFramebufferStartBlockedByVtable",true);
   return false;
  }
 
@@ -13148,9 +13906,9 @@ bool XE::wrapTGLFramebufferStart(IOService *that, IOService *provider) {
 	callbackXE->tglObservationController = that;
  if (checkKernelArgument("-disablegfxfirmware")) {
   auto live=OSSerializer::forTarget(nullptr,tglIRQLiveSerialize);
-  if (live) {dobs("TGLIRQLive",live);live->release();}
+  if (live) {IORegistryEntry::getRegistryRoot()->setProperty("TGLIRQLive",live);live->release();}
   auto vm=OSSerializer::forTarget(nullptr,tglVMSerialize);
-  if (vm) {dobs("TGLVMBoundary",vm);vm->release();}
+  if (vm) {IORegistryEntry::getRegistryRoot()->setProperty("TGLVMBoundary",vm);vm->release();}
  }
 
 	tglTimeEvent(22, 0, false, 0, 0);
@@ -13159,7 +13917,7 @@ bool XE::wrapTGLFramebufferStart(IOService *that, IOService *provider) {
 	tglTimeEvent(22, 0, true, 0, result);
  tglRecordStartOrder(4,that,9,0,0,result);
 	tglFBIRQPublish();
-	dobs("TGLFramebufferStartResult", result);
+	IORegistryEntry::getRegistryRoot()->setProperty("TGLFramebufferStartResult", result);
  // Inspect the actual donor BAR map after framebuffer startup. This does
  // not change mapping attributes, page tables, registers or accelerator state.
  const bool venturaInspection=(XELP::kernelOS(version)==XELP::OS::Ventura);
@@ -13181,7 +13939,7 @@ bool XE::wrapTGLFramebufferStart(IOService *that, IOService *provider) {
   }
   uint32_t lo,hi;asm volatile("rdmsr" : "=a"(lo),"=d"(hi) : "c"(0x277));
   q[24]=static_cast<uint64_t>(hi)<<32|lo;
-  dobs(tahoeInspection ? "TGLTahoeMMIOInspection" : sequoiaInspection ? "TGLSequoiaMMIOInspection" : sonomaInspection ? "TGLSonomaMMIOInspection" : venturaInspection ? "TGLVenturaMMIOInspection" : "TGLMontereyMMIOInspection",q,sizeof(q));
+  IORegistryEntry::getRegistryRoot()->setProperty(tahoeInspection ? "TGLTahoeMMIOInspection" : sequoiaInspection ? "TGLSequoiaMMIOInspection" : sonomaInspection ? "TGLSonomaMMIOInspection" : venturaInspection ? "TGLVenturaMMIOInspection" : "TGLMontereyMMIOInspection",q,sizeof(q));
  }
  if(result) if(auto power=OSSerializer::forTarget(that,tglPowerSerialize)) {
   that->setProperty("TGLPowerSample",power);power->release();
@@ -13208,7 +13966,8 @@ uint32_t XE::wrapTGLLaneMask(void *port) {
 }
 
 bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
- if((callbackXE->display12SmallGTDetected && !callbackXE->display12SmallGTReady) ||
+ if((callbackXE->tglGT2Detected && !callbackXE->tglGT2Ready) ||
+    (callbackXE->display12SmallGTDetected && !callbackXE->display12SmallGTReady) ||
     (callbackXE->adlsDisplaySelected && (!callbackXE->adlsDisplayHooksReady ||
      __atomic_load_n(&callbackXE->adlsBootConsumersFailed,__ATOMIC_ACQUIRE))))return false;
  if (callbackXE->adlnDetected && adlnNativeRCSProfileRequested && !adlnNativeRCSProfileReady) {
@@ -13220,8 +13979,8 @@ bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
   auto pci=OSDynamicCast(IOPCIDevice,provider);
   const bool admitted=callbackXE->tglAcceleratorReady && pci &&
    xelpDisplay13RenderDevice(pci);
-  dobs("N97LoadOnlyStartBlocked",true);
-  dobs("N97LoadOnlyProviderReady",admitted);
+  IORegistryEntry::getRegistryRoot()->setProperty("N97LoadOnlyStartBlocked",true);
+  IORegistryEntry::getRegistryRoot()->setProperty("N97LoadOnlyProviderReady",admitted);
   if (admitted && callbackXE->adlnParentBoundaryReady && checkKernelArgument("-wex-adln-parent-entry"))
    return startAlderLakeNParentBoundary(that,provider);
   return false;
@@ -13235,25 +13994,25 @@ bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
 		// exposes these retained IRQ/submission records. Publish the same
 		// passive serializer here; it makes no driver calls or GPU reads.
 		if (auto live=OSSerializer::forTarget(nullptr,tglIRQLiveSerialize)) {
-			dobs("TGLIRQLive",live);live->release();
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLIRQLive",live);live->release();
 		}
 		if (auto live=OSSerializer::forTarget(nullptr,tglSubmitCaptureSerialize)) {
-			dobs("N97NativeSubmitCapture",live);live->release();
+			IORegistryEntry::getRegistryRoot()->setProperty("N97NativeSubmitCapture",live);live->release();
 		}
         if(tglAlderLakeNContextPublishEnabled)if(auto live=OSSerializer::forTarget(nullptr,tglAlderLakeNContextPublishSerialize)) {
-            dobs("N97ContextPublishCapture",live);live->release();
+            IORegistryEntry::getRegistryRoot()->setProperty("N97ContextPublishCapture",live);live->release();
         }
         if (auto live=OSSerializer::forTarget(nullptr,tglFaultSerialize)) {
-            dobs("N97GTFaultCapture",live);live->release();
+            IORegistryEntry::getRegistryRoot()->setProperty("N97GTFaultCapture",live);live->release();
         }
         if(adlnQueueTraceEnabled)if(auto live=OSSerializer::forTarget(nullptr,adlnQueueTraceSerialize)) {
-            dobs("N97QueueTraceCapture",live);live->release();
+            IORegistryEntry::getRegistryRoot()->setProperty("N97QueueTraceCapture",live);live->release();
         }
         if(adlnQueueTraceEnabled)if(auto live=OSSerializer::forTarget(nullptr,adlnQueueMemorySerialize)) {
-            dobs("N97QueueMemoryCapture",live);live->release();
+            IORegistryEntry::getRegistryRoot()->setProperty("N97QueueMemoryCapture",live);live->release();
         }
         if (auto live=OSSerializer::forTarget(nullptr,tglExecutionSerialize)) {
-            dobs("N97RCSExecutionCapture",live);live->release();
+            IORegistryEntry::getRegistryRoot()->setProperty("N97RCSExecutionCapture",live);live->release();
         }
 		// Standalone local ForceWake callback is a stub. Select real MMIO /
 		// refcounts, the existing host scheduler, and no GuC before parent start.
@@ -13291,7 +14050,7 @@ bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
 		return false;
 	}
 	*tglBlitScratchSize=0xE000;
-	dobs("TGLBlitScratchAllocation",*tglBlitScratchSize,64);
+	IORegistryEntry::getRegistryRoot()->setProperty("TGLBlitScratchAllocation",*tglBlitScratchSize,64);
 
 	auto pci = OSDynamicCast(IOPCIDevice, provider);
 	auto bar = pci ? pci->getDeviceMemoryWithRegister(0x10) : nullptr;
@@ -13309,13 +14068,13 @@ bool XE::wrapTGLAcceleratorStart(IOService *that, IOService *provider) {
 	tglObserveAccelerator(that, 2, false, 0, reinterpret_cast<uintptr_t>(provider));
 	SYSLOG("igfx", "TGL accelerator start entered");
 	bool result = FunctionCast(wrapTGLAcceleratorStart, callbackXE->orgTGLAcceleratorStart)(that, provider);
-	if (result) dobs("TGLIOSurfaceCCSAtStart",
+	if (result) IORegistryEntry::getRegistryRoot()->setProperty("TGLIOSurfaceCCSAtStart",
 		*reinterpret_cast<uint8_t *>(reinterpret_cast<uint8_t *>(that)+0x1474),32);
 	if (tglHost.owner==that) {
   tglHostPublish();
   if (result) {
    uint64_t end; tglHostClock(&end);
-   dobs("TGLHostStartupEnd",end,64);
+   IORegistryEntry::getRegistryRoot()->setProperty("TGLHostStartupEnd",end,64);
    __atomic_store_n(&tglHost.startupDone,true,__ATOMIC_RELEASE);
   } else tglHost.owner=nullptr;
  }
@@ -13331,11 +14090,11 @@ bool XE::startAlderLakeNParentBoundary(IOService *that, IOService *provider) {
 	// Original prefix and real OS parent run only up to the qualified boundary.
 	// Do not enter the full-path observer.
 	auto root=IORegistryEntry::getRegistryRoot();
-	dobs("N97LoadOnlyStartBlocked",false);
-	dobs("N97ParentStartEntered",true);
+	root->setProperty("N97LoadOnlyStartBlocked",false);
+	root->setProperty("N97ParentStartEntered",true);
 	const bool result=FunctionCast(wrapTGLAcceleratorStart,callbackXE->orgTGLAcceleratorStart)(that,provider);
-	dobs("N97ParentStartReturned",true);
-	dobs("N97ParentStartResult",result);
+	root->setProperty("N97ParentStartReturned",true);
+	root->setProperty("N97ParentStartResult",result);
 	return result;
 }
 
@@ -13343,27 +14102,27 @@ bool XE::wrapAlderLakeNConfigureDevice(IOService *that, IOPCIDevice *provider) {
 	auto root=IORegistryEntry::getRegistryRoot();
 	const bool admitted=callbackXE->adlnParentBoundaryReady && provider &&
 	 xelpDisplay13RenderDevice(provider);
-	dobs("N97ConfigureDeviceEntered",admitted);
+	root->setProperty("N97ConfigureDeviceEntered",admitted);
 	if (admitted) {
 	 const auto bytes=reinterpret_cast<const uint8_t *>(that);
-	 dobs("N97ParentSiliconSelector",*reinterpret_cast<const uint32_t *>(bytes+0x1120),32);
-	 dobs("N97ParentStandalone",bytes[0x128C]==0);
-	 dobs("N97ParentMemoryAbsent",!(*reinterpret_cast<const uintptr_t *>(bytes+0x1260)) &&
+	 root->setProperty("N97ParentSiliconSelector",*reinterpret_cast<const uint32_t *>(bytes+0x1120),32);
+	 root->setProperty("N97ParentStandalone",bytes[0x128C]==0);
+	 root->setProperty("N97ParentMemoryAbsent",!(*reinterpret_cast<const uintptr_t *>(bytes+0x1260)) &&
 	  !(*reinterpret_cast<const uintptr_t *>(bytes+0x1240)));
 	 if (checkKernelArgument("-wex-adln-memory-stage") && callbackXE->xelpMemoryStageReady)
 	  return runXELPMemoryStage(that,provider);
 	}
-	dobs("N97ConfigureDeviceBlocked",true);
+	root->setProperty("N97ConfigureDeviceBlocked",true);
 	return false;
 }
 
 bool XE::runXELPMemoryStage(IOService *that, IOPCIDevice *provider) {
 	auto root=IORegistryEntry::getRegistryRoot();
 	if (__atomic_exchange_n(&callbackXE->xelpMemoryStageStarted,1,__ATOMIC_ACQ_REL)) {
-	 dobs("N97MemoryStageRepeatBlocked",true);
+	 root->setProperty("N97MemoryStageRepeatBlocked",true);
 	 return false;
 	}
-	dobs("N97MemoryStageEntered",true);
+	root->setProperty("N97MemoryStageEntered",true);
 	auto bar=provider->getDeviceMemoryWithRegister(0x10);
 	auto map=bar && bar->getLength()==0x1000000 && xelpMemoryMatches(provider) ? bar->map() : nullptr;
 	if (!map) return false;
@@ -13372,12 +14131,12 @@ bool XE::runXELPMemoryStage(IOService *that, IOPCIDevice *provider) {
 	uint32_t beforeErrors=0;
 	for (unsigned i=0;i<xelpMemory.bytes/4096;++i)
 	 beforeErrors+=ptes[i]!=xelpMemory.pte(uint64_t(i)*4096);
-	dobs("N97MemoryPrefixBeforeErrors",beforeErrors,32);
+	root->setProperty("N97MemoryPrefixBeforeErrors",beforeErrors,32);
 	if (beforeErrors) {map->release();return false;}
 	// The parent's intentional failure unwinds base resources, but not the
 	// donor manager. Retain its owner so all dummy-PTE backing stays valid.
 	that->retain();callbackXE->xelpMemoryStageOwner=that;
-	dobs("N97MemoryOwnerRetained",true);
+	root->setProperty("N97MemoryOwnerRetained",true);
 	bool released=false;
 	const bool result=configureAlderLakeNWithGT(that,provider,map,released);
 	const auto a=reinterpret_cast<const uint8_t *>(that);
@@ -13385,30 +14144,30 @@ bool XE::runXELPMemoryStage(IOService *that, IOPCIDevice *provider) {
 	 *reinterpret_cast<const uint32_t *>(a+0x1158),*reinterpret_cast<const uint32_t *>(a+0x115C),
 	 *reinterpret_cast<const uint32_t *>(a+0x1164),*reinterpret_cast<const uint32_t *>(a+0x116C),
 	 *reinterpret_cast<const uint32_t *>(a+0x1190)};
-	dobs("N97MemoryNativeCaps",caps,sizeof(caps));
+	root->setProperty("N97MemoryNativeCaps",caps,sizeof(caps));
 	const auto manager=*reinterpret_cast<const uint8_t *const *>(a+0x1260);
 	bool memoryReady=result && manager && *reinterpret_cast<const uintptr_t *>(a+0x1240) &&
 	 *reinterpret_cast<IOService *const *>(manager+0x10)==that;
 	if (memoryReady) {
 	 const auto ranges=reinterpret_cast<const uint64_t *>(manager+0xA0);
-	 dobs("N97MemoryNativeRanges",const_cast<uint64_t *>(ranges),4*sizeof(uint64_t));
+	 root->setProperty("N97MemoryNativeRanges",const_cast<uint64_t *>(ranges),4*sizeof(uint64_t));
 	 memoryReady=ranges[0]==0 && ranges[1]==xelpMemory.bytes && ranges[2]==xelpMemory.bytes && ranges[3]==xelpMemory.apertureBytes-xelpMemory.bytes &&
 	  !manager[0x20] && !manager[0x21];
 	}
 	uint32_t afterErrors=0;
 	for (unsigned i=0;i<xelpMemory.bytes/4096;++i)
 	 afterErrors+=ptes[i]!=xelpMemory.pte(uint64_t(i)*4096);
-	dobs("N97MemoryPrefixAfterErrors",afterErrors,32);
+	root->setProperty("N97MemoryPrefixAfterErrors",afterErrors,32);
 	const bool nativeReady=memoryReady && released && !afterErrors &&
 	 caps[0]==2 && callbackXE->adlnNativeSubslices &&
    caps[1]==callbackXE->adlnNativeEUs && caps[2]==callbackXE->adlnNativeSubslices &&
    caps[3]==1 && caps[4]==callbackXE->adlnL3Banks &&
    caps[5]==callbackXE->adlnNativeEUs/callbackXE->adlnNativeSubslices &&
 	 (caps[6]&0x1800)==0 && !(caps[6]&0x20); // FW mode is selected later by populateAccelConfig.
-	dobs("N97MemoryNativeReady",nativeReady);
-	dobs("N97MemoryStageReturned",true);
+	root->setProperty("N97MemoryNativeReady",nativeReady);
+	root->setProperty("N97MemoryStageReturned",true);
 	const bool allowConfig=nativeReady && callbackXE->adlnConfigStageReady && checkKernelArgument("-wex-adln-config-stage");
-	dobs("N97ConfigureDeviceBlocked",!allowConfig);
+	root->setProperty("N97ConfigureDeviceBlocked",!allowConfig);
 	map->release();
 	return allowConfig; // With config-stage, the event factory remains blocked.
 }
@@ -13417,21 +14176,21 @@ void *XE::wrapAlderLakeNNewEventMachine(IOService *that) {
 	if (!callbackXE->adlnDetected || !checkKernelArgument("-wex-adln-config-stage"))
 	 return FunctionCast(wrapAlderLakeNNewEventMachine,callbackXE->orgAlderLakeNNewEventMachine)(that);
 	auto root=IORegistryEntry::getRegistryRoot();
-	dobs("N97ConfigEventFactoryBlocked",true);
+	root->setProperty("N97ConfigEventFactoryBlocked",true);
 	if (!callbackXE->adlnConfigStageReady || callbackXE->xelpMemoryStageOwner!=that) return nullptr;
 	const auto a=reinterpret_cast<const uint8_t *>(that);
 	const auto flags=*reinterpret_cast<const uint64_t *>(a+0x1190);
 	const auto options=*reinterpret_cast<const uint32_t *>(a+0x9C0);
-	dobs("N97ConfigNativeFlags",flags,64);
-	dobs("N97ConfigDescriptorOptions",options,32);
-	dobs("N97ConfigNativeStructure",const_cast<uint8_t *>(a+0xC88),0x70);
+	root->setProperty("N97ConfigNativeFlags",flags,64);
+	root->setProperty("N97ConfigDescriptorOptions",options,32);
+	root->setProperty("N97ConfigNativeStructure",const_cast<uint8_t *>(a+0xC88),0x70);
 	const bool ready=(flags&0x1800)==0x800 && !(flags&0x20) &&
 	 ((flags>>23)&7)==5 && options==2048 && *reinterpret_cast<const uint32_t *>(a+0x1120)==2 &&
 	 *reinterpret_cast<const uint32_t *>(a+0x1124)==callbackXE->adlnNativeEUs &&
      *reinterpret_cast<const uint32_t *>(a+0x1164)==callbackXE->adlnL3Banks;
-	dobs("N97ConfigNativeReady",ready);
+	root->setProperty("N97ConfigNativeReady",ready);
 	if (ready && callbackXE->adlnEventStageReady && checkKernelArgument("-wex-adln-event-stage")) {
-	 dobs("N97ConfigEventFactoryBlocked",false);
+	 root->setProperty("N97ConfigEventFactoryBlocked",false);
 	 return FunctionCast(wrapAlderLakeNNewEventMachine,callbackXE->orgAlderLakeNNewEventMachine)(that);
 	}
 	return nullptr;
@@ -13442,13 +14201,13 @@ bool XE::wrapAlderLakeNEventInit(void *that, IOService *owner, uint32_t timeout,
 	 return FunctionCast(wrapAlderLakeNEventInit,callbackXE->orgAlderLakeNEventInit)(that,owner,timeout,stamps);
 	auto root=IORegistryEntry::getRegistryRoot();
 	const bool admitted=callbackXE->adlnEventStageReady && owner==callbackXE->xelpMemoryStageOwner;
-	dobs("N97EventInitEntered",admitted);
+	root->setProperty("N97EventInitEntered",admitted);
 	if (!admitted) return false;
-	dobs("N97EventTimeout",timeout,32);
-	dobs("N97EventStampCount",uint32_t(stamps),32);
+	root->setProperty("N97EventTimeout",timeout,32);
+	root->setProperty("N97EventStampCount",uint32_t(stamps),32);
 	const bool result=FunctionCast(wrapAlderLakeNEventInit,callbackXE->orgAlderLakeNEventInit)(that,owner,timeout,stamps);
-	dobs("N97EventInitReturned",true);
-	dobs("N97EventInitResult",result);
+	root->setProperty("N97EventInitReturned",true);
+	root->setProperty("N97EventInitResult",result);
 	return result;
 }
 
@@ -13456,14 +14215,14 @@ void *XE::wrapAlderLakeNNewDisplayMachine(IOService *that) {
 	if (!callbackXE->adlnDetected || !checkKernelArgument("-wex-adln-event-stage"))
 	 return FunctionCast(wrapAlderLakeNNewDisplayMachine,callbackXE->orgAlderLakeNNewDisplayMachine)(that);
 	auto root=IORegistryEntry::getRegistryRoot();
-	dobs("N97EventDisplayFactoryBlocked",true);
+	root->setProperty("N97EventDisplayFactoryBlocked",true);
 	if (!callbackXE->adlnEventStageReady || that!=callbackXE->xelpMemoryStageOwner) return nullptr;
 	const auto event=*reinterpret_cast<const uint8_t *const *>(reinterpret_cast<const uint8_t *>(that)+0x380);
 	const bool ready=event && *reinterpret_cast<IOService *const *>(event+0x10)==that &&
 	 *reinterpret_cast<const uintptr_t *>(event+0x58) && *reinterpret_cast<const uintptr_t *>(event+0xD30) && !event[0xD88];
-	dobs("N97EventNativeReady",ready);
+	root->setProperty("N97EventNativeReady",ready);
 	if (ready && callbackXE->display13StageReady && checkKernelArgument("-wex-adln-display-stage")) {
-	 dobs("N97EventDisplayFactoryBlocked",false);
+	 root->setProperty("N97EventDisplayFactoryBlocked",false);
 	 return FunctionCast(wrapAlderLakeNNewDisplayMachine,callbackXE->orgAlderLakeNNewDisplayMachine)(that);
 	}
 	return nullptr; // No display machine, scheduler or engine construction yet.
@@ -13476,12 +14235,12 @@ void XE::wrapDisplay13Init(void *that, IOService *owner) {
 	}
 	auto root=IORegistryEntry::getRegistryRoot();
 	const bool admitted=callbackXE->display13StageReady && owner==callbackXE->xelpMemoryStageOwner;
-	dobs("N97DisplayInitEntered",admitted);
+	root->setProperty("N97DisplayInitEntered",admitted);
 	if (!admitted) return;
 	FunctionCast(wrapDisplay13Init,callbackXE->orgDisplay13Init)(that,owner);
-	dobs("N97DisplayInitReturned",true);
+	root->setProperty("N97DisplayInitReturned",true);
 	const auto d=static_cast<const uint8_t *>(that);
-	dobs("N97DisplayNativeReady",*reinterpret_cast<IOService *const *>(d+0x128)==owner &&
+	root->setProperty("N97DisplayNativeReady",*reinterpret_cast<IOService *const *>(d+0x128)==owner &&
 	 *reinterpret_cast<const uintptr_t *>(d+0x110) && *reinterpret_cast<const uint32_t *>(d+0x208)==1 &&
 	 !*reinterpret_cast<const uintptr_t *>(d+0x210));
 }
@@ -13490,10 +14249,10 @@ void *XE::wrapAlderLakeNNewStatistics(IOService *that) {
 	if (!callbackXE->adlnDetected || !checkKernelArgument("-wex-adln-display-stage"))
 	 return FunctionCast(wrapAlderLakeNNewStatistics,callbackXE->orgAlderLakeNNewStatistics)(that);
 	auto root=IORegistryEntry::getRegistryRoot();
-	dobs("N97DisplayStatisticsFactoryBlocked",true);
+	root->setProperty("N97DisplayStatisticsFactoryBlocked",true);
 	if (callbackXE->adlnTaskBoundaryReady && checkKernelArgument("-wex-adln-task-stage") &&
 	 callbackXE->xelpMemoryStageOwner==that) {
-	 dobs("N97DisplayStatisticsFactoryBlocked",false);
+	 root->setProperty("N97DisplayStatisticsFactoryBlocked",false);
 	 return FunctionCast(wrapAlderLakeNNewStatistics,callbackXE->orgAlderLakeNNewStatistics)(that);
 	}
 	return nullptr; // Parent stop unwinds the initialized display/event objects.
@@ -13503,18 +14262,18 @@ void *XE::wrapAlderLakeNKernelTask(IOService *that) {
 	if (!callbackXE->adlnDetected || !checkKernelArgument("-wex-adln-task-stage"))
 	 return FunctionCast(wrapAlderLakeNKernelTask,callbackXE->orgAlderLakeNKernelTask)(that);
 	auto root=IORegistryEntry::getRegistryRoot();
-	dobs("N97KernelTaskFactoryBlocked",true);
+	root->setProperty("N97KernelTaskFactoryBlocked",true);
 	if (!callbackXE->adlnTaskBoundaryReady || callbackXE->xelpMemoryStageOwner!=that) return nullptr;
-	dobs("N97KernelTaskBoundaryEntered",true);
+	root->setProperty("N97KernelTaskBoundaryEntered",true);
 	const auto a=reinterpret_cast<const uint8_t *>(that);
 	const auto stats=*reinterpret_cast<const uint8_t *const *>(a+0x388);
 	const auto fence=*reinterpret_cast<const uint8_t *const *>(a+0x390);
 	const auto event=*reinterpret_cast<const uint8_t *const *>(a+0x380);
-	dobs("N97StatisticsNativeReady",stats &&
+	root->setProperty("N97StatisticsNativeReady",stats &&
 	 *reinterpret_cast<IOService *const *>(stats+0x10)==that &&
 	 *reinterpret_cast<IOService *const *>(stats+0x170)==that &&
 	 *reinterpret_cast<const uintptr_t *>(stats+0x58));
-	dobs("N97ParentSoftwareReady",*reinterpret_cast<const uintptr_t *>(a+0xF0) && fence &&
+	root->setProperty("N97ParentSoftwareReady",*reinterpret_cast<const uintptr_t *>(a+0xF0) && fence &&
 	 *reinterpret_cast<IOService *const *>(fence+0x10)==that &&
 	 *reinterpret_cast<const uint8_t *const *>(fence+0x18)==event &&
 	 *reinterpret_cast<const uintptr_t *>(fence+0x20) &&
@@ -13522,10 +14281,10 @@ void *XE::wrapAlderLakeNKernelTask(IOService *that) {
 	 *reinterpret_cast<const uintptr_t *>(fence+0x30) &&
 	 *reinterpret_cast<const uintptr_t *>(fence+0x38) &&
 	 *reinterpret_cast<const uintptr_t *>(a+0xD98));
-	dobs("N97ParentGPUObjectsAbsent",!*reinterpret_cast<const uintptr_t *>(a+0x150) &&
+	root->setProperty("N97ParentGPUObjectsAbsent",!*reinterpret_cast<const uintptr_t *>(a+0x150) &&
 	 !*reinterpret_cast<const uintptr_t *>(a+0x1248) && !*reinterpret_cast<const uintptr_t *>(a+0x1250) &&
 	 !*reinterpret_cast<const uintptr_t *>(a+0x1278) && event && !event[0xD88]);
-	dobs("N97ParentMemoryBudgets",const_cast<uint8_t *>(a+0x338),3*sizeof(uint64_t));
+	root->setProperty("N97ParentMemoryBudgets",const_cast<uint8_t *>(a+0x338),3*sizeof(uint64_t));
 	return nullptr; // Real parent stop unwinds software before any kernel GPU task/IRQ/engine.
 }
 
@@ -13554,26 +14313,26 @@ bool XE::configureAlderLakeNWithGT(IOService *that, IOPCIDevice *provider, IOMem
 	 if (before[2*d]==UINT32_MAX || before[2*d+1]==UINT32_MAX ||
 	  ((before[2*d]|before[2*d+1])&1)) return false;
 	}
-	dobs("N97MemoryFWBefore",before,sizeof(before));
+	root->setProperty("N97MemoryFWBefore",before,sizeof(before));
 	for (unsigned d=0;d<2;++d) {write(request[d],0x00010001);requested|=1U<<d;}
 	bool awake=true;
 	for (unsigned d=0;d<2;++d) if (!wait(d,true,held[d])) awake=false;
-	dobs("N97MemoryFWHeld",held,sizeof(held));
-	dobs("N97MemoryFWAcquired",awake);
+	root->setProperty("N97MemoryFWHeld",held,sizeof(held));
+	root->setProperty("N97MemoryFWAcquired",awake);
 	bool result=false;
 	if (awake) {
-	 dobs("N97MemoryConfigureEntered",true);
+	 root->setProperty("N97MemoryConfigureEntered",true);
 	 result=FunctionCast(wrapAlderLakeNConfigureDevice,callbackXE->orgAlderLakeNConfigureDevice)(that,provider);
-	 dobs("N97MemoryConfigureReturned",true);
-	 dobs("N97MemoryConfigureResult",result);
+	 root->setProperty("N97MemoryConfigureReturned",true);
+	 root->setProperty("N97MemoryConfigureResult",result);
 	}
 	released=true;
 	for (int d=1;d>=0;--d) if (requested&(1U<<d)) {
 	 write(request[d],0x00010000);
 	 if (!wait(unsigned(d),false,after[d]) || (read(request[d])&0xFFFF)!=(before[2*d]&0xFFFF)) released=false;
 	}
-	dobs("N97MemoryFWAfter",after,sizeof(after));
-	dobs("N97MemoryFWReleased",released);
+	root->setProperty("N97MemoryFWAfter",after,sizeof(after));
+	root->setProperty("N97MemoryFWReleased",released);
 	return result;
 }
 
@@ -13596,10 +14355,10 @@ void XE::tglObserveAccelerator(IOService *that, uint32_t stage, bool done, uint6
 	r[1] = reinterpret_cast<uintptr_t>(current_thread()); r[2] = __sync_add_and_fetch(&sequence, 1);
 	r[3] = stage; r[4] = done; r[5] = reinterpret_cast<uintptr_t>(that); r[6] = result; r[7] = detail;
 	char key[40]; snprintf(key, sizeof(key), "TGLAccelLast%u", static_cast<uint32_t>(r[2]) % 64);
-	dobs(key, r, sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	if (r[2] <= 32) {
 		snprintf(key, sizeof(key), "TGLAccelFirst%u", static_cast<uint32_t>(r[2]));
-		dobs(key, r, sizeof(r));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	}
 	SYSLOG("igfx", "TGL accel stage=%u done=%u result=%llx detail=%llx", stage, done, result, detail);
 	if (callbackXE->adlnDetected)
@@ -13607,7 +14366,8 @@ void XE::tglObserveAccelerator(IOService *that, uint32_t stage, bool done, uint6
 }
 
 IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SInt32 *score) {
- if((callbackXE->display12SmallGTDetected && !callbackXE->display12SmallGTReady) ||
+ if((callbackXE->tglGT2Detected && !callbackXE->tglGT2Ready) ||
+    (callbackXE->display12SmallGTDetected && !callbackXE->display12SmallGTReady) ||
     (callbackXE->adlsDisplaySelected && !callbackXE->adlsDisplayHooksReady))return nullptr;
  if (!callbackXE->tglAcceleratorRequested) return nullptr;
 	auto pci = OSDynamicCast(IOPCIDevice, provider);
@@ -13616,17 +14376,17 @@ IOService *XE::wrapTGLAcceleratorProbe(IOService *that, IOService *provider, SIn
 		auto root=IORegistryEntry::getRegistryRoot();
 		const bool admitted=callbackXE->tglAcceleratorReady && pci &&
 			xelpDisplay13RenderDevice(pci);
-		dobs("N97LoadOnlyProbeEntered",admitted);
+		root->setProperty("N97LoadOnlyProbeEntered",admitted);
 		if (!admitted) return nullptr;
 		// Qualify load/routing before executing the donor probe itself.
 		// Native start remains blocked even when this separate opt-in is used.
 		if (!checkKernelArgument("-wex-adln-probe")) {
-			dobs("N97LoadOnlyProbeBlocked",true);
+			root->setProperty("N97LoadOnlyProbeBlocked",true);
 			return nullptr;
 		}
 		auto result=FunctionCast(wrapTGLAcceleratorProbe,callbackXE->orgTGLAcceleratorProbe)(that,provider,score);
-		dobs("N97LoadOnlyProbeReturned",true);
-		dobs("N97LoadOnlyProbeMatched",result!=nullptr);
+		root->setProperty("N97LoadOnlyProbeReturned",true);
+		root->setProperty("N97LoadOnlyProbeMatched",result!=nullptr);
 		return result;
 	}
 	tglObserveAccelerator(that, 1, false, callbackXE->tglAcceleratorReady, identity);
@@ -13659,8 +14419,8 @@ bool XE::wrapTGLAcceleratorRegister(IOService *that) {
   that->getMetaClass()->getClassSize(),controller ? uint64_t(controller->getProvider()==that->getProvider()) : 0,
   controller ? Display13FBMemory::field<uintptr_t>(controller,0xC0) : 0,
   controller ? Display13FBMemory::field<uint32_t>(controller,0xDF8) : 0,display13FBGTT.initialized,display13FBGTT.faulted,display13FBPower.memoryFaulted};
- dobs("N97SharedRegisterCheck",before,sizeof(before));
- dobs("N97SharedRegisterPrerequisites",ready);
+ IORegistryEntry::getRegistryRoot()->setProperty("N97SharedRegisterCheck",before,sizeof(before));
+ IORegistryEntry::getRegistryRoot()->setProperty("N97SharedRegisterPrerequisites",ready);
 	 if(!ready)return false;
 	 __atomic_store_n(&adlnSharedOwner,that,__ATOMIC_RELEASE);
 	}
@@ -13678,7 +14438,7 @@ bool XE::wrapTGLAcceleratorRegister(IOService *that) {
 	  Display13FBMemory::field<uintptr_t>(controller,0xC0),Display13FBMemory::field<uintptr_t>(controller,0xD38),adlnSharedCallback,
 	  Display13FBMemory::field<uint32_t>(controller,0xDF8),reserve,Display13FBMemory::field<uint32_t>(that,0x13C0),
 	  Display13FBMemory::field<uint8_t>(that,0x128C),Display13FBMemory::field<uint32_t>(controller,0xFD0)};
-	 dobs("N97SharedRegister",record,sizeof(record));
+	 IORegistryEntry::getRegistryRoot()->setProperty("N97SharedRegister",record,sizeof(record));
 	}
 	tglObserveAccelerator(that, 4, true, result && bound, 0);
 	return result && bound;
@@ -13724,7 +14484,7 @@ bool XE::wrapAlderLakeNNativeConfigure(IOService *that, IOPCIDevice *provider) {
 	// The real configureDevice owns its manager and backing; no diagnostic
 	// retain, factory replacement, or deliberate failure on the normal path.
 	auto root=IORegistryEntry::getRegistryRoot();
-	dobs("N97NativeConfigureEntered",true);
+	root->setProperty("N97NativeConfigureEntered",true);
 	if (!provider || !xelpDisplay13RenderDevice(provider)) return false;
 	auto bar=provider->getDeviceMemoryWithRegister(0x10);
 	auto map=bar && bar->getLength()==0x1000000 ? bar->map() : nullptr;
@@ -13733,8 +14493,8 @@ bool XE::wrapAlderLakeNNativeConfigure(IOService *that, IOPCIDevice *provider) {
 	bool released=false;
 	const bool result=configureAlderLakeNWithGT(that,provider,map,released);
 	map->release();
-	dobs("N97NativeConfigureReturned",true);
-	dobs("N97NativeConfigureResult",result && released);
+	root->setProperty("N97NativeConfigureReturned",true);
+	root->setProperty("N97NativeConfigureResult",result && released);
 	return result && released;
 }
 
@@ -13808,10 +14568,10 @@ bool XE::wrapTGLAcceleratorEngine(IOService *that) {
   tglObserveAccelerator(that,10,true,ready,uint64_t(caps[1])<<32|caps[4]);
   if (checkKernelArgument("-wex-adln-parent-only")) {
    const bool irq=adlnNativeIRQPrerequisites(that,false);
-   dobs("N97NativeParentOnlyReached",true);
-   dobs("N97NativeParentOnlyReady",ready && irq);
-   dobs("N97NativeParentCaps",caps,sizeof(caps));
-   dobs("N97NativeParentAllocator",ranges,sizeof(ranges));
+   IORegistryEntry::getRegistryRoot()->setProperty("N97NativeParentOnlyReached",true);
+   IORegistryEntry::getRegistryRoot()->setProperty("N97NativeParentOnlyReady",ready && irq);
+   IORegistryEntry::getRegistryRoot()->setProperty("N97NativeParentCaps",caps,sizeof(caps));
+   IORegistryEntry::getRegistryRoot()->setProperty("N97NativeParentAllocator",ranges,sizeof(ranges));
    IOLog("AlderLakeN native parent-only stop caps=%u irq=%u\n",ready,irq);
    return false; // Diagnostic failure/unwind; never report accelerator success.
   }
@@ -13909,6 +14669,18 @@ void XE::wrapTGLHostSWInterrupt(void *streamer,void *source,int count) {
  tglHostIRQEnd(r);
 }
 
+// Terminal diagnostics can run on interrupt paths: no allocation, sleeping,
+// or waiting for another CPU. The first fatal report owns these bytes until
+// panic; a concurrent/reentrant report uses only the short fallback message.
+struct TGLFatalLogStorage {
+ volatile uint32_t claimed {};
+ struct {
+  struct {char trail[1800],vm[1800],loads[1000];} csb;
+  struct {char detail[1400],boundary[1400],preStart[640];} guc;
+ } bytes {};
+ bool claim() {return __sync_bool_compare_and_swap(&claimed,0,1);}
+};
+static TGLFatalLogStorage tglFatalLogStorage;
 static void tglHostCSBFatal(const char *reason,const uint32_t *entry,void *failedStreamer=nullptr);
 
 namespace {
@@ -14084,10 +14856,10 @@ bool XE::installTGLCSB12(KernelPatcher &patcher,size_t index,mach_vm_address_t a
    ok=patcher.routeMultipleShort(index,&protect,1,address,size);patcher.clearError();
   }
   auto root=IORegistryEntry::getRegistryRoot();
-  dobs("WhateverXeForceWakeIRQProtected",ok);
-  if(adlnDetected)dobs("N97ForceWakeIRQProtected",ok);
+  root->setProperty("WhateverXeForceWakeIRQProtected",ok);
+  if(adlnDetected)root->setProperty("N97ForceWakeIRQProtected",ok);
   if(ok)if(auto data=OSSerializer::forTarget(nullptr,xelpForceWakeIRQSerialize)) {
-   dobs("WhateverXeForceWakeIRQ",data);data->release();
+   root->setProperty("WhateverXeForceWakeIRQ",data);data->release();
   }
  }
  // r107: the 12-entry consumer requires the matching hardware capacity.
@@ -14105,7 +14877,7 @@ bool XE::installTGLCSB12(KernelPatcher &patcher,size_t index,mach_vm_address_t a
   patcher.applyLookupPatch(&modePatch,modeSite,sizeof(modeFind)+1);
   ok=patcher.getError()==KernelPatcher::Error::NoError && !memcmp(modeSite,modeReplace,sizeof(modeReplace));
  }
- dobs("TGLCSB12ModePatched",ok);
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLCSB12ModePatched",ok);
  // The original reset writes head/tail itself before context replay. Keep those
  // stores but change their reset value, so it cannot undo initialize() above.
  const uint8_t find[] {0xB8,7,0,0,0,0x89,0x87,4,0x1C,0,0};
@@ -14118,12 +14890,12 @@ bool XE::installTGLCSB12(KernelPatcher &patcher,size_t index,mach_vm_address_t a
   ok=!memcmp(site,replace,sizeof(replace));
  }
  if (ok) ok=patcher.routeMultiple(index,routes,arrsize(routes),address,size);
- auto root=IORegistryEntry::getRegistryRoot();dobs("TGLCSB12Routed",ok);
+ auto root=IORegistryEntry::getRegistryRoot();root->setProperty("TGLCSB12Routed",ok);
  if (ok) {
   auto data=OSSerializer::forTarget(nullptr,tglCSBSerialize);
-  if (data) {dobs("TGLCSB12Live",data);data->release();}
+  if (data) {root->setProperty("TGLCSB12Live",data);data->release();}
   auto modes=OSSerializer::forTarget(nullptr,tglCSBModeSerialize);
-  if (modes) {dobs("TGLCSBModeAtInit",modes);modes->release();}
+  if (modes) {root->setProperty("TGLCSBModeAtInit",modes);modes->release();}
  }
  tglCSB12Enabled=ok;patcher.clearError();return ok;
 }
@@ -14337,13 +15109,13 @@ void tglCaptureHangAddress(unsigned slot,uint64_t actualRing,const uint8_t *regs
     auto final=TGLPPGTT::inspect(c->q[8],c->q[2]&~3ULL,tglVMRead);
     refs->q[1]=owned && ctx==c->q[5] && lrc==c->q[10] && table==c->q[8] &&
      id==c->q[6] && root==c->q[11] && !final.status && final.rootPhysical==c->q[12] ? 0 : 2;
-    dobs("TGLHangRefs0",refs,sizeof(*refs));
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLHangRefs0",refs,sizeof(*refs));
     IOFree(refs,sizeof(*refs));
    }
   }
  }
  char key[32];snprintf(key,sizeof(key),"TGLHangAddress%u",slot);
- dobs(key,c,sizeof(*c));IOFree(c,sizeof(*c));
+ IORegistryEntry::getRegistryRoot()->setProperty(key,c,sizeof(*c));IOFree(c,sizeof(*c));
 }
 }
 
@@ -14384,7 +15156,7 @@ void tglCaptureCSBFailure() {
   if (q[10]==sizeof(d.streamer)) q[27]=read(pointer(d.streamer+0x68)+0xBC,q+26,4);
   tglHostClock(q+23);
  }
- dobs("TGLCSBFailure0",c,sizeof(*c));
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLCSBFailure0",c,sizeof(*c));
  IOFree(c,sizeof(*c));
 }
 }
@@ -14449,15 +15221,15 @@ void tglCaptureHangDetail(const TGLHangPending::Capture &pending,const uint8_t *
      g.q[1]=ownership(finalOwner,c->q[4],tglPPGTTClass,read) &&
        !memcmp(finalOwner,o,sizeof(finalOwner)) ? 0:2;
     }
-    tglHostClock(g.q+3);dobs("TGLHangGGTT0",&g,sizeof(g));
+    tglHostClock(g.q+3);root->setProperty("TGLHangGGTT0",&g,sizeof(g));
    }
    status[2]=0;status[3]=c->q[1];
   } else {c->q[0]=TGLHangDetail::Schema;c->q[1]=6;status[2]=2;status[3]=6;}
   tglHostClock(c->q+3);
- // if(!dobs("TGLHangDetail0",c,sizeof(*c)))status[2]=3;
+  if(!root->setProperty("TGLHangDetail0",c,sizeof(*c)))status[2]=3;
   IOFree(c,sizeof(*c));
  }
- dobs("TGLHangDetailStatus",status,sizeof(status));
+ root->setProperty("TGLHangDetailStatus",status,sizeof(status));
 }
 }
 
@@ -14495,7 +15267,7 @@ static void tglSubmitHistoryPublish() {
   const auto sequence=TGLSubmitHistory::History<>::copy(i<64?tglSubmitHistory.early[i]:tglSubmitHistory.recent[i-64],record);
   ok=data->appendBytes(&sequence,sizeof(sequence)) && data->appendBytes(&record,sizeof(record));
  }
- if(ok)dobs("TGLSubmitHistory0",data);
+ if(ok)IORegistryEntry::getRegistryRoot()->setProperty("TGLSubmitHistory0",data);
  data->release();
 }
 
@@ -14580,14 +15352,14 @@ void XE::wrapTGLHangRingDump(void *ring,void *registers) {
  if (slot<4 && tglVM.nofault) {
   if (slot==0) {
    if(__atomic_load_n(&tglHangPreStopState,__ATOMIC_ACQUIRE)==2)
-    dobs("TGLHangPreStop0",&tglHangPreStopCapture,sizeof(tglHangPreStopCapture));
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLHangPreStop0",&tglHangPreStopCapture,sizeof(tglHangPreStopCapture));
    if(tglSameTailEnabled && __atomic_load_n(&tglHangPreStopState,__ATOMIC_ACQUIRE)==2)
-    dobs("TGLSameTail0",&tglSameTailFailure,sizeof(tglSameTailFailure));
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLSameTail0",&tglSameTailFailure,sizeof(tglSameTailFailure));
    if(tglSameTailEnabled)tglSubmitHistoryPublish();
    if(tglGSYNCReady && __atomic_load_n(&tglHangPreStopState,__ATOMIC_ACQUIRE)==2)
-    dobs("TGLGSYNC0",tglGSYNCFailure,sizeof(tglGSYNCFailure));
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLGSYNC0",tglGSYNCFailure,sizeof(tglGSYNCFailure));
    if(tglRPCSPowerReady && __atomic_load_n(&tglHangPreStopState,__ATOMIC_ACQUIRE)==2)
-    dobs("TGLRPCSPower0",&tglRPCSPowerFailure,sizeof(tglRPCSPowerFailure));
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLRPCSPower0",&tglRPCSPowerFailure,sizeof(tglRPCSPowerFailure));
    tglCaptureCSBFailure();
   }
   auto c=static_cast<Capture *>(IOMalloc(sizeof(Capture)));
@@ -14632,7 +15404,7 @@ void XE::wrapTGLHangRingDump(void *ring,void *registers) {
     }
    }
    char key[32];snprintf(key,sizeof(key),"TGLHangBatch%u",slot);
-   dobs(key,c,sizeof(*c));
+   IORegistryEntry::getRegistryRoot()->setProperty(key,c,sizeof(*c));
    if (slot==0 && c->q[3]==sizeof(c->regs) && c->q[4]==sizeof(c->ring)) {
     struct PendingWork {TGLHangPending::Capture pending;TGLHangSelect::Selection selection;uint8_t ring[0x8a8];};
     auto work=static_cast<PendingWork *>(IOMalloc(sizeof(PendingWork)));
@@ -14648,8 +15420,8 @@ void XE::wrapTGLHangRingDump(void *ring,void *registers) {
       } else selection.q[1]=7;
      }
      TGLHangPending::collect(pending,selected,c->regs,ringBytes,boundedRead);
-     dobs("TGLHangPending0",&pending,sizeof(pending));
-     //tglCaptureHangDetail(pending,c->regs,selection);
+     IORegistryEntry::getRegistryRoot()->setProperty("TGLHangPending0",&pending,sizeof(pending));
+     tglCaptureHangDetail(pending,c->regs,selection);
      IOFree(work,sizeof(*work));
     }
    }
@@ -14685,7 +15457,7 @@ void XE::wrapTGLBlitDeferredInit(void *context,void *params,const void *rects) {
   reinterpret_cast<void (*)(void *)>(vtable[0x148/sizeof(uintptr_t)])(channel);
   reinterpret_cast<void (*)(void *)>(tglBlitPoolSubmit)(pool);
   const auto n=__atomic_add_fetch(&tglBlitDeferredInitCount,1U,__ATOMIC_RELAXED);
-  if(n==1) dobs("TGLBlitDeferredInitTrial",310,32);
+  if(n==1) IORegistryEntry::getRegistryRoot()->setProperty("TGLBlitDeferredInitTrial",310,32);
  }
  FunctionCast(wrapTGLBlitDeferredInit,callbackXE->orgTGLBlitDeferredInit)(context,params,rects);
 }
@@ -14746,12 +15518,13 @@ void XE::wrapTGLHostCSB(void *streamer,uint32_t *entry,uint32_t *index) {
 // Both routes run only AFTER the native validator has rejected list state.
 // Preserve failure, enriching the persisted panic rather than suppressing it.
 static void tglHostCSBFatal(const char *reason,const uint32_t *entry,void *failedStreamer) {
+ if(!tglFatalLogStorage.claim())PANIC("igfx","concurrent CSB fatal: %s entry=%x:%x",reason,entry?entry[1]:0,entry?entry[0]:0);
  uint64_t before=0,writes=0,immediate=0,finalBad=0;
  for (uint32_t i=0;i<tglHost.maps && i<arrsize(tglHost.map);++i) {
   const auto &r=tglHost.map[i];if (!__atomic_load_n(&r.ready,__ATOMIC_ACQUIRE)) continue;
   before+=r.q[5];writes+=r.q[10];immediate+=r.q[11];finalBad+=r.q[12];
  }
- char trail[1800] {};size_t used=0;uint32_t kept=0;uint64_t streamer=reinterpret_cast<uintptr_t>(failedStreamer);
+ auto &trail=tglFatalLogStorage.bytes.csb.trail;size_t used=0;uint32_t kept=0;uint64_t streamer=reinterpret_cast<uintptr_t>(failedStreamer);
  // Locate this failure's streamer, then retain its history across interrupt
  // threads. Fixed records are read only here, after the native fatal decision.
  for (uint32_t i=tglHost.csbs<arrsize(tglHost.csb) ? tglHost.csbs : arrsize(tglHost.csb);i && kept<6;--i) {
@@ -14771,7 +15544,7 @@ static void tglHostCSBFatal(const char *reason,const uint32_t *entry,void *faile
  const bool submitted=__atomic_load_n(&submit.ready,__ATOMIC_ACQUIRE)!=0;
  // r105: persist r104's existing immutable samples on failure too. No new
  // healthy-path acquisition or MMIO access. Keep failed/absent walks explicit.
- char vm[1800] {};size_t vmUsed=0;
+ auto &vm=tglFatalLogStorage.bytes.csb.vm;size_t vmUsed=0;
  for (unsigned phase=0;phase<2;++phase) {
   const auto ready=__atomic_load_n(&tglVM.ready[phase],__ATOMIC_ACQUIRE);
   const auto v=tglVM.q[phase];
@@ -14783,7 +15556,7 @@ static void tglHostCSBFatal(const char *reason,const uint32_t *entry,void *faile
   if (count<0 || static_cast<size_t>(count)>=sizeof(vm)-vmUsed) break;
   vmUsed+=count;
  }
- char loads[1000] {};size_t loadUsed=0;unsigned keptLoads=0;
+ auto &loads=tglFatalLogStorage.bytes.csb.loads;size_t loadUsed=0;unsigned keptLoads=0;
  const TGLHostRecord *latestLoad=nullptr;
  for (uint32_t i=tglHost.loads<arrsize(tglHost.load) ? tglHost.loads : arrsize(tglHost.load);i && keptLoads<1;--i) {
   const auto &r=tglHost.load[i-1];if (!__atomic_load_n(&r.ready,__ATOMIC_ACQUIRE)) continue;
@@ -15016,7 +15789,7 @@ void XE::wrapTGLHostSubmit(void *streamer,uint32_t flags) {
   static uint32_t retained;
   const bool keep=checkKernelArgument("-wex-tgl-hold-render-wake") &&
    __atomic_exchange_n(&retained,1U,__ATOMIC_RELAXED)==0;
-  if (keep) dobs("TGLRenderWakeLifetimeTrial",309,32);
+  if (keep) IORegistryEntry::getRegistryRoot()->setProperty("TGLRenderWakeLifetimeTrial",309,32);
   else tglCSBForceWake[0](renderWakeOwner,false,1);
   if (n<arrsize(tglHost.submit)) tglHost.submit[n].q[114]=*reinterpret_cast<volatile uint32_t *>(renderWakeOwner+0x1290);
  }
@@ -15095,7 +15868,7 @@ bool XE::wrapTGLGuCLoadBinary(void *guc, bool reload) {
 	}
 	const bool result = FunctionCast(wrapTGLGuCLoadBinary, callbackXE->orgTGLGuCLoadBinary)(guc, reload);
 	if (owned) {
-		dobs("TGLGuCLoadResult", result);
+		IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCLoadResult", result);
 		__sync_lock_test_and_set(&o.thread, 0);
 	}
 	return result;
@@ -15116,7 +15889,7 @@ void *XE::wrapTGLGuCBuffer(void *task, size_t size, uint32_t options, uint32_t f
 				evidence[5]=reinterpret_cast<uintptr_t>(memory);
 			}
 		}
-		dobs("TGLBlitScratchBacking",evidence,sizeof(evidence));
+		IORegistryEntry::getRegistryRoot()->setProperty("TGLBlitScratchBacking",evidence,sizeof(evidence));
 	}
 	auto &o = tglGuCObservation;
 	if (result && o.thread == reinterpret_cast<uintptr_t>(current_thread()) && o.bufferCount < arrsize(o.buffers)) {
@@ -15298,12 +16071,12 @@ bool XE::wrapTGLGuCDMA(void *guc, uint64_t source, uint32_t destination, uint32_
 		if (o.calls == 1) {
 			tglSampleGuCDMA(guc);
 			memcpy(o.first, o.dma, sizeof(o.first));
-			dobs("TGLGuCDMAFirst", o.dma, sizeof(o.dma));
-			dobs("TGLGuCFirmwarePTERepair", o.repair, sizeof(o.repair));
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCDMAFirst", o.dma, sizeof(o.dma));
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCFirmwarePTERepair", o.repair, sizeof(o.repair));
 		}
 		if (sampleBoot) {
 			tglSampleGuCDMA(guc); memcpy(o.bootDMA,o.dma,sizeof(o.bootDMA));
-			dobs("TGLGuCBootDMA",o.bootDMA,sizeof(o.bootDMA));
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCBootDMA",o.bootDMA,sizeof(o.bootDMA));
 		}
 		if (o.calls==1 || sampleBoot) {
 			auto base=*reinterpret_cast<volatile uint8_t **>(static_cast<uint8_t *>(o.accelerator)+0x1240);
@@ -15321,8 +16094,8 @@ bool XE::wrapTGLGuCDMA(void *guc, uint64_t source, uint32_t destination, uint32_
 					r[3]=*reinterpret_cast<volatile uint64_t *>(base+0x800000+(r[0]>>9)); r[4]=1; break;
 				}
 			}
-			dobs("TGLGuCExtraPTERepair",o.extraRepair,sizeof(o.extraRepair));
-			dobs("TGLGuCExtraPTEReadback",o.extraReadback,sizeof(o.extraReadback));
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCExtraPTERepair",o.extraRepair,sizeof(o.extraRepair));
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCExtraPTEReadback",o.extraReadback,sizeof(o.extraReadback));
 		}
 	}
 	const bool result = FunctionCast(wrapTGLGuCDMA, callbackXE->orgTGLGuCDMA)(guc, source, destination, size, type, wait);
@@ -15332,15 +16105,15 @@ bool XE::wrapTGLGuCDMA(void *guc, uint64_t source, uint32_t destination, uint32_
 		const uint32_t regs[] {0xC000,0xC010,0xC014,0xC0C0,0xC0C4,0xC0C8,0xC310,0xC314,0xC1B8,0xC050,0xC340};
 		if (base && o.barSize>=0x1000000)
 			for (uint32_t i=0;i<arrsize(regs);++i) o.bootReturn[1+i]=*reinterpret_cast<volatile uint32_t *>(base+regs[i]);
-		dobs("TGLGuCBootDMAReturn",o.bootReturn,sizeof(o.bootReturn));
+		IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCBootDMAReturn",o.bootReturn,sizeof(o.bootReturn));
 	}
 	if (owned && o.calls==1) {
 		tglGuCDMABoundary(1,*reinterpret_cast<volatile uint8_t **>(static_cast<uint8_t *>(o.accelerator)+0x1240));
-		dobs("TGLGuCDMABoundary",o.boundary,sizeof(o.boundary));
-		dobs("TGLGuCDMAPreStart",o.preStart,sizeof(o.preStart));
-		dobs("TGLGuCDMAFirstResult",result);
+		IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCDMABoundary",o.boundary,sizeof(o.boundary));
+		IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCDMAPreStart",o.preStart,sizeof(o.preStart));
+		IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCDMAFirstResult",result);
 	}
-	if (owned && o.calls <= 4) dobs("TGLGuCDMALast", o.dma, sizeof(o.dma));
+	if (owned && o.calls <= 4) IORegistryEntry::getRegistryRoot()->setProperty("TGLGuCDMALast", o.dma, sizeof(o.dma));
 	return result;
 }
 
@@ -15355,8 +16128,9 @@ void XE::wrapTGLGuCHeaderPanic(void *guc) {
 		FunctionCast(wrapTGLGuCHeaderPanic, callbackXE->orgTGLGuCHeaderPanic)(guc);
 		return;
 	}
+	if(!tglFatalLogStorage.claim())PANIC("igfx","concurrent GuC CSS-header fatal");
 	auto base = *reinterpret_cast<volatile uint8_t **>(static_cast<uint8_t *>(o.accelerator) + 0x1240);
-	char detail[1400] {}; size_t used = 0;
+	auto &detail=tglFatalLogStorage.bytes.guc.detail; size_t used = 0;
 	for (uint32_t i=0; i<arrsize(o.dma) && used < sizeof(detail); ++i) {
 		const int n = snprintf(detail+used, sizeof(detail)-used, "%u:%llx ", i, o.dma[i]);
 		if (n < 0 || static_cast<size_t>(n) >= sizeof(detail)-used) break;
@@ -15364,13 +16138,13 @@ void XE::wrapTGLGuCHeaderPanic(void *guc) {
 	}
 	// Same native fatal CSS-header condition. Do not fake transfer success or
 	// continue into scheduler/firmware execution; persist the missing evidence.
-	char boundary[1400] {}; used=0;
+	auto &boundary=tglFatalLogStorage.bytes.guc.boundary; used=0;
 	for (uint32_t i=0;i<64 && used<sizeof(boundary);++i) {
 		const int n=snprintf(boundary+used,sizeof(boundary)-used,"%u:%llx ",i,o.boundary[i/32][i%32]);
 		if (n<0 || static_cast<size_t>(n)>=sizeof(boundary)-used) break;
 		used+=n;
 	}
-	char preStart[640] {}; used=0;
+	auto &preStart=tglFatalLogStorage.bytes.guc.preStart; used=0;
 	for (uint32_t i=0;i<arrsize(o.preStart) && used<sizeof(preStart);++i) {
 		const int n=snprintf(preStart+used,sizeof(preStart)-used,"%u:%llx ",i,o.preStart[i]);
 		if (n<0 || static_cast<size_t>(n)>=sizeof(preStart)-used) break;
@@ -15427,13 +16201,13 @@ uint32_t XE::wrapTGLProbePort(void *port) {
         __atomic_or_fetch(&callbackXE->tglModularProbed,1U<<ddi,__ATOMIC_RELEASE);
     if(mode==4 && ddi<9 && (callbackXE->tglTCAutoCandidates&(1U<<ddi))) {
         const auto selected=__atomic_or_fetch(&callbackXE->tglTCAutoRegistered,1U<<ddi,__ATOMIC_RELEASE);
-        dobs("WhateverXeTCDPRegistered",selected,32);
+        IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeTCDPRegistered",selected,32);
     }
 	char modeKey[40];
 	snprintf(modeKey, sizeof(modeKey), "TGLWEGPort%uProbeMode", ddi);
-	dobs(modeKey, mode, 32);
-	dobs("TGLWEGLastProbedDDI", ddi, 32);
-	dobs("TGLWEGLastProbedMode", mode, 32);
+	IORegistryEntry::getRegistryRoot()->setProperty(modeKey, mode, 32);
+	IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGLastProbedDDI", ddi, 32);
+	IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGLastProbedMode", mode, 32);
 	SYSLOG("igfx", "TGL port probe ddi=%u mode=%u", ddi, mode);
 	tglConnectionRecord(port, 0, true, mode, 0, caller);
 	return mode;
@@ -15468,10 +16242,10 @@ uint32_t XE::tglObserveHDCP1(void *hdcp, uint32_t stage, uint32_t event,
     r[10]=0;r[11]=0x4D454D31; // unsampled; MEM1
     char key[48];
     snprintf(key, sizeof(key), "TGLHDCP1Last%u", static_cast<uint32_t>(r[2]) % 64);
-    dobs(key, r, sizeof(r));
+    IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
     if (r[2] <= 48) {
         snprintf(key, sizeof(key), "TGLHDCP1First%u", static_cast<uint32_t>(r[2]));
-        dobs(key, r, sizeof(r));
+        IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
     }
     return pipe;
 }
@@ -15512,7 +16286,7 @@ bool XE::wrapTGLHDCP2Init(void *hdcp, void *path) {
 		reinterpret_cast<uintptr_t>(stored), missing};
 	char key[48];
 	snprintf(key, sizeof(key), "TGLWEGHDCP2FB%uManager", index);
-	dobs(key, evidence, sizeof(evidence));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, evidence, sizeof(evidence));
 	SYSLOG("igfx", "TGL HDCP2 init fb=%u missing=%d bound=%d", index, missing, stored == manager);
 	return stored == manager;
 }
@@ -15530,9 +16304,9 @@ uint32_t XE::wrapTGLHPDState(void *port) {
 	if (config && config[0] < 9) {
 		char key[40];
 		snprintf(key, sizeof(key), "TGLWEGPort%uHPD", config[0]);
-		dobs(key, result, 32);
+		IORegistryEntry::getRegistryRoot()->setProperty(key, result, 32);
 		snprintf(key, sizeof(key), "TGLWEGPort%uConfig", config[0]);
-		dobs(key, config, 24);
+		IORegistryEntry::getRegistryRoot()->setProperty(key, config, 24);
 		auto access = *reinterpret_cast<uint8_t **>(bytes + 0x578);
 		if (access && *reinterpret_cast<uint32_t *>(access + 0x60) > 0xC4004) {
 			auto base = *reinterpret_cast<volatile uint8_t **>(access + 0x50);
@@ -15540,11 +16314,11 @@ uint32_t XE::wrapTGLHPDState(void *port) {
 				uint32_t inputs[] = {*reinterpret_cast<volatile uint32_t *>(base + 0xC4000),
 					*reinterpret_cast<volatile uint32_t *>(base + 0x44470)};
 				snprintf(key, sizeof(key), "TGLWEGPort%uHPDInputs", config[0]);
-				dobs(key, inputs, sizeof(inputs));
+				IORegistryEntry::getRegistryRoot()->setProperty(key, inputs, sizeof(inputs));
 			}
 		}
 		snprintf(key, sizeof(key), "TGLWEGPort%uCurrentMode", config[0]);
-		dobs(key, *reinterpret_cast<uint32_t *>(bytes + 0x550), 32);
+		IORegistryEntry::getRegistryRoot()->setProperty(key, *reinterpret_cast<uint32_t *>(bytes + 0x550), 32);
 	}
 	return result;
 }
@@ -15561,7 +16335,7 @@ void XE::tglRecordNativeModeBinding(void *port,uint32_t ddi,uint32_t requested) 
  const auto binding=TGLTCNativeBinding::bind(f,owner,port,ddi,map?map->getVirtualAddress():0,map?map->getLength():0);
  uint32_t q[]={359,ddi,static_cast<uint32_t>(binding.status),binding.nativeMode(),requested,self->tglLegacyTCEligible(ddi)};
  char key[48];snprintf(key,sizeof(key),"TGLTCNativeBinding%u",ddi);
- dobs(key,q,sizeof(q));
+ IORegistryEntry::getRegistryRoot()->setProperty(key,q,sizeof(q));
 }
 
 uint32_t XE::wrapTGLSetPortMode(void *port, uint32_t mode) {
@@ -15584,13 +16358,13 @@ uint32_t XE::wrapTGLSetPortMode(void *port, uint32_t mode) {
   reinterpret_cast<uintptr_t>(caller),self->tglNativeLegacyHPDCaller,mode);
  if(mode!=requestedMode) {
   uint32_t record[]={traceDDI,requestedMode,mode};
-  dobs("ADLSDPHotplugMode",record,sizeof(record));
+  IORegistryEntry::getRegistryRoot()->setProperty("ADLSDPHotplugMode",record,sizeof(record));
  }
  if(!self->tglTCModeAllowed(traceDDI,mode) &&
     self->tglRegisterLegacyHPD(traceDDI,mode,reinterpret_cast<uintptr_t>(caller))) {
-  dobs("WhateverXeTCDPRegistered",
+  IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeTCDPRegistered",
    __atomic_load_n(&self->tglTCAutoRegistered,__ATOMIC_ACQUIRE),32);
-  dobs("WhateverXeTCDPHotplugRegistered",traceDDI,32);
+  IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeTCDPHotplugRegistered",traceDDI,32);
  }
  if(!self->tglTCModeAllowed(traceDDI,mode))return kIOReturnNotReady;
  auto transitionLock=self->tglModeResultReady && traceDDI>=3 && traceDDI<=8 ? self->tglModeTransitionLock : nullptr;
@@ -15628,7 +16402,7 @@ uint32_t XE::wrapTGLSetPortMode(void *port, uint32_t mode) {
    // coordinates for a transaction that may have used non-modular FIA.
    uint32_t record[]={2,traceDDI,static_cast<uint32_t>(fiaFailed),
     __atomic_load_n(&self->tglNativeFiaReads,__ATOMIC_RELAXED),__atomic_load_n(&self->tglNativeFiaWrites,__ATOMIC_RELAXED)};
-   dobs("WhateverXeNativeFiaAccess",record,sizeof(record));
+   IORegistryEntry::getRegistryRoot()->setProperty("WhateverXeNativeFiaAccess",record,sizeof(record));
  }
  // A rejected mode must not look like success to training/lifetime callers.
  // Read software state only; do not add FIA MMIO outside a power reference.
@@ -15641,7 +16415,7 @@ uint32_t XE::wrapTGLSetPortMode(void *port, uint32_t mode) {
   result=kIOReturnNotReady;
   const auto count=__atomic_add_fetch(&callbackXE->tglModeResultCorrections,1,__ATOMIC_RELAXED);
   uint32_t record[] {count,portConfig[0],mode,actual,rawResult,result};
-  dobs("TGLModeResultCorrection",record,sizeof(record));
+  IORegistryEntry::getRegistryRoot()->setProperty("TGLModeResultCorrection",record,sizeof(record));
  }
 
 	tglAUXRecord(port, 1, true, result, mode, 0);
@@ -15652,16 +16426,16 @@ uint32_t XE::wrapTGLSetPortMode(void *port, uint32_t mode) {
 		char key[48];
 		uint32_t state[] = {mode, result, *reinterpret_cast<uint32_t *>(bytes + 0x550)};
 		snprintf(key, sizeof(key), "TGLWEGPort%uLastModeSet", config[0]);
-		dobs(key, state, sizeof(state));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, state, sizeof(state));
 		if (mode) {
 			snprintf(key, sizeof(key), "TGLWEGPort%uLastNonzeroModeSet", config[0]);
-			dobs(key, state, sizeof(state));
+			IORegistryEntry::getRegistryRoot()->setProperty(key, state, sizeof(state));
 		}
 	}
  if(transitionLock) {
   IORecursiveLockUnlock(transitionLock);
   const auto count=__atomic_add_fetch(&self->tglModeSerializedCalls,1,__ATOMIC_RELAXED);
-  dobs("TGLModeSerializedCalls",count,32);
+  IORegistryEntry::getRegistryRoot()->setProperty("TGLModeSerializedCalls",count,32);
  }
 	return result;
 }
@@ -15684,10 +16458,10 @@ uint32_t XE::wrapTGLOptimalLaneCount(void *port, const void *timing, uint32_t bp
 	static uint32_t sequence {};
 	r[10] = __sync_add_and_fetch(&sequence, 1);
 	char key[48]; snprintf(key, sizeof(key), "TGLOptimalLanesLast%u", static_cast<uint32_t>(r[10]) % 32);
-	dobs(key, r, sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	if (r[10] <= 16) {
 		snprintf(key, sizeof(key), "TGLOptimalLanesFirst%u", static_cast<uint32_t>(r[10]));
-		dobs(key, r, sizeof(r));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	}
 	return result;
 }
@@ -15714,7 +16488,7 @@ uint32_t XE::wrapTGLDPPower(void *port, uint8_t state) {
 		uint32_t values[] = {state, result, *reinterpret_cast<uint32_t *>(bytes + 0x550),
 			*reinterpret_cast<uint32_t *>(bytes + 0x594)};
 		snprintf(key, sizeof(key), "TGLWEGPort%uDPPower", config[0]);
-		dobs(key, values, sizeof(values));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, values, sizeof(values));
 	}
 	return result;
 }
@@ -15729,7 +16503,7 @@ uint32_t XE::wrapTGLSinkCount(void *port, uint8_t *count) {
 		char key[48];
 		uint32_t values[] = {result, result == 0 && count ? *count : 0xFFFFFFFFU};
 		snprintf(key, sizeof(key), "TGLWEGPort%uSinkCount", config[0]);
-		dobs(key, values, sizeof(values));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, values, sizeof(values));
 	}
 	return result;
 }
@@ -15896,11 +16670,11 @@ void XE::tglBeginTCColdProtection(void *controller) {
     tglTCBootstrap.controller==controller && tglTCBootstrap.lock && tglTCBootstrap.record[4]==0) {
   __atomic_store_n(&tglBootstrapAUX.enabled,1,__ATOMIC_RELEASE);
   if(auto live=OSSerializer::forTarget(nullptr,tglBootstrapAUXSerialize)) {
-   dobs("TGLBootstrapAUX",live);live->release();
+   IORegistryEntry::getRegistryRoot()->setProperty("TGLBootstrapAUX",live);live->release();
   }
  }
  if(auto live=OSSerializer::forTarget(nullptr,tglTCBootstrapSerialize)) {
-  dobs("TGLTCBootstrapTrial",live);live->release();
+  IORegistryEntry::getRegistryRoot()->setProperty("TGLTCBootstrapTrial",live);live->release();
  }
 }
 
@@ -15935,7 +16709,7 @@ void XE::wrapTGLPowerInit(void *power,void *controller) {
   if(tglBootReadout.pgHeld)static_cast<OSObject *>(power)->retain();
  }
  __atomic_store_n(&tglBootReadoutStage,2,__ATOMIC_RELEASE);
- dobs("TGLBootReadout",&tglBootReadout,sizeof(tglBootReadout));
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLBootReadout",&tglBootReadout,sizeof(tglBootReadout));
 }
 
 uint32_t XE::wrapTGLMailboxRead(void *controller, uint32_t command) {
@@ -16083,10 +16857,10 @@ uint32_t XE::wrapTGLEDID(void *port, uint32_t address, uint32_t offset, uint8_t 
 		char key[48];
 		uint32_t values[] = {address, offset, length, result};
 		snprintf(key, sizeof(key), "TGLWEGPort%uEDIDRead", config[0]);
-		dobs(key, values, sizeof(values));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, values, sizeof(values));
 		if (result == 0 && data && offset == 0 && length >= 128) {
 			snprintf(key, sizeof(key), "TGLWEGPort%uEDIDBase", config[0]);
-			dobs(key, data, 128);
+			IORegistryEntry::getRegistryRoot()->setProperty(key, data, 128);
 		}
 	}
 	return result;
@@ -16106,7 +16880,7 @@ uint32_t XE::wrapTGLPortState(void *port) {
 		uint32_t values[] = {result, *reinterpret_cast<uint32_t *>(bytes + 0x550),
 			*reinterpret_cast<uint32_t *>(bytes + 0x554)};
 		snprintf(key, sizeof(key), "TGLWEGPort%uProbeState", config[0]);
-		dobs(key, values, sizeof(values));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, values, sizeof(values));
 	}
 	return result;
 }
@@ -16120,13 +16894,13 @@ uint32_t XE::wrapTGLFBDDC(void *fb, uint32_t block, uint8_t *data, uint64_t *len
 		*reinterpret_cast<uint16_t *>(bytes + 0x44E0), *reinterpret_cast<uint32_t *>(bytes + 0x45D8), 0xFFFFFFFFU};
 	char key[48];
 	snprintf(key, sizeof(key), "TGLWEGFB%uDDC", index);
-	dobs(key, values, sizeof(values));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, values, sizeof(values));
 	const auto result = FunctionCast(wrapTGLFBDDC, callbackXE->orgTGLFBDDC)(fb, block, data, length, flags, path);
 	values[5] = result;
-	dobs(key, values, sizeof(values));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, values, sizeof(values));
 	if (result == 0 && block == 1 && data && length && *length >= 128) {
 		snprintf(key, sizeof(key), "TGLWEGFB%uDDCBase", index);
-		dobs(key, data, 128);
+		IORegistryEntry::getRegistryRoot()->setProperty(key, data, 128);
 	}
 	return result;
 }
@@ -16148,10 +16922,10 @@ void XE::tglTimeEvent(uint32_t stage, uint32_t id, bool done, uint32_t arg, uint
 	uint64_t record[] {ns, reinterpret_cast<uintptr_t>(current_thread()), sequence, stage, id, done, arg, result};
 	char key[48];
 	snprintf(key, sizeof(key), "TGLTime%uLast%u", stage, sequence % 64);
-	dobs(key, record, sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	if (sequence <= 32) {
 		snprintf(key, sizeof(key), "TGLTime%uFirst%u", stage, sequence);
-		dobs(key, record, sizeof(record));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	}
 }
 
@@ -16273,17 +17047,17 @@ void XE::tglTrace(uint32_t stage, uint32_t id, bool done, uint32_t a, uint32_t b
 	uint32_t record[] = {count, done, a, b, result, static_cast<uint32_t>(value), static_cast<uint32_t>(value >> 32)};
 	char key[40];
 	snprintf(key, sizeof(key), "TGLTrace%uID%u", stage, id);
-	dobs(key, record, sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	const auto seq = __sync_add_and_fetch(&sequence, 1);
 	uint32_t event[] = {seq, stage, id, count, done, a, b, result,
 		static_cast<uint32_t>(value), static_cast<uint32_t>(value >> 32)};
 	// Retain startup plus the latest 64 records. Sequence identifies wrap/order;
 	// concurrent writers can publish out of order, so sort captured records by seq.
 	snprintf(key, sizeof(key), "TGLEventLast%u", seq % 64);
-	dobs(key, event, sizeof(event));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, event, sizeof(event));
 	if (seq <= 64) {
 		snprintf(key, sizeof(key), "TGLEventFirst%u", seq);
-		dobs(key, event, sizeof(event));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, event, sizeof(event));
 	}
 }
 
@@ -16295,7 +17069,7 @@ void XE::tglSnapshotFB(void *fb) {
 		*reinterpret_cast<uint32_t *>(b + 0x49E8), *reinterpret_cast<void **>(b + 0x49F0) != nullptr,
 		*reinterpret_cast<uint32_t *>(b + 0x4A00), *reinterpret_cast<void **>(b + 0x4A08) != nullptr};
 	char key[40]; snprintf(key, sizeof(key), "TGLWEGFB%uState", index);
-	dobs(key, state, sizeof(state));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, state, sizeof(state));
 }
 
 uint32_t XE::wrapTGLTopDDC(void *fb, int connection, uint32_t block, uint32_t type, uint32_t options, uint8_t *data, uint64_t *length) {
@@ -16354,7 +17128,7 @@ uint32_t XE::wrapTGLRegisterRead(void *access, unsigned long reg) {
 				r[3] = value;
 				for (uint32_t i=0; i<6; ++i) r[11+i] = *reinterpret_cast<volatile uint32_t *>(base + regs[i]);
 				clock_get_uptime(&uptime); absolutetime_to_nanoseconds(uptime, r + 1);
-				dobs("TGLPG1FuseLast", r, sizeof(r));
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLPG1FuseLast", r, sizeof(r));
 				if (!(value & (1U << 26))) {
 					uint64_t writes[8][3] {}; uint32_t found = 0;
 					if (tglProgramLock) {
@@ -16431,7 +17205,7 @@ uint32_t XE::wrapTGLGMBus(void *controller, uint32_t bus, uint32_t speed, void *
 	static const uint32_t regs[] {0xC5100,0xC5104,0,0xC5110};
 	if (readable) for (uint32_t i=0; i<arrsize(regs); ++i) if (regs[i]) r[10+i] = *reinterpret_cast<volatile uint32_t *>(base + regs[i]);
 	char key[48]; snprintf(key, sizeof(key), "TGLGMBusEntry%u", static_cast<uint32_t>(r[0]) % 32);
-	dobs(key, r, sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	TGLGMBusObservation *observation = nullptr;
 	const auto thread = reinterpret_cast<uintptr_t>(current_thread());
 	for (auto &slot : tglGMBusObservations) if (__sync_bool_compare_and_swap(&slot.thread, 0, thread)) {
@@ -16451,7 +17225,7 @@ uint32_t XE::wrapTGLGMBus(void *controller, uint32_t bus, uint32_t speed, void *
 		r[22] = observation->combined; r[23] = observation->firstError;
 		if (observation->edid && observation->samples) {
 			snprintf(key, sizeof(key), "TGLGMBusEDIDHistory%u", static_cast<uint32_t>(r[0]) % 16);
-			dobs(key, observation->history, observation->samples * sizeof(uint64_t));
+			IORegistryEntry::getRegistryRoot()->setProperty(key, observation->history, observation->samples * sizeof(uint64_t));
 		}
 		__sync_lock_test_and_set(&observation->thread, 0);
 	}
@@ -16460,10 +17234,10 @@ uint32_t XE::wrapTGLGMBus(void *controller, uint32_t bus, uint32_t speed, void *
 	if (readable) for (uint32_t i=0; i<arrsize(regs); ++i) if (regs[i]) r[14+i] = *reinterpret_cast<volatile uint32_t *>(base + regs[i]);
 	if (req) r[18] = *reinterpret_cast<uint32_t *>(req + 0x1C);
 	snprintf(key, sizeof(key), "TGLGMBusLast%u", static_cast<uint32_t>(r[0]) % 32);
-	dobs(key, r, sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	if (r[0] <= 16) {
 		snprintf(key, sizeof(key), "TGLGMBusFirst%u", static_cast<uint32_t>(r[0]));
-		dobs(key, r, sizeof(r));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	}
 	return result;
 }
@@ -16472,19 +17246,30 @@ uint32_t XE::wrapTGLGMBus(void *controller, uint32_t bus, uint32_t speed, void *
 // failed/invalid reads so old EDID cannot constrain a replacement connection.
 struct TGLPanelDepthCache {void *port {}; uint32_t maximum {};};
 static TGLPanelDepthCache tglPanelDepthCache[2]; // protected by tglAUXLock
+void XE::resetPanelDepth() {
+ if(!tglAUXLock)return;IOSimpleLockLock(tglAUXLock);
+ for(auto &cache:tglPanelDepthCache)cache={};IOSimpleLockUnlock(tglAUXLock);
+}
 uint32_t XE::tglPanelDepthPort(void *port) {
  auto s=callbackXE;auto p=static_cast<uint8_t *>(port);
  auto c=static_cast<uint8_t *>(s->tglObservationController);
  if(!p || !c || !s->tglActive || !s->tglPanelDepthReady || !tglAUXLock ||
-    (XELP::displayAdapter(s->xeProfile.family)!=XELP::DisplayAdapter::TGL && !s->adlsDisplaySelected))return 9;
+    (XELP::displayAdapter(s->xeProfile.family)!=XELP::DisplayAdapter::TGL && !s->adlsDisplaySelected && !s->display13FramebufferRequested))return 9;
  auto cfg=*reinterpret_cast<uint32_t **>(p+0x548);
  if(!cfg || cfg[0]>1 || cfg[2]!=0 || cfg[3]!=0 || p[0x117] ||
     *reinterpret_cast<void **>(p+0x578)!=*reinterpret_cast<void **>(c+0xC40) ||
     !s->firmwarePorts.valid() || !(s->firmwarePorts.present&(1U<<cfg[0])) ||
     !s->firmwarePorts.port[cfg[0]].internal() || !s->firmwarePorts.port[cfg[0]].dp())return 9;
  if(s->adlsDisplaySelected && !s->adlsWiring.boundPanel(s->tglPlatformCopy,cfg))return 9;
+ if(s->display13FramebufferRequested && (!Display13FBTopology::selected(s->adlnPlatform,cfg,s->adlnOutputWiring) || !(s->adlnOutputWiring.panel&(1U<<cfg[0]))))return 9;
  return cfg[0];
 }
+void XE::cachePanelDepth(void *port,uint32_t block,const uint8_t *data,uint32_t result) {
+ if(block!=1)return;const auto ddi=tglPanelDepthPort(port);if(ddi>1)return;
+ const auto maximum=!result?TGLPanelDepth::maximum(data,128):0;
+ IOSimpleLockLock(tglAUXLock);tglPanelDepthCache[ddi]={port,maximum};IOSimpleLockUnlock(tglAUXLock);
+}
+
 void XE::wrapTGLModeTiming(void *controller,void *fb,void *timing) {
  FunctionCast(wrapTGLModeTiming,callbackXE->orgTGLModeTiming)(controller,fb,timing);
  auto b=static_cast<uint8_t *>(fb);auto t=static_cast<uint8_t *>(timing);
@@ -16505,7 +17290,7 @@ void XE::wrapTGLModeTiming(void *controller,void *fb,void *timing) {
  const auto before=depth;
  depth=TGLPanelDepth::clamp(encoding,before,maximum);
  uint64_t record[]={ddi,maximum,encoding,before,depth};
- dobs("TGLPanelDepthLast",record,sizeof(record));
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLPanelDepthLast",record,sizeof(record));
 }
 
 uint32_t XE::wrapTGLPortDDC(void *port, uint32_t block, uint8_t *data, bool force) {
@@ -16514,18 +17299,10 @@ uint32_t XE::wrapTGLPortDDC(void *port, uint32_t block, uint8_t *data, bool forc
 	tglTrace(1, id, false, block, force, 0, 0);
 	const auto r = FunctionCast(wrapTGLPortDDC, callbackXE->orgTGLPortDDC)(port, block, data, force);
 	tglTrace(1, id, true, block, force, r, 0);
-	if(block==1) {
-		const auto ddi=tglPanelDepthPort(port);
-		if(ddi<2) {
-			const auto maximum=r==0 ? TGLPanelDepth::maximum(data,128) : 0;
-			IOSimpleLockLock(tglAUXLock);
-			tglPanelDepthCache[ddi]={port,maximum};
-			IOSimpleLockUnlock(tglAUXLock);
-		}
-	}
+	cachePanelDepth(port,block,data,r);
 	if (r == 0 && data && (block == 1 || block == 2)) {
 		char key[40]; snprintf(key, sizeof(key), "TGLWEGPort%uDDC%s", id, block == 1 ? "Base" : "Extension");
-		dobs(key, data, 128);
+		IORegistryEntry::getRegistryRoot()->setProperty(key, data, 128);
 	}
 	return r;
 }
@@ -16580,7 +17357,7 @@ uint32_t XE::wrapTGLConnectionAttr(void *fb, int connection, uint32_t attribute,
 	if (attribute == 'cena' || attribute == 'enab' || attribute == 'flgs') {
 		char key[48]; snprintf(key, sizeof(key), "TGLWEGFB%uAttr%08x", id, attribute);
 		uint64_t answer[] = {r, r == 0 && value ? *value : 0};
-		dobs(key, answer, sizeof(answer));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, answer, sizeof(answer));
 	}
 	tglSnapshotFB(fb);
 	return r;
@@ -16595,8 +17372,8 @@ uint32_t XE::wrapTGLGPUCapability(void *controller, void *output) {
 	// Donor writes four port masks at 0..31 and scalar counts at 40..51.
 	// Exclude offset32 (not written) and all kernel object pointers at 52 onward.
 	if (r == 0 && output) {
-		dobs("TGLGPUCapabilityMasks", output, 32);
-		dobs("TGLGPUCapabilityCounts", static_cast<uint8_t *>(output) + 40, 12);
+		IORegistryEntry::getRegistryRoot()->setProperty("TGLGPUCapabilityMasks", output, 32);
+		IORegistryEntry::getRegistryRoot()->setProperty("TGLGPUCapabilityCounts", static_cast<uint8_t *>(output) + 40, 12);
 	}
 	return r;
 }
@@ -16689,12 +17466,12 @@ uint32_t XE::wrapTGLAGDCAUX(void *controller, void *request, void *output) {
 		const auto data = req[13] ? req + 16 : static_cast<uint8_t *>(output) + 16;
 		memcpy(record + 4, data, n);
 		char key[48]; snprintf(key, sizeof(key), "TGLAUXPort%u%s", id, r ? "Fail" : "OK");
-		dobs(key, record, sizeof(record));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	}
 	if (r) {
 		uint32_t failure[] = {a, b, r};
 		char key[48]; snprintf(key, sizeof(key), "TGLAUXPort%uLastFailure", id);
-		dobs(key, failure, sizeof(failure));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, failure, sizeof(failure));
 	}
 	tglTrace(16, id, true, a, b, r, value);
 	return r;
@@ -16738,7 +17515,7 @@ uint32_t XE::wrapTGLAGDCPortStatus(void *controller, void *request, void *output
 			clock_get_uptime(&uptime); absolutetime_to_nanoseconds(uptime, &ns);
 			uint64_t record[] {ns, id, config[0], mode, state, sinkCount, native, value};
 			char key[40]; snprintf(key, sizeof(key), "TGLInactivePort%u", id);
-			dobs(key, record, sizeof(record));
+			IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 		}
 	}
 	tglTrace(17, id, true, a, b, r, value);
@@ -16812,10 +17589,10 @@ void XE::tglObserveTrainingLease(const TGLTrainingLease &lease, uint32_t event, 
 	char key[64];
  tglTransitionRecord(34,true,reinterpret_cast<void *>(r[7]),event,(r[29]<<32)|argument,(r[26]<<32)|result,r+10,56);
 	snprintf(key, sizeof(key), "TGLLeaseLast%u", static_cast<uint32_t>(r[2]) % 64);
-	dobs(key, r, sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	if (r[2] <= 64) {
 		snprintf(key, sizeof(key), "TGLLeaseFirst%u", static_cast<uint32_t>(r[2]));
-		dobs(key, r, sizeof(r));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	}
 }
 
@@ -16913,7 +17690,7 @@ uint32_t XE::tglPrepareTrainingLease(void *controller, TGLTrainingLease &lease) 
         if (!(__sync_fetch_and_or(&guardObserved,1U<<lease.ddi) & (1U<<lease.ddi))) {
             uint32_t values[] {1,lease.ddi,pipe,clock,func,tp,buffer,pipeState};
             char key[40];snprintf(key,sizeof(key),"TGLTrainingGuard%u",lease.ddi);
-            dobs(key,values,sizeof(values));
+            IORegistryEntry::getRegistryRoot()->setProperty(key,values,sizeof(values));
         }
 		// No training register was changed. Drop only this reservation and its
 		// power reference; never restore over unexpected live hardware.
@@ -17071,7 +17848,7 @@ void XE::wrapTGLControllerStop(void *controller, IOService *provider) {
   // The native stop deletes the pool; it cannot finish an unproven WEX
   // reservation's hardware teardown. Preserve its owner and all held refs.
   if(__sync_bool_compare_and_swap(&s->tglStopRetained,false,true))static_cast<OSObject *>(controller)->retain();
-  dobs("WEXFramebufferStopBlocked",reason,32);
+  IORegistryEntry::getRegistryRoot()->setProperty("WEXFramebufferStopBlocked",reason,32);
   __atomic_store_n(&s->tglStopInProgress,false,__ATOMIC_RELEASE);
  };
  // Drain native startup/allocation before touching reservations. No pool
@@ -17101,7 +17878,7 @@ void XE::wrapTGLControllerStop(void *controller, IOService *provider) {
  FunctionCast(wrapTGLControllerStop,s->orgTGLControllerStop)(controller,provider);
  tglRecordStartOrder(8,controller);
  __atomic_store_n(&s->tglStopComplete,true,__ATOMIC_RELEASE);
- dobs("WEXFramebufferStopBlocked",static_cast<uint64_t>(0),32);
+ IORegistryEntry::getRegistryRoot()->setProperty("WEXFramebufferStopBlocked",static_cast<uint64_t>(0),32);
  if(__sync_bool_compare_and_swap(&s->tglStopRetained,true,false))static_cast<OSObject *>(controller)->release();
  __atomic_store_n(&s->tglStopInProgress,false,__ATOMIC_RELEASE);
 }
@@ -17194,7 +17971,7 @@ uint32_t XE::wrapTGLTraining(void *controller, void *request, void *output) {
 	uint64_t value = output ? *reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(output) + 0x38) : 0;
 	if (request) {
 		char key[48]; snprintf(key, sizeof(key), "TGLTrainingPort%uInput", id);
-		dobs(key, request, 0x50);
+		IORegistryEntry::getRegistryRoot()->setProperty(key, request, 0x50);
 	}
 	record[2] = r;
 	// Donor copies exactly 0x50 bytes to output and fills status at +0x38
@@ -17202,10 +17979,10 @@ uint32_t XE::wrapTGLTraining(void *controller, void *request, void *output) {
 	if (output) memcpy(record + 23, output, 0x50);
 	char historyKey[64];
 	snprintf(historyKey, sizeof(historyKey), "TGLTrainingPort%uLast%u", id, record[0] % 64);
-	dobs(historyKey, record, sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(historyKey, record, sizeof(record));
 	if (record[0] <= 16) {
 		snprintf(historyKey, sizeof(historyKey), "TGLTrainingPort%uFirst%u", id, record[0]);
-		dobs(historyKey, record, sizeof(record));
+		IORegistryEntry::getRegistryRoot()->setProperty(historyKey, record, sizeof(record));
 	}
 	tglTrace(19, id, true, a, b, r, value);
 	return r;
@@ -17276,7 +18053,7 @@ void XE::tglObserveActivation(void *controller, void *port, void *path, uint32_t
  r[10]=path?*reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(path)+0x3640):0xFFFFFFFFU;
  r[11]=reinterpret_cast<uintptr_t>(port);r[12]=reinterpret_cast<uintptr_t>(path);r[15]=0x4D454D31;
  char key[64];snprintf(key,sizeof(key),"WhateverXeActivationLast%u",static_cast<uint32_t>(r[2])%64);
- dobs(key,r,sizeof(r));
+ IORegistryEntry::getRegistryRoot()->setProperty(key,r,sizeof(r));
 }
 
 // Resource hooks observe before the donor clears path->port. No extra hardware
@@ -17328,10 +18105,10 @@ void XE::tglObserveResource(void *fb, void *path, uint32_t event, bool done, uin
 	}
 	char key[64];
 	snprintf(key, sizeof(key), "TGLResource%uLast%u", event, static_cast<uint32_t>(r[2]) % 64);
-	dobs(key, r, sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	if (r[2] <= 64) {
 		snprintf(key, sizeof(key), "TGLResource%uFirst%u", event, static_cast<uint32_t>(r[2]));
-		dobs(key, r, sizeof(r));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	}
 }
 
@@ -17433,10 +18210,10 @@ void XE::tglObserveConfig(void *controller, void *request, void *output, bool te
 		r[35] = *reinterpret_cast<uint32_t *>(c + 0xD5C);
 		char key[64];
 		snprintf(key, sizeof(key), "TGLConfigLast%u", static_cast<uint32_t>(r[2]) % 64);
-		dobs(key, r, sizeof(r));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 		if (r[2] <= 64) {
 			snprintf(key, sizeof(key), "TGLConfigFirst%u", static_cast<uint32_t>(r[2]));
-			dobs(key, r, sizeof(r));
+			IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 		}
 	}
 	// Static port identity/flags determine the native built-in reservation policy.
@@ -17452,7 +18229,7 @@ void XE::tglObserveConfig(void *controller, void *request, void *output, bool te
 			r[8] = *reinterpret_cast<uint32_t *>(port + 0x554);
 			r[9] = port[0x11];
 			char key[48]; snprintf(key, sizeof(key), "TGLResourcePort%u", i);
-			dobs(key, r, sizeof(r));
+			IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 		}
 	}
 }
@@ -17589,10 +18366,10 @@ void XE::tglObservePath(void *port, void *path, uint32_t event, bool done, uint3
 	record[29]=0x4D454D31; // MEM1: prior MMIO slots remain unsampled
 	char key[64];
 	snprintf(key, sizeof(key), "WhateverXePath%uLast%u", event, static_cast<uint32_t>(record[2]) % 64);
-	dobs(key, record, sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	if (record[2] <= 64) {
 		snprintf(key, sizeof(key), "WhateverXePath%uFirst%u", event, static_cast<uint32_t>(record[2]));
-		dobs(key, record, sizeof(record));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	}
 }
 
@@ -17624,7 +18401,7 @@ uint32_t XE::wrapTGLPortTraining(void *port, void *request) {
  tglAUXRecord(port,10,true,r,0,0);
 	SYSLOG("igfx", "TGL330 port-training return result=%x", r);
 	static uint32_t count {};
-	dobs("TGLQuietTrainingCalls",
+	IORegistryEntry::getRegistryRoot()->setProperty("TGLQuietTrainingCalls",
 		__sync_add_and_fetch(&count, 1), 32);
 	tglObservePath(port, nullptr, 0, true, r, request ? *reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(request) + 0x38) : 0, caller);
 	tglDPCDPublish();
@@ -17704,7 +18481,7 @@ void XE::wrapTGLDisableClocks(void *controller, void *port, void *otherPort) {
  const bool combo=callbackXE->adlsDisplaySelected || (config && config[0]<2);
  bool keepPLL=false;
  if(combo && (!comboClockTarget(controller,port,otherPort) || !comboBeginClock(controller,port,false,keepPLL))) {
-  dobs("WEXComboClockDisableRejected",true);return;
+  IORegistryEntry::getRegistryRoot()->setProperty("WEXComboClockDisableRejected",true);return;
  }
  tglTransitionRecord(32,false,port,reinterpret_cast<uintptr_t>(controller),reinterpret_cast<uintptr_t>(otherPort),0);
 	auto s = callbackXE;
@@ -17838,10 +18615,33 @@ bool XE::comboBeginClock(void *controller,void *port,bool enable,bool &keepPLL,v
     snapshot.mux[0]=comboClockRead(access,0x164280);
     if(s->adlsDisplaySelected)snapshot.mux[1]=comboClockRead(access,0x1642BC);
     for(unsigned i=0;i<snapshot.pllCount();++i){XELPComboClock::PLL pll;XELPComboClock::PLL::resolve(i,pll);snapshot.enable[i]=comboClockRead(access,pll.enable);}
+    if(s->display13FramebufferRequested && display13FBPower.transcoders.dsi0Pipe<3) {
+        // The adoption boundary installs the qualified source/power binding
+        // before any native clock client. Revalidate here under the shared
+        // clock mutex, then pin its PLL even when DDI_CLK_OFF_A is set.
+        const auto &source=display13FBPower.bootDSI;
+        struct IO {
+            void *access;bool parked;
+            bool ready(){return parked;}
+            bool readable(uint32_t r) {return r<Display13FBMemory::field<uint32_t>(access,0x60);}
+            uint32_t read(uint32_t r) {return XE::comboClockRead(access,r);}
+        } io {access,s->dsiRuntimePower.sleeping && !s->dsiRuntimePower.failed &&
+            s->dsiStopAttempted && s->dsiIRQParked && s->dsiResourcesReady &&
+            s->dsiStop.complete() && s->dsiPanelStop.complete};
+        const auto owner=reinterpret_cast<uintptr_t>(controller);
+        const bool retained=io.parked ? XELP::DSI::Restart::retainedStopped(
+            io,source,t.allocation,owner,s->dsiRuntimePower.host) :
+            (XELP::DSI::sourceUnchanged(io,source) &&
+             t.allocation.retain(source.identity.phy,source.identity.pll,owner,snapshot));
+        if(source.identity.pipe!=display13FBPower.transcoders.dsi0Pipe ||
+           !retained) {
+            comboClockPower(power,false);IORecursiveLockUnlock(t.lock);return false;
+        }
+    }
     const auto otherConfig=other && other!=port ? *reinterpret_cast<uint32_t **>(static_cast<uint8_t *>(other)+0x548):nullptr;
     const auto choice=enable && otherConfig ? t.allocation.share(XELPComboClock::Port(otherConfig[0]),snapshot):
         t.allocation.choose(route,snapshot,enable);
-    if(!choice.valid) {
+    if(!choice.valid || route.phy>=snapshot.slots() || t.allocation.external[route.phy]) {
         comboClockPower(power,false);IORecursiveLockUnlock(t.lock);return false;
     }
     if(enable)t.allocation.binding[route.phy]=choice.pll+1;
@@ -17862,7 +18662,7 @@ void XE::comboEndClock() {
     comboClockPower(t.power,false);
     IORecursiveLockUnlock(t.lock);
     char key[40];snprintf(key,sizeof(key),"WEXComboClockPHY%u%s",tr.phy,tr.enabling?"Enable":"Disable");
-    dobs(key,record,sizeof(record));
+    IORegistryEntry::getRegistryRoot()->setProperty(key,record,sizeof(record));
 }
 
 void XE::comboClockTranslateWrite(void *access,unsigned long &reg,uint32_t &value,uintptr_t caller) {
@@ -17882,7 +18682,7 @@ void XE::wrapTGLComboEnableClocks(void *controller,void *port,void *other,uint32
     if(config && config[0]<2) {
         bool keep=false;
         if(!comboClockTarget(controller,port,other) || !comboBeginClock(controller,port,true,keep,other)) {
-            dobs("WEXComboClockEnableRejected",true);return;
+            IORegistryEntry::getRegistryRoot()->setProperty("WEXComboClockEnableRejected",true);return;
         }
         FunctionCast(wrapTGLComboEnableClocks,callbackXE->orgComboEnableClocks)(controller,port,other,params);
         comboEndClock();return;
@@ -17895,11 +18695,11 @@ void XE::wrapADLSEnableClocks(void *controller,void *port,void *otherPort,uint32
     if(!adlsClockTarget(controller,port,otherPort) ||
        ((*reinterpret_cast<uint32_t **>(static_cast<uint8_t *>(port)+0x548))[2]==2 &&
        !AlderLakeS::HDMIClock::encode(params,*reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(controller)+0xEA8),encoded))) {
-        dobs("ADLSClockEnableRejected",true);return;
+        IORegistryEntry::getRegistryRoot()->setProperty("ADLSClockEnableRejected",true);return;
     }
     bool keepPLL=false;
     if(!comboBeginClock(controller,port,true,keepPLL)) {
-        dobs("ADLSClockEnableRejected",true);return;
+        IORegistryEntry::getRegistryRoot()->setProperty("ADLSClockEnableRejected",true);return;
     }
     tglTransitionRecord(71,false,port,encoded.cfg0,encoded.cfg1,0);
     FunctionCast(wrapADLSEnableClocks,callbackXE->orgComboEnableClocks)(controller,port,otherPort,params);
@@ -17916,7 +18716,7 @@ bool XE::wrapADLSPortInit(void *port,uint32_t *config) {
         *reinterpret_cast<uint32_t **>(bytes+0x548)==config &&
         AlderLakeS::comboRegisters(config[0],reinterpret_cast<uint32_t *>(bytes+0x580),0x128/4);
     char key[40];snprintf(key,sizeof(key),"ADLSComboPort%uReady",config[0]);
-    dobs(key,ready);
+    IORegistryEntry::getRegistryRoot()->setProperty(key,ready);
     return ready;
 }
 
@@ -17955,7 +18755,7 @@ void XE::wrapTGLEnableCombo(void *port) {
 			r[9+i] = *reinterpret_cast<volatile uint32_t *>(base + reg);
 	}
 	char key[48]; snprintf(key, sizeof(key), "TGLCombo%uEntry", static_cast<uint32_t>(r[2]));
-	dobs(key, r, sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	SYSLOG("igfx", "TGL combo ddi=%u absent=%u comp3=%x", static_cast<uint32_t>(r[2]), absent, static_cast<uint32_t>(r[12]));
 	if (!absent) FunctionCast(wrapTGLEnableCombo, callbackXE->orgTGLEnableCombo)(port);
 }
@@ -17972,10 +18772,10 @@ void XE::tglObserveEngine(void *power, uint32_t event, bool done, void *caller) 
 	memcpy(r + 8, b + 0x20, 16);
 	r[31]=0x4D454D31; // software state, no implicit port or pipe
 	char key[48]; snprintf(key, sizeof(key), "WhateverXeEngineLast%u", static_cast<uint32_t>(r[2]) % 64);
-	dobs(key, r, sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	if (r[2] <= 32) {
 		snprintf(key, sizeof(key), "WhateverXeEngineFirst%u", static_cast<uint32_t>(r[2]));
-		dobs(key, r, sizeof(r));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	}
 }
 
@@ -18124,10 +18924,10 @@ void XE::tglObserveCursorMemory(void *fb) {
 		}
 		char key[40]; auto root = IORegistryEntry::getRegistryRoot();
 		snprintf(key, sizeof(key), "TGLCursor%uPixels", bank);
-		dobs(key, pixels + relative, 0x4000);
+		root->setProperty(key, pixels + relative, 0x4000);
 		clock_get_uptime(&uptime); absolutetime_to_nanoseconds(uptime, r + 15);
 		snprintf(key, sizeof(key), "TGLCursor%uMemory", bank);
-		dobs(key, r, sizeof(r));
+		root->setProperty(key, r, sizeof(r));
 	}
 }
 
@@ -18162,10 +18962,10 @@ void XE::tglObserveScanout(void *fb, void *plane, uint32_t event, bool done, uin
  memcpy(r+105,b+0x4230,0x30);r[111]=b[0x4A18];
  r[112]=113;r[255]=0x4D454D31; // MEM1; no address/value register entries
 	char key[48]; snprintf(key, sizeof(key), "TGLScan%uLast%u", event, static_cast<uint32_t>(r[2]) % 64);
-	dobs(key, r, sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	if (r[2] <= 32) {
 		snprintf(key, sizeof(key), "TGLScan%uFirst%u", event, static_cast<uint32_t>(r[2]));
-		dobs(key, r, sizeof(r));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	}
 }
 
@@ -18219,7 +19019,7 @@ void XE::wrapTGLRegisterWrite(void *access, unsigned long reg, uint32_t value) {
    const auto read=FunctionCast(wrapTGLRegisterRead,callbackXE->orgTGLRegisterRead);
    uint32_t receipt[]={1,__sync_add_and_fetch(&count,1),value,
     read(access,0xC8250),read(access,0xC8254),read(access,0xC8258)};
-   dobs("TGLBacklightPWM",receipt,sizeof(receipt));
+   IORegistryEntry::getRegistryRoot()->setProperty("TGLBacklightPWM",receipt,sizeof(receipt));
   }
  }
  if(trace)tglTransitionRecord(36,true,access,reg,tglConnectionCaller(__builtin_return_address(0)),value);
@@ -18301,25 +19101,25 @@ void XE::wrapTGLGamma10(void *path, void *transaction, uint32_t control) {
 	char key[48];
 	auto root = IORegistryEntry::getRegistryRoot();
 	snprintf(key, sizeof(key), "TGLGamma10Last%u", static_cast<uint32_t>(r[2]) % 16);
-	dobs(key, r, sizeof(r));
+	root->setProperty(key, r, sizeof(r));
 	if (r[2] <= 16) {
 		snprintf(key, sizeof(key), "TGLGamma10First%u", static_cast<uint32_t>(r[2]));
-		dobs(key, r, sizeof(r));
+		root->setProperty(key, r, sizeof(r));
 	}
 	if (slot) {
 		if (slot->readCount) {
 			snprintf(key, sizeof(key), "TGLGammaReadLast%u", static_cast<uint32_t>(r[2]) % 16);
-			dobs(key, slot->readback, sizeof(slot->readback));
+			root->setProperty(key, slot->readback, sizeof(slot->readback));
 			if (r[2] <= 16) {
 				snprintf(key, sizeof(key), "TGLGammaReadFirst%u", static_cast<uint32_t>(r[2]));
-				dobs(key, slot->readback, sizeof(slot->readback));
+				root->setProperty(key, slot->readback, sizeof(slot->readback));
 			}
 		}
 		snprintf(key, sizeof(key), "TGLGammaWritesLast%u", static_cast<uint32_t>(r[2]) % 16);
-		dobs(key, slot->writes, slot->count * sizeof(uint64_t));
+		root->setProperty(key, slot->writes, slot->count * sizeof(uint64_t));
 		if (r[2] <= 16) {
 			snprintf(key, sizeof(key), "TGLGammaWritesFirst%u", static_cast<uint32_t>(r[2]));
-			dobs(key, slot->writes, slot->count * sizeof(uint64_t));
+			root->setProperty(key, slot->writes, slot->count * sizeof(uint64_t));
 		}
 		__sync_lock_test_and_set(&slot->thread, 0);
 	}
@@ -18363,10 +19163,10 @@ static void tglObserveTiming(void *fb, void *path, const void *timing, uint32_t 
 	r[6] = *reinterpret_cast<uint32_t *>(b + 0x1DC); r[7] = arg;
 	memcpy(r + 8, timing, 0x90);
 	char key[48]; snprintf(key, sizeof(key), "TGLTiming%uLast%u", stage, static_cast<uint32_t>(r[2]) % 32);
-	dobs(key, r, sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	if (r[2] <= 16) {
 		snprintf(key, sizeof(key), "TGLTiming%uFirst%u", stage, static_cast<uint32_t>(r[2]));
-		dobs(key, r, sizeof(r));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
 	}
 }
 void XE::wrapTGLColorMode(void *controller, void *fb, void *path, uint32_t mode, uint32_t depth, bool flag, const void *timing) {
@@ -18386,7 +19186,14 @@ uint32_t XE::wrapTGLPixelInfo(void *fb, int mode, int depth, int aperture, void 
 	// Stable 172-byte IOPixelInformation layout, including encoding and masks.
 	if (!result && info) memcpy(r + 6, info, 172);
 	char key[48]; snprintf(key, sizeof(key), "TGLPixelFB%uDepth%d", *reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(fb) + 0x1DC), depth);
-	dobs(key, r, sizeof(r));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, r, sizeof(r));
+    if(dsiModeTarget(static_cast<IOService *>(fb))) {
+        DSIModeScope scope(static_cast<IOService *>(fb));
+        for(unsigned i=0;scope.lock && i<dsiFixedMode.offerCount;++i)if(dsiFixedMode.offered[i].reservedA[0]==static_cast<uint32_t>(mode)) {
+            snprintf(key,sizeof(key),"WEXDSIPixelInfo%u",i);
+            IORegistryEntry::getRegistryRoot()->setProperty(key,r,sizeof(r));break;
+        }
+    }
 	return result;
 }
 IOMemoryDescriptor *XE::wrapTGLAperture(void *fb, int aperture) {
@@ -18397,7 +19204,7 @@ IOMemoryDescriptor *XE::wrapTGLAperture(void *fb, int aperture) {
 	record[3] = reinterpret_cast<uintptr_t>(r);
 	if (r) { record[4] = r->getPhysicalAddress(); record[5] = r->getLength(); }
 	char key[48]; snprintf(key, sizeof(key), "TGLApertureFB%u", *reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(fb) + 0x1DC));
-	dobs(key, record, sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	return r;
 }
 
@@ -18488,10 +19295,10 @@ uint32_t XE::wrapTGLTrainingPattern(void *path, uint32_t pattern) {
 				tglTimeEvent(29, record[0], true, transcoder, reason);
 				char key[64];
 				snprintf(key, sizeof(key), "TGLPreTrainingRouteLast%u", record[0] % 32);
-				dobs(key, record, sizeof(record));
+				IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 				if (record[0] <= 32) {
 					snprintf(key, sizeof(key), "TGLPreTrainingRouteFirst%u", record[0]);
-					dobs(key, record, sizeof(record));
+					IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 				}
 			}
 		}
@@ -18541,7 +19348,7 @@ uint32_t XE::wrapTGLTrainingPattern(void *path, uint32_t pattern) {
 				record[8] = reinterpret_cast<uintptr_t>(path); record[9] = transcoder; record[10] = mapping.ddi;
 				record[11] = alternateSR; record[12] = p[0x118];
 				char key[48]; snprintf(key, sizeof(key), "TGLFramingDDI%uPattern%u", mapping.ddi, pattern);
-				dobs(key, record, sizeof(record));
+				IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 			}
 		}
 	}
@@ -18615,12 +19422,12 @@ void XE::tglSnapshotTransmitter(void *port, bool done, uint32_t result) {
 	record[33] = 0x4D454D31; // MEM1: former MMIO slots are unsampled.
 	char key[48];
 	snprintf(key, sizeof(key), "TGLTransmitter%u%s", ddi, done ? "Exit" : "Entry");
-	dobs(key, record, sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	snprintf(key, sizeof(key), "TGLTransmitter%uLast%u", ddi, record[0] % 64);
-	dobs(key, record, sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	if (record[0] <= 32) {
 		snprintf(key, sizeof(key), "TGLTransmitter%uFirst%u", ddi, record[0]);
-		dobs(key, record, sizeof(record));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	}
 }
 
@@ -18801,10 +19608,10 @@ uint32_t XE::wrapTGLSignalLevels(void *port, uint32_t swing, uint32_t emphasis, 
 	uint32_t record[] {__sync_add_and_fetch(&sequence, 1), rate, swing, emphasis,
 		level, selected[0], selected[1], selected[2], result, config[0]};
 	char key[48]; snprintf(key, sizeof(key), "TGLSignalLevelsLast%u", record[0] % 32);
-	dobs(key, record, sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	if (record[0] <= 32) {
 		snprintf(key, sizeof(key), "TGLSignalLevelsFirst%u", record[0]);
-		dobs(key, record, sizeof(record));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	}
 	return result;
 }
@@ -18833,7 +19640,7 @@ void XE::wrapTGLPhyClockGating(void *port, bool gate) {
 	else if (!tglQuietTraining()) {
 		static uint32_t count {};
 		char key[48]; snprintf(key, sizeof(key), "TGLPhyClockPreserved%uCount", config[0]);
-		dobs(key,
+		IORegistryEntry::getRegistryRoot()->setProperty(key,
 			__sync_add_and_fetch(&count, 1), 32);
 	}
 	if (!target) return;
@@ -18858,10 +19665,10 @@ void XE::wrapTGLPhyClockGating(void *port, bool gate) {
 	if (tglQuietTraining()) return;
 	char key[48];
 	snprintf(key, sizeof(key), "TGLPhyClockGate%uLast%u", config[0], record[0] % 64);
-	dobs(key, record, sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	if (record[0] <= 16) {
 		snprintf(key, sizeof(key), "TGLPhyClockGate%uFirst%u", config[0], record[0]);
-		dobs(key, record, sizeof(record));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	}
 }
 
@@ -18922,10 +19729,10 @@ void XE::wrapTGLSetDklDPMode(void *port) {
  if(tglQuietTraining())return;
 	char key[48];
 	snprintf(key, sizeof(key), "TGLDklDPMode%uLast%u", config[0], record[0] % 64);
-	dobs(key, record, sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	if (record[0] <= 16) {
 		snprintf(key, sizeof(key), "TGLDklDPMode%uFirst%u", config[0], record[0]);
-		dobs(key, record, sizeof(record));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	}
 }
 
@@ -19007,10 +19814,10 @@ void XE::wrapTGLPortWriteReg(void *port, uint32_t reg, uint32_t value) {
 	if (observed && !tglQuietTraining()) {
 		char key[48];
 		snprintf(key, sizeof(key), "TGLLaneStagger%uLast%u", record[6], record[0] % 64);
-		dobs(key, record, sizeof(record));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 		if (record[0] <= 16) {
 			snprintf(key, sizeof(key), "TGLLaneStagger%uFirst%u", record[6], record[0]);
-			dobs(key, record, sizeof(record));
+			IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 		}
 	}
 }
@@ -19160,7 +19967,7 @@ bool XE::tglDekelAccess(void *port, uint32_t index, bool write, uint32_t &value)
 			value = (value & ~0xFF00U) | 0xA00;
 		uint32_t divider[] = {rate, requested, value};
 		char key[48]; snprintf(key, sizeof(key), "TGLCoreDividerRate%u", rate);
-		if (!tglQuietTraining()) dobs(key, divider, sizeof(divider));
+		if (!tglQuietTraining()) IORegistryEntry::getRegistryRoot()->setProperty(key, divider, sizeof(divider));
 	}
 	uint32_t internal = raw;
 	if (index >= 0x3C && index <= 0x3E) internal = 0x2210 + (index - 0x3C) * 4;
@@ -19213,32 +20020,32 @@ bool XE::tglDekelAccess(void *port, uint32_t index, bool write, uint32_t &value)
 		uint32_t record[] = {index, bank, suspendBefore, suspendAfter};
 		char key[48]; snprintf(key, sizeof(key), "TGLDklLaneResumeFirst%u", bank);
 		auto root = IORegistryEntry::getRegistryRoot();
-		if (!root->getProperty(key)) dobs(key, record, sizeof(record));
+		if (!root->getProperty(key)) root->setProperty(key, record, sizeof(record));
 		snprintf(key, sizeof(key), "TGLDklLaneResumeLast%u", bank);
-		dobs(key, record, sizeof(record));
+		root->setProperty(key, record, sizeof(record));
 	}
 	if (write && pllMask) {
 		uint32_t correction[] = {index, pllMask, before, requested, value, after};
 		char key[48]; snprintf(key, sizeof(key), "TGLDekelPLLRMW%02x", index);
 		auto root = IORegistryEntry::getRegistryRoot();
-		dobs(key, correction, sizeof(correction));
+		root->setProperty(key, correction, sizeof(correction));
 		snprintf(key, sizeof(key), "TGLDekelPLLRMWFirst%02x", index);
-		if (!root->getProperty(key)) dobs(key, correction, sizeof(correction));
+		if (!root->getProperty(key)) root->setProperty(key, correction, sizeof(correction));
 	}
 	static uint32_t counts[22][2] {};
 	const auto count = __sync_add_and_fetch(&counts[index - 0x34][write], 1);
 	uint32_t record[] = {count, raw, offset, bank, value};
 	char key[48]; snprintf(key, sizeof(key), "TGLDekel%02x%s", index, write ? "Write" : "Read");
-	dobs(key, record, sizeof(record));
+	IORegistryEntry::getRegistryRoot()->setProperty(key, record, sizeof(record));
 	if (write) {
 		static uint32_t sequence {};
 		const auto seq = __sync_add_and_fetch(&sequence, 1);
 		uint32_t event[] = {seq, index, count, raw, offset, bank, value};
 		snprintf(key, sizeof(key), "TGLDekelWriteLast%u", seq % 128);
-		dobs(key, event, sizeof(event));
+		IORegistryEntry::getRegistryRoot()->setProperty(key, event, sizeof(event));
 		if (seq <= 64) {
 			snprintf(key, sizeof(key), "TGLDekelWriteFirst%u", seq);
-			dobs(key, event, sizeof(event));
+			IORegistryEntry::getRegistryRoot()->setProperty(key, event, sizeof(event));
 		}
 	}
 	return true;
@@ -19250,7 +20057,7 @@ uint32_t XE::wrapTGLReadDekel(void *port, uint32_t index) {
 		return FunctionCast(wrapTGLReadDekel, callbackXE->orgTGLReadDekel)(port, index);
 	uint32_t value = 0;
 	if (!tglDekelAccess(port, index, false, value)) {
-		dobs("TGLDekelRejectedRead", index, 32);
+		IORegistryEntry::getRegistryRoot()->setProperty("TGLDekelRejectedRead", index, 32);
 	}
 	return value;
 }
@@ -19262,6 +20069,15 @@ void XE::wrapTGLWriteDekel(void *port, uint32_t index, uint32_t value) {
 		return;
 	}
 	if (!tglDekelAccess(port, index, true, value)) {
-		dobs("TGLDekelRejectedWrite", index, 32);
+		IORegistryEntry::getRegistryRoot()->setProperty("TGLDekelRejectedWrite", index, 32);
 	}
 }
+
+// DSI attachment implementations share this translation unit intentionally.
+// Common eDP/DP/HDMI dispatch, private resource owners and hook call sites stay
+// above; these fragments do not introduce another driver or a shared ABI.
+#include "kern_dsi_adapter_boot.inc"
+#include "kern_dsi_adapter_backing.inc"
+#include "kern_dsi_adapter_modes.inc"
+#include "kern_dsi_adapter_lifecycle.inc"
+#include "kern_dsi_adapter_diagnostics.inc"

@@ -41,6 +41,8 @@ struct KernelPatcher {
 };
 struct XE {
  static XE *callbackXE;
+ bool display13FramebufferRequested=false;
+ static void display13PanelTiming(void *,bool){assert(false);}
  bool tglActive=true,tglPanelTimingReady=true,adlsDisplaySelected=false;
  AlderLakeS::Wiring adlsWiring;XELP::PanelPWM adlsPanelPWM;
  uintptr_t orgTGLPanelTiming=0,orgTGLRegisterRead=0,orgTGLPanelConfig=0;

@@ -33,24 +33,25 @@ struct FaultIO:Display13FBBootIO {
 };
 int main() {
     unsigned cases=0;
-    for(unsigned ddi=0;ddi<2;++ddi)for(bool requested:{false,true})for(bool peer:{false,true}) {
+    for(unsigned ddi=0;ddi<2;++ddi)for(bool requested:{false,true})for(bool peer:{false,true})for(bool panel:{false,true}) {
         IOMemoryMap map;firmware(map,ddi,requested);const auto other=1-ddi;
+        if(panel)map.at(0x60540)|=64;
         if(peer)map.at(AUX)|=3U<<(2*other);
         const auto initial=map.at(AUX);Display13FBBootIO io{&map};NativeBridge bridge;MainLinkAUX link;
         assert(bridge.begin(io,ddi,3).status==Status::Complete);
         const auto snapshot=readDisplay(io,true);assert(snapshot.status==ReadoutStatus::Complete && snapshot.count==157);
-        const auto heldResult=holdDPBootAUX(io,snapshot,bridge,link,ddi);
+        const auto heldResult=holdDPBootAUX(io,snapshot,bridge,link,ddi,panel);
         assert(heldResult.status==Status::Complete && heldResult.writes==(requested?0U:1U));
         assert(!link.owner && link.bootPending && link.port==ddi && !bridge.nativeAUXRefs(ddi));
         assert(link.lease.owner==&bridge.state && bridge.state.refs[ddi?6:8]==1);
         assert(link.begin(io,bridge,7,ddi).status==Status::NotReady && link.end(io,bridge,7,ddi).status==Status::NotReady);
-        assert(holdDPBootAUX(io,readDisplay(io,true),bridge,link,ddi).status==Status::NotReady);
+        assert(holdDPBootAUX(io,readDisplay(io,true),bridge,link,ddi,panel).status==Status::NotReady);
         assert(bridge.getAUX(io,ddi).status==Status::Complete && bridge.putAUX(io,ddi).status==Status::Complete);
         assert(bridge.state.refs[ddi?6:8]==1 && !bridge.nativeAUXRefs(ddi));
         const auto after=readDisplay(io,true);const auto requestBefore=map.at(AUX);
-        assert(adoptDPBootAUX(io,after,bridge,link,7,ddi).status==Status::Complete);
+        assert(adoptDPBootAUX(io,after,bridge,link,7,ddi,panel).status==Status::Complete);
         assert(link.owner==7 && !link.bootPending && !bridge.nativeAUXRefs(ddi) && map.at(AUX)==requestBefore);
-        assert(adoptDPBootAUX(io,after,bridge,link,8,ddi).status==Status::NotReady);
+        assert(adoptDPBootAUX(io,after,bridge,link,8,ddi,panel).status==Status::NotReady);
         assert(bridge.adoptBootPath(9,0,ddi).status==Status::Complete);
         assert(link.begin(io,bridge,7,ddi).status==Status::Complete);
         assert(link.end(io,bridge,7,ddi).status==Status::NotReady); // Live GOP cannot release.
@@ -59,7 +60,7 @@ int main() {
         assert(map.at(AUX)==initial); // Borrowed firmware/peer requests survive; only our request clears.
         assert(bridge.putDDI(io,ddi).status==Status::Complete && bridge.putPG(io,1).status==Status::Complete);
         for(auto refs:bridge.state.refs)assert(!refs);
-        io.write(0x60540,0);assert(map.at(0x60540)==0x80040300); // Boot IO cannot write link registers.
+        io.write(0x60540,0);assert(map.at(0x60540)==(0x80040300|(panel?64U:0U))); // Boot IO cannot write link registers.
         assert(!io.readable(0x1000000) && !Display13FBBootIO{nullptr}.readable(0));
         ++cases;
     }

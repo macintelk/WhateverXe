@@ -5,7 +5,7 @@ import re,subprocess,sys,tempfile
 root=Path(__file__).resolve().parents[1];s=(root/'WhateverXe/kern_xe.cpp').read_text()
 start=s.index('uint32_t XE::wrapTGLPortTraining(')
 guard=s[s.index('\n',start)+1:s.index(' tglAUXRecord(port,10,false',start)]
-install=s[s.index('// getDPCDInfo stores MAX_LANE_COUNT'):s.index('if (tglHDMIB)',s.index('// getDPCDInfo stores MAX_LANE_COUNT'))]
+install=s[s.index('// getDPCDInfo stores MAX_LANE_COUNT'):s.index('\n\t\t\t}',s.index('// getDPCDInfo stores MAX_LANE_COUNT'))]
 if len(sys.argv)>1:
  b=Path(sys.argv[1]).read_bytes()
  for name,offset in [('capability',0x1e328),('selection',0x1b607),('alternateSR',0x1bc73)]:

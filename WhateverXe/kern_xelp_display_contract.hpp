@@ -107,7 +107,10 @@ struct DisplayContract {
    (panel?Combo12|PanelDepth|PanelTiming|PanelPWM|AUXParent|PowerGet|PowerPut:0),installed};
  }
  static constexpr Mask DP13=SST13|AUX13|DPProbe13|DPBoot13|Training12|Framing;
- static DisplayContract display13(Mask installed,bool dp=false) {return {Backend13|(dp?DP13:0),installed};}
+ static constexpr Mask Panel13=SST13|AUX13|Training12|Framing|PanelPower|PanelTranscoder|PanelDepth|PanelTiming|PanelPWM;
+ static DisplayContract display13(Mask installed,bool dp=false,bool panel=false) {
+  return {Backend13|(dp?DP13:0)|(panel?Panel13:0),installed};
+ }
  static const char *name(Mask bit) {
   switch(bit) {
    case DonorRuntime:return "DonorRuntime";

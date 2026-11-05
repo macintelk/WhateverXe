@@ -5,12 +5,13 @@ import subprocess,tempfile
 r=Path(__file__).resolve().parents[1];s=(r/'WhateverXe/kern_xe.cpp').read_text()
 a=s.index('// ADLP_LOAD_ONLY_HOOKS:');b=s.index('// ADLP_LOAD_ONLY_HOOKS_END',a);body=s[a:b]
 a=s.index('    // ADLP_LOAD_ONLY_KERNEL:');b=s.index('    // ADLP_LOAD_ONLY_KERNEL_END',a);selection=s[a:b]
-a=s.index('    if(xeProfile.mobileDisplay13() && physicalGPU && checkKernelArgument("-wex-adlp-readout")');b=s.index('    if(display12SmallGTDetected',a);diagnostic=s[a:b]
+a=s.index('    if(xeProfile.mobileDisplay13() && physicalGPU && checkKernelArgument("-wex-adlp-readout")');b=s.index('    if(((display12SmallGTDetected',a);diagnostic=s[a:b]
 dispatch=s[s.index('bool XE::processKext('):s.index('    if((tglRequested',s.index('bool XE::processKext('))]
 assert dispatch.index('if(adlpLoadOnly)')<dispatch.index('processADLPLoadOnly')
 code=r'''
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <string>
@@ -50,13 +51,23 @@ struct KernelPatcher {
 };
 constexpr unsigned kIOMapInhibitCache=0;
 void IODelay(unsigned){assert(false);}
+bool allocationFailure=false;unsigned allocations=0,frees=0;
+void *IOMalloc(size_t bytes){++allocations;return allocationFailure?nullptr:malloc(bytes);}
+void IOFree(void *p,size_t){assert(p);++frees;free(p);}
 struct DiagnosticGPU {
- unsigned command=2,maps=0;
+ unsigned command=2,maps=0,snapshots=0;bool allocationFailed=false;
  unsigned configRead16(unsigned r){assert(r==4);return command;}
- struct Map {uintptr_t getVirtualAddress(){return 0;}unsigned getLength(){return 0;}void release(){}}map;
+ struct Map {
+  std::vector<uint32_t> bar;unsigned releases=0;
+  uintptr_t getVirtualAddress(){return bar.empty()?0:reinterpret_cast<uintptr_t>(bar.data());}
+  unsigned getLength(){return bar.size()*4;}void release(){++releases;}
+ }map;
  Map *mapDeviceMemoryWithRegister(unsigned r,unsigned){assert(r==0x10);++maps;return &map;}
- void setProperty(const char*,const void*,unsigned){}
+ void setProperty(const char *key,const void*,unsigned bytes){
+  if(!strcmp(key,"ADLPScanoutBoot")){assert(bytes==sizeof(AlderLakeN::DisplayReadout));++snapshots;}
+ }
  void setProperty(const char*,uint32_t,unsigned){}
+ void setProperty(const char *key,bool value){assert(!strcmp(key,"ADLPReadoutAllocationFailed"));allocationFailed=value;}
 };
 struct XE {
  bool adlpLoadOnly=false,adlpDisplaySelected=false;XELP::Profile xeProfile;unsigned initialized=0;
@@ -83,7 +94,17 @@ int main(){
   const bool blocked=enabled && physical!=0x4c8a;
   assert(xe.adlpLoadOnly==blocked && xe.initialized==!blocked && gpu.maps==unsigned(blocked&&powered));++cases;
  }
- readout=false;
+ // A readable diagnostic BAR exercises snapshot allocation success/failure.
+ // Either outcome remains load-only, and neither leaks its map or buffer.
+ for(bool fail:{false,true}) {
+  XE xe;DiagnosticGPU gpu;gpu.map.bar.resize(0x1000000/4);gpu.map.bar[0xA188/4]=1;
+  xe.physicalGPU=&gpu;readout=true;allocationFailure=fail;allocations=frees=0;
+  xe.xeProfile=XELP::identify(0x46a68086,12);xe.diagnose();
+  assert(xe.adlpLoadOnly && !xe.initialized && gpu.map.releases==1);
+  assert(allocations==1 && frees==unsigned(!fail) && gpu.snapshots==unsigned(!fail));
+  assert(gpu.allocationFailed==fail);++cases;
+ }
+ readout=false;allocationFailure=false;
  for(unsigned index:{1U,2U})for(unsigned bad=0;bad<4;++bad){
   std::vector<uint8_t> image(0x50000);auto base=reinterpret_cast<uintptr_t>(image.data());
   uint8_t fb[]={0x55,0x48,0x89,0xe5,0x41,0x56,0x53,0x48,0x83,0xec,0x10,0x48,0x89,0xf3,0x49,0x89,0xfe};

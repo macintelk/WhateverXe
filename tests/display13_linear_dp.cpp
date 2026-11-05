@@ -66,6 +66,16 @@ int main() {
             assert(r.status==LinearStatus::StateChanged && !r.restored && r.writes==(tick==1?0U:tick==3?2U:10U));
         }
     }
+    for(unsigned ddi=0;ddi<2;++ddi)for(unsigned pipe=0;pipe<3;++pipe)for(unsigned sr=0;sr<2;++sr) {
+        auto io=firmware(pipe,ddi,2,true);io.regs[0x60540+0x1000*pipe]|=sr<<6;
+        auto boot=readDisplay(io,true);LinearPlan plan;
+        assert(dpSource(boot,pipe,ddi)==!sr);
+        assert(dpSource(boot,pipe,ddi,nullptr,true));
+        assert(linearPlan(boot,plan,ddi,GOPProtocol::EDP)==LinearStatus::Ready);
+        auto r=reinitializeLinear(io,boot,true,ddi,GOPProtocol::EDP);
+        assert(r.status==LinearStatus::Success && dpSourceUnchanged(io,boot,pipe,ddi,0,nullptr,true));
+        io.regs[0x60540+0x1000*pipe]^=64;assert(!dpSourceUnchanged(io,boot,pipe,ddi,0,nullptr,true));
+    }
     auto bad=firmware(0,0,4,true);bad.regs[0x60540]=0x80000000;
     auto r=reinitializeLinear(bad,readDisplay(bad,true),true,0,GOPProtocol::DP);
     assert(r.status==LinearStatus::InvalidDPSource && bad.writes.empty());

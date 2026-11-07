@@ -151,6 +151,7 @@
 		2E442D32309C0DA800CCD2CB /* kern_display13_tc.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E442CA9309C0DA800CCD2CB /* kern_display13_tc.hpp */; };
 		2E5BF5832BCC212F0095BDCF /* HDMI.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E5BF5812BCC212F0095BDCF /* HDMI.cpp */; };
 		2E5BF5842BCC212F0095BDCF /* HDMI.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5BF5822BCC212F0095BDCF /* HDMI.hpp */; };
+		2E80A802309E9D2F00C4AC32 /* kern_xepm_tgl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E80A801309E9D2F00C4AC32 /* kern_xepm_tgl.cpp */; };
 		2E8599252FBCFFF4001C9274 /* intel_vbt_defs.h in Headers */ = {isa = PBXBuildFile; fileRef = 2E8599232FBCFFF3001C9274 /* intel_vbt_defs.h */; };
 		2E8599262FBCFFF4001C9274 /* intel_dsi_vbt_defs.h in Headers */ = {isa = PBXBuildFile; fileRef = 2E8599242FBCFFF3001C9274 /* intel_dsi_vbt_defs.h */; };
 		2EE611B22FA6C10F00E58E2A /* Firmware.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2EE611AE2FA6C10F00E58E2A /* Firmware.cpp */; };
@@ -325,6 +326,7 @@
 		2E442CA9309C0DA800CCD2CB /* kern_display13_tc.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc.hpp; path = WhateverXe/kern_display13_tc.hpp; sourceTree = SOURCE_ROOT; };
 		2E5BF5812BCC212F0095BDCF /* HDMI.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = HDMI.cpp; sourceTree = "<group>"; };
 		2E5BF5822BCC212F0095BDCF /* HDMI.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = HDMI.hpp; sourceTree = "<group>"; };
+		2E80A801309E9D2F00C4AC32 /* kern_xepm_tgl.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = kern_xepm_tgl.cpp; sourceTree = "<group>"; };
 		2E8599232FBCFFF3001C9274 /* intel_vbt_defs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = intel_vbt_defs.h; sourceTree = "<group>"; };
 		2E8599242FBCFFF3001C9274 /* intel_dsi_vbt_defs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = intel_dsi_vbt_defs.h; sourceTree = "<group>"; };
 		2EE611AE2FA6C10F00E58E2A /* Firmware.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Firmware.cpp; sourceTree = "<group>"; };
@@ -405,6 +407,7 @@
 				F0BB9E542A57A0340081F5FA /* kern_patcherplus.hpp */,
 				2E8599242FBCFFF3001C9274 /* intel_dsi_vbt_defs.h */,
 				2E8599232FBCFFF3001C9274 /* intel_vbt_defs.h */,
+				2E80A801309E9D2F00C4AC32 /* kern_xepm_tgl.cpp */,
 				2E442C31309C0DA500CCD2CB /* kern_adls_boot.hpp */,
 				2E442C83309C0DA700CCD2CB /* kern_adls_clock.hpp */,
 				2E442C41309C0DA600CCD2CB /* kern_alderlake_n_gpu.hpp */,
@@ -849,6 +852,7 @@
 				2E442D2D309C0DA800CCD2CB /* kern_dsi_adapter_modes.inc in Sources */,
 				CE405ED91E4A080700AA0B3D /* plugin_start.cpp in Sources */,
 				2E442D0E309C0DA800CCD2CB /* kern_xe_data_access.cpp in Sources */,
+				2E80A802309E9D2F00C4AC32 /* kern_xepm_tgl.cpp in Sources */,
 				2E1CC3E32BA5DBD9004EC8F6 /* DisplayMergeNub.cpp in Sources */,
 				2E442D1C309C0DA800CCD2CB /* kern_dsi_adapter_state.inc in Sources */,
 				2E442CBB309C0DA800CCD2CB /* kern_firmware.cpp in Sources */,

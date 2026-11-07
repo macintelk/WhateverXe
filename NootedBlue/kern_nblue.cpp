@@ -59,6 +59,10 @@ void NBlue::init() {
 
 
 void NBlue::processPatcher(KernelPatcher &patcher) {
+	
+	extern void xePmInstall(KernelPatcher &);
+	xePmInstall(patcher);
+	
   /*  auto *devInfo = DeviceInfo::create();
     if (devInfo) {
         devInfo->processSwitchOff();

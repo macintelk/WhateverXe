@@ -63,7 +63,164 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 
 	kextG11FBT=*NBlue::callback->framel;
 	
-	if (kextG11FBT.loadIndex == index) {
+	if (kextG11FB.loadIndex == index) {
+		kexticl=true;
+		
+		KernelPatcher::SolveRequest solveRequests[] = {
+			{"_gPlatformInformationList", this->gPlatformInformationList},
+			{"__ZN31AppleIntelFramebufferController14disableCDClockEv", this->orgDisableCDClock},
+			{"__ZN31AppleIntelFramebufferController19setCDClockFrequencyEy", this->orgSetCDClockFrequency},
+		};
+		PANIC_COND(!patcher.solveMultiple( index, solveRequests, address, size), "nblue",	"Failed to resolve symbols");
+
+		KernelPatcher::RouteRequest requests[] = {
+			
+			{"__ZN31AppleIntelFramebufferController23initPlatformWorkaroundsEv",initPlatformWorkarounds, this->oinitPlatformWorkarounds},
+			{"__ZN31AppleIntelFramebufferController16getOSInformationEv",getOSInformation2, this->ogetOSInformation2},
+			{"__ZN31AppleIntelFramebufferController19getTranscoderOffsetEP14AppleIntelPortj",getTranscoderOffset, this->ogetTranscoderOffset},
+			{"__ZN31AppleIntelFramebufferController14ReadRegister32Em",raReadRegister32, this->oraReadRegister32},
+			{"__ZN31AppleIntelFramebufferController15WriteRegister32Emj",raWriteRegister32, this->oraWriteRegister32},
+			{"__ZN21AppleIntelFramebuffer25setAttributeForConnectionEijm",wrapSetAttributeForConnection, this->owrapSetAttributeForConnection},
+			{"__ZN21AppleIntelFramebuffer25getAttributeForConnectionEijPm",fgetAttributeForConnection, this->ofgetAttributeForConnection},
+			{"__ZN31AppleIntelFramebufferController13FBMemMgr_InitEv", FBMemMgr_Init,this->oFBMemMgr_Init},
+			{"__ZN31AppleIntelFramebufferController9hwGetCRTCEP21AppleIntelFramebufferP21AppleIntelDisplayPath",hwGetCRTC, this->ohwGetCRTC},
+			{"__ZN31AppleIntelFramebufferController21hwSetPanelPowerConfigEj", hwSetPanelPowerConfig,this->ohwSetPanelPowerConfig},
+			{"__ZN31AppleIntelFramebufferController17updateSliceConfigEj",updateSliceConfig, this->oupdateSliceConfig},
+			{"__ZN31AppleIntelFramebufferController18setAsyncSliceCountE13IGSliceConfig",setAsyncSliceCount, this->osetAsyncSliceCount},
+			{"__ZN21AppleIntelFramebuffer4initEP31AppleIntelFramebufferControllerj",AppleIntelFramebufferinit, this->oAppleIntelFramebufferinit},
+			//{"__ZN31AppleIntelFramebufferController21probeCDClockFrequencyEv",wrapProbeCDClockFrequency,	this->orgProbeCDClockFrequency},
+			{"__ZN31AppleIntelFramebufferController18hwInitializeCStateEv",hwInitializeCState, this->ohwInitializeCState},
+			{"__ZN31AppleIntelFramebufferController20hwConfigureCustomAUXEb",hwConfigureCustomAUX, this->ohwConfigureCustomAUX},
+			{"__ZN17AppleIntelPortHAL4initEP10PortConfig",AppleIntelPortHALinit, this->oAppleIntelPortHALinit},
+			{"__ZN31AppleIntelFramebufferController11SetupParamsEP21AppleIntelFramebufferP21AppleIntelDisplayPathP10CRTCParamsPK29IODetailedTimingInformationV2",SetupParams,	this->oSetupParams},
+			//{"__ZN31AppleIntelFramebufferController19setupPipeWatermarksEP21AppleIntelFramebufferP21AppleIntelDisplayPathP10CRTCParams",setupPipeWatermarks, this->osetupPipeWatermarks},
+			
+			{"__ZN14AppleIntelPort8writeAUXEjPvj",writeAUX, this->owriteAUX},
+			{"__ZN14AppleIntelPort7readAUXEjPvj",readAUX, this->oreadAUX},
+			//{"__ZN31AppleIntelFramebufferController15enableVDDForAuxEP14AppleIntelPort",enableVDDForAux2, this->oenableVDDForAux2},
+			//{"__ZN31AppleIntelFramebufferController16disableVDDForAuxEP14AppleIntelPort",disableVDDForAux2, this->odisableVDDForAux2},
+			{"__ZN31AppleIntelFramebufferController15hwSetPanelPowerEj",hwSetPanelPower, this->ohwSetPanelPower},
+			{"__ZN14AppleIntelPort12linkTrainingEP18AGDCDPPortConfig_t",linkTraining, this->olinkTraining},
+			{"__ZN21AppleIntelFramebuffer19getPixelInformationEiiiP18IOPixelInformation",fgetPixelInformation, this->ofgetPixelInformation},
+			{"__ZN21AppleIntelDisplayPath8initHDCPEv", dovoid},
+			//{"__ZN15AppleIntelPlane17configurePlaneCUSEP19FlipTransactionArgs10IGColorCtl",dovoid},
+			//{"__ZN15AppleIntelPlane18configurePlaneiCSCEP19FlipTransactionArgs10IGColorCtl",dovoid},
+			{"__ZN17AppleIntelPortHAL13getLinkConfigEP16IOFBDPLinkConfig",getLinkConfig, this->ogetLinkConfig},
+			//{"__ZN21AppleIntelFramebuffer12getAttributeEjPm",fgetAttribute, this->ofgetAttribute},
+			//{"__ZN21AppleIntelFramebuffer12setAttributeEjm",fsetAttribute, this->ofsetAttribute},
+			{"__ZN31AppleIntelFramebufferController10enablePipeEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2",enablePipe, this->oenablePipe},
+			{"__ZN21AppleIntelFramebuffer11initVRRCapsEv",initVRRCaps, this->oinitVRRCaps},
+			{"__ZN14AppleIntelPort19displayPortReadEDIDEjjPhj",displayPortReadEDID, this->odisplayPortReadEDID},
+			//{"__ZN15AppleIntelPlane14configurePlaneEP19FlipTransactionArgs",configurePlane, this->oconfigurePlane},
+			//{"__ZN15AppleIntelPlane10setupPlaneEP21AppleIntelDisplayPathi",setupPlane, this->osetupPlane},
+			{"__ZN19AppleIntelPowerWell17enablePowerWellPGEj.cold.1", dovoid},
+			{"__ZN31AppleIntelFramebufferController12disableHWDC6Ev",disableHWDC6, this->odisableHWDC6},
+			{"__ZN14AppleIntelPort12getPortByDDIEj",getPortByDDI, this->ogetPortByDDI},
+			{"__ZN14AppleIntelPort11setPortModeENS_8PortModeE",setPortMode, this->osetPortMode},
+			{"__ZN31AppleIntelFramebufferController11initCDClockEv",initCDClock, this->oinitCDClock},
+			{"__ZN31AppleIntelFramebufferController13probeBootPipeEPbPN17AppleIntelPortHAL3DDIE",probeBootPipe, this->oprobeBootPipe},
+			//{"__ZN19AppleIntelPowerWell4initEP31AppleIntelFramebufferController",AppleIntelPowerWellinit, this->oAppleIntelPowerWellinit},
+			{"__ZN19AppleIntelPowerWell19enableDisplayEngineEv",enableDisplayEngine, this->oenableDisplayEngine},
+			{"__ZN19AppleIntelPowerWell23overridePowerWellsStateEb",overridePowerWellsState, this->ooverridePowerWellsState},
+			{"__ZN19AppleIntelPowerWell19disablePowerWellAuxEj",disablePowerWellAux, this->odisablePowerWellAux},
+			{"__ZN19AppleIntelPowerWell19disablePowerWellDDIEj",disablePowerWellDDI, this->odisablePowerWellDDI},
+			{"__ZN19AppleIntelPowerWell18disablePowerWellPGEj",disablePowerWellPG, this->odisablePowerWellPG},
+			//{"__ZN20IntelFBClientControl11doAttributeEjPmmS0_S0_P25IOExternalMethodArguments",wrapFBClientDoAttribute,	this->orgFBClientDoAttribute},
+			{"__ZN31AppleIntelFramebufferController10processCmdEjPmmS0_S0_",fbprocessCmd, this->ofbprocessCmd},
+			
+			
+			{"__ZN31AppleIntelFramebufferController18hwEnableInterruptsEv",hwEnableInterrupts, this->ohwEnableInterrupts},
+			//{"__ZN31AppleIntelFramebufferController15configureReportEP19IOReportChannelListjPvS2_",configureReport, this->oconfigureReport},
+			
+			
+			//{"__ZN31AppleIntelFramebufferController16hwRegsNeedUpdateEP21AppleIntelFramebufferP21AppleIntelDisplayPathP10CRTCParamsPK29IODetailedTimingInformationV2PN16AppleIntelScaler12SCALERPARAMSE",hwRegsNeedUpdate, this->ohwRegsNeedUpdate},
+			/*{"__ZN21AppleIntelFramebuffer31frameBufferNotificationcallbackEP8OSObjectPvP13IOFramebufferiS2_",aframeBufferNotificationcallback, this->oaframeBufferNotificationcallback},
+			{"__ZN31AppleIntelFramebufferController9hwSetModeEP21AppleIntelFramebufferP21AppleIntelDisplayPathiPK29IODetailedTimingInformationV2",hwSetMode, this->ohwSetMode},*/
+			
+			
+			{"__ZN21AppleIntelFramebuffer17prepareToExitWakeEv",dovoid},
+			{"__ZN21AppleIntelFramebuffer18prepareToExitSleepEv",dovoid},
+			{"__ZN21AppleIntelFramebuffer19prepareToEnterSleepEv",dovoid},
+			{"__ZN21AppleIntelFramebuffer18prepareToEnterWakeEv",dovoid},
+			
+			
+		};
+		PANIC_COND(!patcher.routeMultipleLong(index, requests, address, size), "nblue","Failed to route symbols");
+		
+		//cache + boot
+		static const uint8_t f7[]= {0x83, 0x78, 0x08, 0x00, 0x0f, 0x84, 0x32, 0x01, 0x00, 0x00};
+		static const uint8_t r7[]= {0x83, 0x78, 0x08, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+		
+		//static const uint8_t f7a[]= {0x80, 0x7d, 0xd7, 0x00, 0x75, 0x23};
+		//static const uint8_t r7a[]= {0x80, 0x7d, 0xd7, 0x00, 0xeb, 0x23};
+		
+		//tahoe
+		static const uint8_t f7a[]= {0xf6, 0x45, 0xd7, 0x01, 0x0f, 0x84, 0xe0, 0x01, 0x00, 0x00};
+		static const uint8_t r7a[]= {0xf6, 0x45, 0xd7, 0x01, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+		
+		
+		
+		//builtin
+		static const uint8_t f9[]= {0x48, 0x8b, 0xb8, 0x40, 0x04, 0x00, 0x00, 0xf6, 0x47, 0x14, 0x08, 0x75, 0x0a};
+		static const uint8_t r9[]= {0x48, 0x8b, 0xb8, 0x40, 0x04, 0x00, 0x00, 0xf6, 0x47, 0x14, 0x08, 0xeb, 0x0a};
+		//edp panel
+		static const uint8_t f9b[]= {0x8b, 0x40, 0x08, 0x85, 0xc0, 0x74, 0x51};
+		static const uint8_t r9b[]= {0x8b, 0x40, 0x08, 0x85, 0xc0, 0xeb, 0x51};
+		//sleep
+		static const uint8_t f9c[]= {0x74, 0x1f, 0x85, 0xc0, 0x0f, 0x85, 0x81, 0x00, 0x00, 0x00};
+		static const uint8_t r9c[]= {0x90, 0x90, 0x85, 0xc0, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+		
+		//setupPlanarSurfaceDBUF
+		static const uint8_t f10[]= {0x74, 0x31, 0x48, 0x89, 0xfb, 0x8b, 0x87, 0x94, 0x00, 0x00, 0x00, 0x85, 0xc0, 0x74, 0x24};
+		static const uint8_t r10[]= {0x90, 0x90, 0x48, 0x89, 0xfb, 0x8b, 0x87, 0x94, 0x00, 0x00, 0x00, 0x85, 0xc0, 0x90, 0x90};
+		
+		//register adresses
+		static const uint8_t f24b[]= {0xbe, 0x40, 0xf8, 0x06, 0x00};
+		static const uint8_t r24b[]= {0xbe, 0x40, 0x08, 0x06, 0x00};
+				
+		static const uint8_t f24c[]= {0x48, 0x81, 0xfb, 0x00, 0xf8, 0x06, 0x00};
+		static const uint8_t r24c[]= {0x48, 0x81, 0xfb, 0x00, 0x08, 0x06, 0x00};
+				
+		static const uint8_t f24d[]= {0xbe, 0x60, 0xf8, 0x06, 0x00};
+		static const uint8_t r24d[]= {0xbe, 0x60, 0x08, 0x06, 0x00};
+				
+		static const uint8_t f24e[]= {0xbe, 0x00, 0xf8, 0x06, 0x00};
+		static const uint8_t r24e[]= {0xbe, 0x00, 0x08, 0x06, 0x00};
+		
+		static const uint8_t f24f[]= {0xbe, 0x08, 0xf0, 0x07, 0x00};
+		static const uint8_t r24f[]= {0xbe, 0x08, 0x00, 0x07, 0x00};
+		
+		//linktrainig 2 lines
+		static const uint8_t f25[]= {0x77, 0x77, 0x00, 0x00};
+		static const uint8_t r25[]= {0x77, 0x00, 0x00, 0x00};
+
+		
+		LookupPatchPlus const patches[] = {
+			{&kextG11FB, f7, r7, arrsize(f7),    1},
+			{&kextG11FB, f7a, r7a, arrsize(f7a),    1},
+			//{&kextG11FB, f9, r9, arrsize(f9),    1},
+			//{&kextG11FB, f9b, r9b, arrsize(f9b),    1},
+			//{&kextG11FB, f9c, r9c, arrsize(f9c),    1},
+			//{&kextG11FB, f10, r10, arrsize(f10),    1},
+			
+			/*{&kextG11FB, f24b, r24b, arrsize(f24b),    12},
+			{&kextG11FB, f24c, r24c, arrsize(f24c),    1},
+			{&kextG11FB, f24d, r24d, arrsize(f24d),    10},
+			{&kextG11FB, f24e, r24e, arrsize(f24e),    28},
+			{&kextG11FB, f24f, r24f, arrsize(f24f),    5},
+			*/
+			//{&kextG11FB, f25, r25, arrsize(f25),    7},
+			
+			{&kextG11FB, f25, r25, arrsize(f25),    2},
+			
+		};
+		PANIC_COND(!LookupPatchPlus::applyAll(patcher, patches , address, size), "nblue", "kextG11FB Failed to apply patches!");
+
+		DBGLOG("nblue", "Loaded AppleIntelICLLPGraphicsFramebuffer!");
+		return true;
+		
+		
+	}	else if (kextG11FBT.loadIndex == index) {
 
 		SYSLOG("nblue", "AppleIntelTGLGraphicsFramebuffer");
 		
@@ -106,7 +263,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 			{"__ZN14AppleIntelPort7readAUXEjPvj",readAUX, this->oreadAUX},
 			//{"__ZN21AppleIntelFramebuffer12getAttributeEjPm",fgetAttribute, this->ofgetAttribute},
 			{"__ZN21AppleIntelFramebuffer12setAttributeEjm",fsetAttribute, this->ofsetAttribute},
-			//{"__ZN21AppleIntelFramebuffer19getPixelInformationEiiiP18IOPixelInformation",fgetPixelInformation, this->ofgetPixelInformation},
+			{"__ZN21AppleIntelFramebuffer19getPixelInformationEiiiP18IOPixelInformation",fgetPixelInformation, this->ofgetPixelInformation},
 			//{"__ZN15AppleIntelPlane18configurePlaneiCSCEP19FlipTransactionArgs10IGColorCtl",dovoid},
 			//{"__ZN15AppleIntelPlane17configurePlaneCUSEP19FlipTransactionArgs10IGColorCtl",dovoid},
 			{"__ZN21AppleIntelDisplayPath8initHDCPEv", dovoid},
@@ -163,7 +320,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 				
 				{"__ZN31AppleIntelFramebufferController18hwEnableInterruptsEv",hwEnableInterrupts, this->ohwEnableInterrupts},
 				{"__ZN31AppleIntelFramebufferController12disableHWDC6Ev",disableHWDC6, this->odisableHWDC6},
-				//{"__ZN31AppleIntelFramebufferController10enablePipeEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2",enablePipe, this->oenablePipe},
+				{"__ZN31AppleIntelFramebufferController10enablePipeEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2",enablePipe, this->oenablePipe},
 				{"__ZN31AppleIntelFramebufferController13probeBootPipeEPbPN17AppleIntelPortHAL3DDIE",probeBootPipe, this->oprobeBootPipe},
 				{"__ZN31AppleIntelFramebufferController11initCDClockEv",initCDClock, this->oinitCDClock},
 				//{"__ZN31AppleIntelFramebufferController15configureReportEP19IOReportChannelListjPvS2_",configureReport, this->oconfigureReport},
@@ -311,7 +468,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 			LookupPatchPlus const patchesp[] = {// tgl production kext
 				{&kextG11FBT, f7p, r7p, arrsize(f7p),	1},
 				{&kextG11FBT, f8p, r8p, arrsize(f8p),	1},
-				//{&kextG11FBT, f9p, r9p, arrsize(f9p),	1},
+				{&kextG11FBT, f9p, r9p, arrsize(f9p),	1},
 				{&kextG11FBT, f13p, r13p, arrsize(f13p),	1},
 				{&kextG11FBT, f13pb, r13pb, arrsize(f13pb),	1},
 				{&kextG11FBT, f19, r19, arrsize(f19),	1},
@@ -320,7 +477,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 				{&kextG11FBT, f24cp, r24cp, arrsize(f24cp),	1},
 				{&kextG11FBT, f24dp, r24dp, arrsize(f24dp),	4},
 				{&kextG11FBT, f25, r25, arrsize(f25),	6},
-				//{&kextG11FBT, f26p, r26p, arrsize(f26p),	1},
+				{&kextG11FBT, f26p, r26p, arrsize(f26p),	1},
 				
 			};
 			PANIC_COND(!LookupPatchPlus::applyAll(patcher, patchesp , address, size), "nblue", "kextG11FBT Failed to apply production patches!");
@@ -329,7 +486,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 			LookupPatchPlus const patches[] = {// tgl debug kext
 				{&kextG11FBT, f7, r7, arrsize(f7),	1},
 				{&kextG11FBT, f8, r8, arrsize(f8),	1},
-				//{&kextG11FBT, f9, r9, arrsize(f9),	1},
+				{&kextG11FBT, f9, r9, arrsize(f9),	1},
 				{&kextG11FBT, f13, r13, arrsize(f13),	1},
 				{&kextG11FBT, f13b, r13b, arrsize(f13b),	1},
 				{&kextG11FBT, f15, r15, arrsize(f15),	1},
@@ -339,16 +496,195 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
 				{&kextG11FBT, f24c, r24c, arrsize(f24c),	1},
 				{&kextG11FBT, f24d, r24d, arrsize(f24d),	6},
 				{&kextG11FBT, f25, r25, arrsize(f25),	6},
-				//{&kextG11FBT, f26, r26, arrsize(f26),	1},
+				{&kextG11FBT, f26, r26, arrsize(f26),	1},
 				
 			};
 			PANIC_COND(!LookupPatchPlus::applyAll(patcher, patches , address, size), "nblue", "kextG11FBT Failed to apply dbg patches!");
 		}
 		return true;
 		
+	}     else if (kextG11HW.loadIndex == index) {
+		 // icl
+		KernelPatcher::RouteRequest requests[] = {
+			 
+			 {"__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb", wrapPavpSessionCallback, this->orgPavpSessionCallback},
+			 {"__ZN16IntelAccelerator18setAsyncSliceCountE13IGSliceConfig",setAsyncSliceCount2, this->osetAsyncSliceCount2},
+			 {"__ZN16IntelAccelerator14setSliceConfigE13IGSliceConfig",setSliceConfig, this->osetSliceConfig},
+			 {"__ZN16IntelAccelerator19startGraphicsEngineEv",startGraphicsEngine, this->ostartGraphicsEngine},
+			 {"__ZN13IGHardwareGuC16initSchedControlEv",initSchedControl0, this->oinitSchedControl0},
+			 {"__ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj",IGSharedMappedBufferwithOptions, this->oIGSharedMappedBufferwithOptions},
+			 {"__ZNK20IGSharedMappedBuffer17getVirtualAddressEv",fgetVirtualAddress, this->ofgetVirtualAddress},
+			 {"__ZNK14IGMappedBuffer20getGPUVirtualAddressEv",fgetGPUVirtualAddress, this->ofgetGPUVirtualAddress},
+			 {"__ZN16IntelAccelerator13SafeForceWakeEbj",SafeForceWake, this->oSafeForceWake},
+			 {"__ZN20IGSharedMappedBuffer4freeEv",IGSharedMappedBufferfree, this->oIGSharedMappedBufferfree},
+			 {"__ZN13IGHardwareGuC13loadGuCBinaryEv",loadGuCBinary0, this->oloadGuCBinary0},
+			 {"__ZN13IGHardwareGuC15hostToGuCActionEPKjjiPj",hostToGuCAction, this->ohostToGuCAction},
+			 //{"__ZN13IGHardwareGuC16setupContextPoolEi",setupContextPool0, this->osetupContextPool0},
+			 {"__ZN12IGScheduler412loadFirmwareEv",loadFirmware, this->oloadFirmware},
+			 // {"__ZN13IGHardwareGuC26setupAdditionalDataStructsEv",setupAdditionalDataStructs0, this->osetupAdditionalDataStructs0},
+			 //{"__ZN20IGHardwareRingBuffer12waitForSpaceEj",waitForSpace, this->owaitForSpace},
+			 //{"__ZN16IntelAccelerator31initHardwareStatusPageRegistersEv",initHardwareStatusPageRegisters, this->oinitHardwareStatusPageRegisters},
+			
+			{"__ZN26IGHardwareCommandStreamer526processContextStatusBufferEj",wrapProcessContextStatusBuffer, this->orgProcessContextStatusBuffer},
+
+		 };
+		PANIC_COND(!patcher.routeMultipleLong(index, requests, address, size), "nblue","Failed to route symbols");
+		
+		static const char *handlers[4] = {
+			"__ZN26IGHardwareCommandStreamer522csbProcessIdleToActiveEPK28SGfxContextStatusBufferEntry",
+			"__ZN26IGHardwareCommandStreamer519csbProcessPreemptedEPK28SGfxContextStatusBufferEntry",
+			"__ZN26IGHardwareCommandStreamer523csbProcessElementSwitchEPK28SGfxContextStatusBufferEntry",
+			"__ZN26IGHardwareCommandStreamer522csbProcessActiveToIdleEPK28SGfxContextStatusBufferEntry"
+		};
+
+		for (size_t i = 0; i < arrsize(handlers); i++) {
+			this->csbHandlers[i] = reinterpret_cast<CsbHandler>(patcher.solveSymbol(index, handlers[i], address, size));
+		}
+		
+		//sku = 8
+		static const uint8_t f2[] = {0x41, 0xc1, 0xef, 0x1c, 0x44, 0x89, 0xbb, 0x50, 0x11, 0x00, 0x00};
+		static const uint8_t r2[] = {0xc7, 0x83, 0x50, 0x11, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x90};
+		//6 subslices
+		static const uint8_t f2a[] = {0x44, 0x89, 0xf8, 0xf7, 0xd0, 0xf3, 0x0f, 0xb8, 0xf0, 0x89, 0xb3, 0x88, 0x11, 0x00, 0x00};
+		static const uint8_t r2a[] = {0xc7, 0x83, 0x88, 0x11, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90};
+
+		
+		
+		//GEN12_GUC_TLB_INV_CR
+		static const uint8_t f4[] = {0x74, 0x42, 0x00, 0x00};
+		static const uint8_t r4[] = {0xe8, 0xce, 0x00, 0x00};
+		
+
+		
+		LookupPatchPlus const patches[] = {
+			{&kextG11HW, f2, r2, arrsize(f2),	1},
+			{&kextG11HW, f2a, r2a, arrsize(f2a),	1},
+			//{&kextG11HW, f4, r4, arrsize(f4),	22},
+
+			
+		};
+		PANIC_COND(!LookupPatchPlus::applyAll(patcher, patches , address, size), "nblue", "kextG11HW Failed to apply patches!");
+
+		return true;
+		
+		
+	} else if (kextG11HWT.loadIndex == index || kextG11HWTe.loadIndex == index) {
+		//tgl
+		auto kext=kextG11HWT.loadIndex == index ? kextG11HWT: kextG11HWTe;
+		
+		
+		KernelPatcher::RouteRequest requests[] = {
+			
+			{"__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb", wrapPavpSessionCallback0, this->orgPavpSessionCallback0},
+			{"__ZN16IntelAccelerator18setAsyncSliceCountE13IGSliceConfig",setAsyncSliceCount2, this->osetAsyncSliceCount2},
+			{"__ZN16IntelAccelerator14setSliceConfigE13IGSliceConfig",setSliceConfig, this->osetSliceConfig},
+			{"__ZN16IntelAccelerator19startGraphicsEngineEv",startGraphicsEngine, this->ostartGraphicsEngine},
+			{"__ZN13IGHardwareGuC16initSchedControlEv",initSchedControl, this->oinitSchedControl},
+			{"__ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj",IGSharedMappedBufferwithOptions, this->oIGSharedMappedBufferwithOptions},
+			{"__ZNK20IGSharedMappedBuffer17getVirtualAddressEv",fgetVirtualAddress, this->ofgetVirtualAddress},
+			{"__ZNK14IGMappedBuffer20getGPUVirtualAddressEv",fgetGPUVirtualAddress, this->ofgetGPUVirtualAddress},
+			{"__ZN16IntelAccelerator13SafeForceWakeEbj",SafeForceWake, this->oSafeForceWake},
+			{"__ZN20IGSharedMappedBuffer4freeEv",IGSharedMappedBufferfree, this->oIGSharedMappedBufferfree},
+			{"__ZN13IGHardwareGuC13loadGuCBinaryEv",loadGuCBinary, this->oloadGuCBinary},
+			{"__ZN13IGHardwareGuC15hostToGuCActionEPKjjiPj",hostToGuCAction, this->ohostToGuCAction},
+			//{"__ZN13IGHardwareGuC16setupContextPoolEi",setupContextPool, this->osetupContextPool},
+			{"__ZN12IGScheduler412loadFirmwareEv",loadFirmware, this->oloadFirmware},
+			
+			/*{"__ZN13IGHardwareGuC15allocDoorbellIdE25UK_GEN11_CONTEXT_PRIORITY",allocDoorbellId, this->oallocDoorbellId},
+			 {"__ZN13IGHardwareGuC15stealDoorbellIdEv",stealDoorbellId, this->ostealDoorbellId},
+			 {"__ZN13IGHardwareGuC18setDoorbellPinningEtb",setDoorbellPinning, this->osetDoorbellPinning},
+			 {"__ZN13IGHardwareGuC17releaseDoorbellIdEt",releaseDoorbellId, this->oreleaseDoorbellId},
+			 {"__ZN13IGHardwareGuC15acquireDoorbellEP35UK_GEN11_GUC_CONTEXT_DESCRIPTOR_RECb",acquireDoorbell, this->oacquireDoorbell},
+			 {"__ZN13IGHardwareGuC15releaseDoorbellEP35UK_GEN11_GUC_CONTEXT_DESCRIPTOR_REC",releaseDoorbell, this->oreleaseDoorbell},
+			 */
+			
+			// {"__ZN13IGHardwareGuC26setupAdditionalDataStructsEv",setupAdditionalDataStructs, this->osetupAdditionalDataStructs},
+			// {"__ZN22IGHardwareGuCWorkQueue11withOptionsEP22IOGraphicsAccelerator2jP37UK_GEN11_SCHED_PROCESS_DESCRIPTOR_REC",IGHardwareGuCWorkQueuewithOptions, this->oIGHardwareGuCWorkQueuewithOptions},
+			//{"__ZN13IGHardwareGuC14allocContextIdEyb",allocContextId, this->oallocContextId},
+			
+			//{"__ZN18IGAccelDisplayPipe19validateTransactionEP30IOAccelDisplayPipeTransaction2",validateTransaction, this->ovalidateTransaction},
+			
+			/*
+			 {"__ZN13IGHardwareGuC16releaseUkContextEj",dovoid},
+			 {"__ZN13IGHardwareGuC33deregisterCommandTransportBuffersEv",dovoid},
+			 {"__ZN13IGHardwareGuC15createUkContextEy25UK_GEN11_CONTEXT_PRIORITY",udozero},
+			 {"__ZN13IGHardwareGuC31registerCommandTransportBuffersEv",ldone},
+			 */
+			// {"__ZN13IGHardwareGuC16setupContextPoolEi",ldone},
+			
+			//{"__ZN20IGHardwareRingBuffer12waitForSpaceEj",waitForSpace, this->owaitForSpace},
+			//{"__ZN16IntelAccelerator31initHardwareStatusPageRegistersEv",initHardwareStatusPageRegisters, this->oinitHardwareStatusPageRegisters},
+			
+			// https://elixir.bootlin.com/linux/v5.5.19/source/drivers/gpu/drm/i915/gt/uc/intel_guc_submission.c
+			
+			
+			
+			/*
+			 {"__ZN13IGHardwareGuC13initDoorbellsEv",dovoid},
+			 {"__ZN5IGGuC16ringAllDoorbellsEv",dovoid},
+			 {"__ZN5IGGuC12ringDoorbellE10IGHwCsType",dovoid},
+			 {"__ZN13IGHardwareGuC17reacquireDoorbellEj",reacquireDoorbell},
+			 {"__ZN20IGHardwareRingBuffer12submitToRingEv.cold.1",dovoid},
+			 */
+			
+			//{"__ZN16IntelAccelerator15configureDeviceEP11IOPCIDevice",fconfigureDevice, this->ofconfigureDevice},
+			//{"__ZN15IGMemoryManager16initDeviceMemoryEv",finitDeviceMemory, this->ofinitDeviceMemory},
+			//{"__ZN5IGGuC18checkWOPCMSettingsEmR14IOVirtualRange",checkWOPCMSettings, this->ocheckWOPCMSettings},
+			
+			//{"__ZN13IGHardwareGuC31registerCommandTransportBuffersEv",registerCommandTransportBuffers, this->oregisterCommandTransportBuffers},
+			//{"__ZN13IGHardwareGuC33deregisterCommandTransportBuffersEv",deregisterCommandTransportBuffers, this->oderegisterCommandTransportBuffers},
+			//{"__ZNK11IGHashTableIjj12IGHashTraitsIjE25IGIOMallocAllocatorPolicyE8containsERKj",IGHashTablecontains, this->oIGHashTablecontains},
+			//{"__ZN11IGHashTableIjj12IGHashTraitsIjE25IGIOMallocAllocatorPolicyEixERKj",IGHashTableoperator, this->oIGHashTableoperator},
+			//{"__ZN13IGHardwareGuC31DetachContextDescFromGucContextERK21SGfxContextDescriptor",DetachContextDescFromGucContext, this->oDetachContextDescFromGucContext},
+			//{"__ZN13IGHardwareGuC16releaseUkContextEj",releaseUkContext, this->oreleaseUkContext},
+			//{"__ZN13IGHardwareGuC29AttachContextDescToGucContextERK21SGfxContextDescriptor",AttachContextDescToGucContext, this->oAttachContextDescToGucContext},
+			
+		};
+		PANIC_COND(!patcher.routeMultipleLong(index, requests, address, size), "nblue","Failed to route symbols");
+		
+		// 6 subslices
+		static const uint8_t f2[] = {0x8b, 0x5d, 0xd0, 0xf3, 0x0f, 0xb8, 0xf3, 0x01, 0xf6, 0x41, 0x89, 0xb7, 0x58, 0x11, 0x00, 0x00};
+		static const uint8_t r2[] = {0x8b, 0x5d, 0xd0, 0x41, 0xc7, 0x87, 0x58, 0x11, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x90, 0x90};
+		
+		// 8 MaxEUPerSubSlice
+		static const uint8_t f2a[] = {0xbe, 0x08, 0x00, 0x00, 0x00, 0x29, 0xde, 0x41, 0x89, 0xb7, 0x6c, 0x11, 0x00, 0x00};
+		static const uint8_t r2a[] = {0xbe, 0x08, 0x00, 0x00, 0x00, 0x90, 0x90, 0x41, 0x89, 0xb7, 0x6c, 0x11, 0x00, 0x00};
+		
+		//sku =2  getGPUInfo
+		static const uint8_t f3[] = {0x8b, 0x3e, 0x81, 0xff, 0xee, 0xbe, 0xaf, 0xde, 0x7f, 0x15, 0x81, 0xff, 0x86, 0x80, 0x40, 0x9a, 0x74, 0x2d};
+		static const uint8_t r3[] = {0x8b, 0x3e, 0x81, 0xff, 0xee, 0xbe, 0xaf, 0xde, 0x90, 0x90, 0x81, 0xff, 0x86, 0x80, 0x40, 0x9a, 0xeb, 0x2d};
+		
+		// L3BankCount = 8
+		static const uint8_t f3a[] = {0x83, 0xfe, 0x01, 0x75, 0x59, 0x83, 0xfa, 0x0c, 0x75, 0x54, 0x41, 0xc7, 0x87, 0x64, 0x11, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00};
+		static const uint8_t r3a[] = {0x83, 0xfe, 0x01, 0x90, 0x90, 0x83, 0xfa, 0x0c, 0x90, 0x90, 0x41, 0xc7, 0x87, 0x64, 0x11, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00};
+		
+		//ringmask
+		static const uint8_t f4[] = {0x41, 0x80, 0x8d, 0x00, 0x13, 0x00, 0x00, 0x3f};
+		static const uint8_t r4[] = {0x41, 0x80, 0x8d, 0x00, 0x13, 0x00, 0x00, 0x1f};
+		
+		//blit3d mem align patch
+		static const uint8_t f5[] = {0x40, 0xd2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+		static const uint8_t r5[] = {0x00, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+		
+		LookupPatchPlus const patches[] = {
+			{&kext, f2, r2, arrsize(f2),	1},
+			{&kext, f2a, r2a, arrsize(f2a),	1},
+			{&kext, f3, r3, arrsize(f3),	1},
+			{&kext, f3a, r3a, arrsize(f3a),	1},
+			{&kext, f4, r4, arrsize(f4),	1},
+			{&kext, f5, r5, arrsize(f5),	1},
+			
+		};
+		PANIC_COND(!LookupPatchPlus::applyAll(patcher, patches , address, size), "nblue", "kextG11HWT Failed to apply patches!");
+		
+		
+		
+		
+		DBGLOG("nblue", "Loaded AppleIntelTGLGraphics!");
+		return true;
 	}
 
-    return false;
+	return false;
 }
 
 uint32_t intel_de_rmw(struct intel_display *display, uint32_t reg, uint32_t clear, uint32_t set)

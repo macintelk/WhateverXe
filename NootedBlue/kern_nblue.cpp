@@ -44,7 +44,7 @@ void NBlue::init() {
 	//lilu.onKextLoadForce(&kextIOGraphics);
 	//lilu.onKextLoadForce(&kextIOAcceleratorFamily2);
 	
-	//gen11.init();
+	gen11.init();
 	dyldpatches.init();
 	
     lilu.onPatcherLoadForce(
@@ -123,7 +123,7 @@ void NBlue::processPatcher(KernelPatcher &patcher) {
 		memcpy(this->edid, edid0->getBytesNoCopy(), 0x80);
 	}*/
 	
-	this->deviceId =0x9a49;
+	
 	this->tglid=true;
 	
 	//dyldpatches.processPatcher(patcher);
@@ -2787,6 +2787,7 @@ int NBlue::intel_opregion_setup()
 	struct intel_guc_ct *ct=&guc->ct;
 	struct intel_guc_ct0 *ct0=&guc->ct0;
 	
+	ct->guc=guc;
 	guc->ads_vma=(struct i915_vma*)IOMalloc(sizeof(struct i915_vma));
 	ct->vma=(struct i915_vma*)IOMalloc(sizeof(struct i915_vma));
 	ct0->vma=(struct i915_vma*)IOMalloc(sizeof(struct i915_vma));
@@ -3006,15 +3007,10 @@ UInt32 NBlue::readReg32(unsigned long reg) {
 		}
 	}
 	
-	if (reg < rmmioLen-4) {
 		auto ret= *(uint *)((long)rmmioPtr + reg);
 		//IOSimpleLockUnlock(nlock);
 		return ret;
-	} else {
-		auto ret=  0;
-		//IOSimpleLockUnlock(nlock);
-		return ret;
-	}
+
 }
 
 void NBlue::writeReg32(unsigned long reg, UInt32 val) {
@@ -3029,9 +3025,7 @@ void NBlue::writeReg32(unsigned long reg, UInt32 val) {
 		}
 	}
 	
-	if (reg < rmmioLen-4) {
 		*(uint *)((long)rmmioPtr + reg) = val;
-	}
 	//IOSimpleLockUnlock(nlock);
 }
 

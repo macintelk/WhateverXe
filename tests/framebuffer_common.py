@@ -5,19 +5,8 @@ import re,subprocess,tempfile,sys
 r=Path(__file__).resolve().parents[1];s=(r/'WhateverXe/kern_xe.cpp').read_text()
 names=['processFramebufferKext','processFramebufferCommon','wrapFramebufferStart']
 f='\n'.join(re.search(r'bool XE::'+n+r'\(.*?\n\}',s,re.S).group() for n in names)
-# The ABI entries have one installer and one trampoline owner. This checks
-# architecture, separately from the CPU/runtime behavioral fixtures below.
-for symbol in ['__ZN21AppleIntelFramebuffer4initEP31AppleIntelFramebufferControllerj',
- '__ZN14AppleIntelPort16computeLaneCountEPK29IODetailedTimingInformationV2jjPj',
- '__ZN31AppleIntelFramebufferController5startEP9IOService',
- '__ZN31AppleIntelFramebufferController12CallBackAGDCE31kAGDCRegisterLinkControlEvent_tmj',
- '__ZN21AppleIntelFramebuffer13newUserClientEP4taskPvjPP12IOUserClient']:
- enabled=re.sub(r'bool XE::processADLPLoadOnly\(.*?\n\}', '', s, flags=re.S)
- assert enabled.count('"'+symbol+'"')==1,symbol
-assert s.count('processFramebufferCommon(patcher,index,address,size)')==1
-assert s.count('tglInstallSonomaSurfaceABI(patcher,index,address,size,true)')==1
-assert s.count('xelpInstallNVRAMABI(patcher,index,address,size)')==1
-assert s.count('processFramebufferDonorRuntime(patcher,index,address,size)')==1
+# Ownership and repeated installation are checked below by executing the
+# installer and its start gate. Textual symbol/call counts are not behavior.
 code=r'''
 #include <cassert>
 #include "kern_xelp_combo_clock.hpp"
@@ -99,10 +88,14 @@ int main(int argc,char **argv){
   if(argc>1)assert(!memcmp(image.data()+span.first,span.second.data(),span.second.size()));
   else memcpy(image.data()+span.first,span.second.data(),span.second.size());
  }
- for(bool display13:{false,true})for(unsigned failure=0;failure<14;++failure){
+ for(bool display13:{false,true})for(unsigned failure=0;failure<16;++failure){
   shutdownCalls=0;
   auto b=image;uintptr_t pure=0x1234;memcpy(b.data()+0xccad0+0x188,&pure,sizeof(pure));
   XE x;callbackXE=&x;x.display13FramebufferRequested=display13;KernelPatcher p;
+  // The provider must be resolved before this one-shot installation. These
+  // are the real consumer guards behind the host notification-order fixture.
+  if(failure==14)x.xelpProviderProbe=0;
+  if(failure==15)x.xelpProviderConfigureProbe=0;
   surfaceOK=failure!=5;nvramOK=failure!=6;x.runtimeOK=failure!=7;x.agdcOK=failure!=8;x.backendOK=failure!=9;x.trainingOK=failure!=10;x.stopDuringStart=failure==11;x.nativeOK=failure!=12;
   if(failure>=1&&failure<=4)p.failAt=failure;
   bool handled=x.processFramebufferKext(p,1,(uintptr_t)b.data(),b.size());

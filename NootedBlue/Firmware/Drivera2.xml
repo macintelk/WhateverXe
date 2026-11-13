@@ -233,8 +233,6 @@
 	<string>Gen10</string>
 	<key>IOGVACodec</key>
 	<string>Gen10</string>
-	<key>IOGVAHEVCDecode</key>
-	<string>2</string>
 	<key>IOGVAHEVCDecodeCapabilities</key>
 	<dict>
 		<key>VTPerProfileDetails</key>
@@ -292,7 +290,7 @@
 	<key>IOSourceVersion</key>
 	<string>0.0.0.0.0</string>
 	<key>IOVARendererID</key>
-	<integer>17301632</integer>
+	<integer>17301568</integer>
 	<key>MetalPluginName</key>
 	<string>AppleIntelTGLGraphicsMTLDriver</string>
 </dict>

@@ -5,13 +5,13 @@ from production_source import read_source
 import hashlib,re,subprocess,sys,tempfile
 root=Path(__file__).resolve().parents[1];s=read_source(root/'WhateverXe/kern_xe.cpp')
 functions='\n'.join(re.search(r'(?:static bool|bool|uint32_t|void|int) (?:XE::)?'+name+r'\([^;{]*\{.*?\n\}',s,re.S)[0]
- for name in ['dsiCachePath','dsiLifecycleTarget','wrapDSISetDisplayMode','dsiNativeUpdateAllowed','dsiSharedWriterStopped','wrapDisplay13WMArmUpdate','beginDSINativeWriter','endDSINativeWriter','wrapDSICursorImage','wrapDSICursorState','beginDSIFramebufferWriter','wrapDSIFlipTransaction','wrapDSIGammaTransaction','wrapDSICscTransaction','wrapDSIPlaneGammaTransaction','wrapDSISetGammaTable','wrapDSISetAttribute','wrapDSISetConnectionAttribute','wrapDSISetPowerState','wrapDSISetStream'])
+ for name in ['dsiCachePath','dsiLifecycleTarget','wrapDSISetDisplayMode','dsiNativeUpdateAllowed','dsiSharedWriterStopped','wrapDisplay13WMArmUpdate','beginDSINativeWriter','endDSINativeWriter','wrapDSICursorImage','wrapDSICursorState','beginDSIFramebufferWriter','wrapDSIFlipTransaction','wrapDSIGammaTransaction','wrapDSICscTransaction','wrapDSIPlaneGammaTransaction','wrapDSISetGammaTable','wrapDSISetAttribute','wrapDSISetConnectionAttribute','wrapDisplay13SetPowerState','finishDisplay13SystemWake','wrapDSISetStream'])
 functions=functions.replace('void XE::endDSINativeWriter(int token) {', 'void XE::endDSINativeWriter(int token) {\n struct EndScope {EndScope(){endingWriter=true;}~EndScope(){endingWriter=false;}} endScope;')
 scope=re.search(r'struct DSIModeScope \{.*?\n\};',s,re.S)[0]
 if len(sys.argv)==2:
  binary=Path(sys.argv[1]).read_bytes()
  assert hashlib.sha256(binary).hexdigest()=='c004fc1ac9ee4157e2e12736f40fa6639bde025a279326beeb9dd48c9b445731'
- for name,width,count in [('processDSINativeWriters',20,2),('processDSINativeTransactions',17,5),('processDSINativeAttributes',20,4)]:
+ for name,width,count in [('processDSINativeWriters',20,2),('processDSINativeTransactions',17,5),('processDisplay13NativeAttributes',20,4)]:
   installer=re.search(r'bool XE::'+name+r'\([^;{]*\{.*?\n\}',s,re.S)[0]
   offsets=[int(x,0) for x in re.search(r'offsets\[\]=\{([^}]+)',installer)[1].split(',')]
   entries=re.search(r'entries\[\]\['+str(width)+r'\]=\{(.*?)\};',installer,re.S)[1]
@@ -27,21 +27,25 @@ code=r'''
 #include <cstdio>
 #include <initializer_list>
 struct OSObject {alignas(8) uint8_t bytes[0x4B90]{};unsigned size=sizeof(bytes);
+ unsigned refs=1;void retain(){++refs;}void release(){assert(refs>1);--refs;}
  OSObject *getMetaClass(){return this;}unsigned getClassSize(){return size;}};
 using IOService=OSObject;
 struct IORegistryEntry {static IORegistryEntry *getRegistryRoot(){static IORegistryEntry r;return &r;}
  void setProperty(const char *name,const void *data,unsigned bytes){
+  if(!strcmp(name,"WEXDSISystemWakeEvents")){assert(bytes==8);return;}
+  if(!strcmp(name,"WEXDSIPowerNotifications")){assert(bytes==20);return;}
+  if(!strcmp(name,"WEXDisplay13SystemWakeEvents")){assert(bytes==72);return;}
   assert(!strcmp(name,"WEXDSIModeRequest") && bytes==64);
   const auto words=static_cast<const uint64_t *>(data);assert(words[0]==1);
  }};
 IOService *pendingFB=nullptr;bool dsiPendingTarget(IOService *fb){return fb && pendingFB==fb;}using IOLock=int;struct {bool modeReady=false;} dsiPendingBacking;
 bool dsiPublishedTarget(IOService *fb){return dsiPendingTarget(fb) && dsiPendingBacking.modeReady;}
 struct IORecursiveLock {unsigned depth=0;};
-unsigned owner=0,modeCalls=0,armCalls=0,backingCalls=0;IORecursiveLock fbLock;bool expectDSI=false,endingWriter=false;
-void IOLockLock(IOLock*){assert((fbLock.depth || endingWriter) && !owner);++owner;}void IOLockUnlock(IOLock*){assert(owner==1);--owner;}
+unsigned owner=0,modeCalls=0,armCalls=0,backingCalls=0;IORecursiveLock fbLock;bool expectDSI=false,endingWriter=false;uint32_t *notificationBusy=nullptr;
+void IOLockLock(IOLock*){assert((fbLock.depth || endingWriter || (notificationBusy && *notificationBusy)) && !owner);++owner;}void IOLockUnlock(IOLock*){assert(owner==1);--owner;}
 void IORecursiveLockLock(IORecursiveLock *p){assert(!owner);++p->depth;}
 void IORecursiveLockUnlock(IORecursiveLock *p){assert(!owner && p->depth);--p->depth;}
-struct {IOLock *lock=nullptr;IOService *controller=nullptr;OSObject *dsiPort=nullptr;
+struct {IOLock *lock=nullptr;uint32_t restoreEpoch=0;IOService *controller=nullptr;OSObject *dsiPort=nullptr;
  unsigned dsiNativeWriters=0;bool memoryFaulted=false,clockFaulted=false,watermarkFaulted=false;
  struct {struct {bool faulted=false,suspended=false;}state;}bridge;struct {bool faulted=false;}dbuf;
  struct {IOService *memoryFramebuffer=nullptr;bool destroyingPath=false;}pipe[3];
@@ -52,6 +56,7 @@ const XELP::DSI::AppleAdapter::Timing *dsiPresentation(uint32_t mode){
  return XELP::DSI::AppleAdapter::acceptsMode(mode,dsiFixedMode.clientMode)?&t:nullptr;
 }
 IOService *panel=nullptr,*nativeFB=nullptr;bool dsiModeTarget(IOService *f){return f && f==panel;}
+constexpr uint32_t kIOSystemPowerAttribute=0x73707772U, kIOMessageSystemWillRestart=0xe0000310U, kIOMessageSystemWillPowerOff=0xe0000250U;
 constexpr uint32_t kIOReturnNotReady=0xe00002d8U,kIOReturnUnsupported=0xe00002c7U,kIOReturnSuccess=0;
 #define FunctionCast(f,p) reinterpret_cast<decltype(&f)>(p)
 uint32_t nativeMode(IOService*,int32_t m,int32_t d){assert(!fbLock.depth && !owner);assert(m==0x10000 && d==2);++modeCalls;return 7;}
@@ -74,7 +79,19 @@ uint32_t nativePower(IOService*,uint32_t);
 unsigned streamCalls=0;OSObject *expectedPath=nullptr;
 uint32_t nativeStream(IOService*,IOService*,OSObject*,const void*);
 struct XE {
+ static bool prepareDisplay13Wake(IOService*){return true;}
+ // Native common completion is covered by display13_power_dispatch.py.
+ bool ownedDisplay13Framebuffer(IOService*)const{return false;}
  struct {unsigned dsi=1;}adlnOutputWiring;bool dsiStopAttempted=false,dsiResourcesReady=true;
+ uintptr_t display13FramebufferEvent=0;bool dsiSystemWakeNotify=false,dsiPowerOffNotified=false;
+ uint32_t dsiWakeIncomplete=0;
+ uint32_t dsiPowerCallbackBusy=0,dsiPowerOffEvents=0,dsiPowerOnEvents=0;
+ bool notifyOK=true;
+ IOService *adlnTopologyController=nullptr;bool display13PagingLayoutKnown=true;
+ uint32_t displayWakeEventBusy=0,displayWakeEventEpoch=0,displayWakeEventErrors=0;
+ uint32_t displayWakeEventPhase[3]{};
+ bool restoreDisplay13Ports(IOService *ctl){assert(!fbLock.depth && !owner && ctl==adlnTopologyController);return true;}
+ bool finishDisplay13SystemWake(IOService*,bool=false);
  bool dsiPowerTest=false;struct {bool sleeping=false,failed=false;}dsiRuntimePower;unsigned wakeCalls=0;bool wakeOK=false;
  bool dsiStopTest=false,dsiMemoryReleased=false,dsiDDIReleased=false,stopOK=false;unsigned stopCalls=0;
  struct {bool done=false;bool complete(){return done;}}dsiClockStop;
@@ -82,19 +99,19 @@ struct XE {
  bool quiesceDSIPath(IOService *ctl,IOService *fb,OSObject *path,bool retain=false){
   assert(fbLock.depth && !owner && ctl==display13FBPower.controller && fb==panel);
   assert(path==Display13FBMemory::singlePath<OSObject *>(fb));++stopCalls;
-  if(stopOK && retain){dsiStopAttempted=true;dsiRuntimePower.sleeping=true;return true;}
+  if(stopOK && retain){dsiStopAttempted=true;dsiRuntimePower.sleeping=true;*(reinterpret_cast<uint8_t*>(fb)+0x199)&=~0x20;return true;}
   if(stopOK){dsiStopAttempted=true;dsiMemoryReleased=dsiDDIReleased=dsiPanelStop.complete=dsiClockStop.done=true;}
   return stopOK;
  }
  bool resumeDSIPath(IOService *ctl,IOService *fb,OSObject *path){
   assert(fbLock.depth && !owner && ctl==display13FBPower.controller && fb==panel && dsiRuntimePower.sleeping);
   assert(path==Display13FBMemory::singlePath<OSObject *>(fb));++wakeCalls;
-  if(wakeOK){dsiRuntimePower.sleeping=false;dsiStopAttempted=false;}
+  if(wakeOK){dsiRuntimePower.sleeping=false;dsiStopAttempted=false;++display13FBPower.restoreEpoch;}
   return wakeOK;
  }
  bool dsiPanelOnly=false,publicationReady=false;bool publishDSINativeMode(IOService*){return publicationReady;}
- uint32_t setDSIPresentation(IOService *fb,uint32_t mode,const XELP::DSI::AppleAdapter::Timing &){
-  assert(fbLock.depth && !owner);memcpy(reinterpret_cast<uint8_t *>(fb)+0x4250,&mode,sizeof(mode));return 0;}
+ uint32_t setDSIPresentation(IOService *fb,uint32_t mode,const XELP::DSI::AppleAdapter::Timing &,uint32_t depth){
+  assert(fbLock.depth && !owner);memcpy(reinterpret_cast<uint8_t *>(fb)+0x4250,&mode,sizeof(mode));memcpy(reinterpret_cast<uint8_t *>(fb)+0x4254,&depth,sizeof(depth));return 0;}
  bool dsiNativeWriterHooksReady=true;uintptr_t orgDSICursor[2]{};
  uintptr_t orgDSIMode[6]{};
  static void recordDSIClient(IOService*,unsigned,uint64_t,uint32_t){};
@@ -105,7 +122,7 @@ struct XE {
  uint32_t saveDSIBrightness(IOService*,uintptr_t value){assert(fbLock.depth && !owner);return value<=UINT32_MAX?0U:kIOReturnUnsupported;}
  uint32_t setDSIBrightness(IOService*,uintptr_t value){assert(fbLock.depth && !owner);return value<=65535?0U:kIOReturnUnsupported;}
  static uint32_t wrapDSISetConnectionAttribute(IOService*,int32_t,uint32_t,uintptr_t);
- static uint32_t wrapDSISetPowerState(IOService*,uint32_t);
+ static uint32_t wrapDisplay13SetPowerState(IOService*,uint32_t);
  uintptr_t orgDSITransaction[5]{};
  static int beginDSIFramebufferWriter(IOService*);
  static uint32_t wrapDSIFlipTransaction(IOService*,void*,uint64_t,void*);
@@ -183,9 +200,11 @@ uint32_t nativeStream(IOService *ctl,IOService *fb,OSObject *path,const void *ti
  ++streamCalls;return 0xe0000124U;
 }
 template<class T>void put(void *p,unsigned o,T v){memcpy(static_cast<uint8_t*>(p)+o,&v,sizeof(v));}
+static uint32_t systemEvent(IOService*,int,void*);
 struct Case {
  IOService fb,ctl,peer;OSObject path,port;IOLock lock;
  Case(){assert(!fbLock.depth && !owner);expectedWriters=1;nestedCursor=nestedTx=nestedAttribute=false;xe={};dsiFixedMode={};
+  xe.display13FramebufferEvent=reinterpret_cast<uintptr_t>(&systemEvent);
   xe.orgDSIAttributes[0]=reinterpret_cast<uintptr_t>(nativeAttribute);
   xe.orgDSIAttributes[1]=reinterpret_cast<uintptr_t>(nativeConnectionAttribute);
   xe.orgDSIAttributes[2]=reinterpret_cast<uintptr_t>(nativePower);
@@ -196,11 +215,13 @@ struct Case {
   xe.orgDSITransaction[3]=reinterpret_cast<uintptr_t>(nativePlaneGamma);
   xe.orgDSITransaction[4]=reinterpret_cast<uintptr_t>(nativeGammaTable);
   xe.orgDSICursor[0]=reinterpret_cast<uintptr_t>(nativeImage);xe.orgDSICursor[1]=reinterpret_cast<uintptr_t>(nativeState);xe.orgDSIMode[5]=reinterpret_cast<uintptr_t>(nativeMode);display13FBPower={};auto &c=display13FBPower;
+  notificationBusy=&xe.displayWakeEventBusy;xe.adlnTopologyController=&ctl;put(&ctl,0xD60,&fb);
   c.lock=&lock;c.controller=&ctl;c.dsiPort=&port;c.pipe[0].memoryFramebuffer=&fb;c.transcoders.dsi0Pipe=0;panel=nativeFB=&fb;
   put(&fb,0x4220,&fbLock);put(&fb,0x1D0,&ctl);put(&fb,0x4A00,1U);put(&fb,0x4A08,&path);
   put(&path,0x3640,0U);put(&path,0x3644,2U);put(&path,0x32B0,&fb);put(&path,0x3648,&port);put(&port,0x550,1U);
   expectDSI=true;
  }
+ ~Case(){assert(fb.refs==1 && ctl.refs==1 && peer.refs==1 && !owner && !fbLock.depth && !xe.displayWakeEventBusy);notificationBusy=nullptr;}
  void refuseCursor(){auto i=imageCalls,s=stateCalls;
   assert(XE::wrapDSICursorImage(&ctl,&fb,&imageCalls)==kIOReturnNotReady);
   assert(XE::wrapDSICursorState(&ctl,&fb,-17,42,true,false)==kIOReturnNotReady);
@@ -208,8 +229,43 @@ struct Case {
  }
  void refuse(){const auto calls=armCalls;XE::wrapDisplay13WMArmUpdate(&fb);assert(calls==armCalls && !fbLock.depth && !owner);}
 };
+static unsigned systemEvents;
+static uint32_t systemEvent(IOService *fb,int event,void *arg){
+ assert(!fbLock.depth && !owner);
+ assert((event==4 && arg==reinterpret_cast<void *>(1)) || ((event==7 || event==8) && !arg));
+ // Successful no-delivery models IOFramebuffer::handleEvent on the wrong
+ // power thread. The real notifier must inspect consumer paging activation.
+ if(event==4 && !xe.notifyOK)return 0;
+ if(event==4)*(reinterpret_cast<uint8_t*>(fb)+0x199)|=0x20;
+ ++systemEvents;return 0;
+}
 int main(){
+ // Real power wrapper must notify without a retained outer attribute lock,
+ // preserve the off obligation across failed stop/wake, and avoid a false
+ // system DidWake for display-only doze.
+ {Case c;xe.dsiPowerTest=true;put(&c.fb,0x4284,2U);
+  assert(XE::wrapDSISetAttribute(&c.fb,0x706F7772,1)==kIOReturnNotReady);
+  assert(xe.dsiPowerOffNotified && xe.dsiPowerOffEvents==1 && !xe.dsiPowerCallbackBusy);
+  xe.stopOK=true;assert(XE::wrapDSISetAttribute(&c.fb,0x706F7772,1)==0);
+  assert(xe.dsiPowerOffEvents==1);
+  assert(XE::wrapDSISetAttribute(&c.fb,0x706F7772,2)==kIOReturnNotReady);
+  assert(!xe.dsiPowerOnEvents && xe.dsiPowerOffNotified);
+  xe.wakeOK=true;auto n=systemEvents;
+  assert(XE::wrapDSISetAttribute(&c.fb,0x706F7772,2)==0);
+  assert(systemEvents==n+1 && xe.dsiPowerOnEvents==1 && !xe.dsiPowerOffNotified);
+ }
 
+
+ for(auto message:{kIOMessageSystemWillRestart,kIOMessageSystemWillPowerOff}){Case c;put(&c.fb,0x4284,2U);
+  auto notify=[&]{return XE::wrapDSISetAttribute(&c.fb,kIOSystemPowerAttribute,message);};
+  assert(notify()==kIOReturnUnsupported && !xe.stopCalls);
+  xe.dsiPowerTest=true;
+  assert(XE::wrapDSISetAttribute(&c.fb,kIOSystemPowerAttribute,0xe0000255U)==kIOReturnUnsupported);
+  assert(notify()==kIOReturnNotReady && Display13FBMemory::field<uint32_t>(&c.fb,0x4284)==2);
+  xe.stopOK=true;assert(notify()==kIOReturnSuccess && xe.dsiRuntimePower.sleeping);
+  assert(Display13FBMemory::field<uint32_t>(&c.fb,0x4284)==0);
+  auto stops=xe.stopCalls;assert(notify()==kIOReturnSuccess && xe.stopCalls==stops);
+ }
  for(unsigned attr:{0x706F7772U,0x70777273U}){Case c;xe.dsiPowerTest=true;put(&c.fb,0x4284,2U);
   assert(XE::wrapDSISetAttribute(&c.fb,attr,1)==kIOReturnNotReady && xe.stopCalls==1);
   assert(Display13FBMemory::field<uint32_t>(&c.fb,0x4284)==2);
@@ -221,10 +277,17 @@ int main(){
    assert(Display13FBMemory::field<uint32_t>(&c.fb,0x4284)==0 && !xe.dsiMemoryReleased && !xe.dsiDDIReleased);
    c.refuse();c.refuseCursor();xe.wakeOK=false;
    assert(XE::wrapDSISetAttribute(&c.fb,attr,2)==kIOReturnNotReady);
-   assert(Display13FBMemory::field<uint32_t>(&c.fb,0x4284)==0);
-   xe.wakeOK=true;assert(XE::wrapDSISetAttribute(&c.fb,attr,2)==kIOReturnSuccess);
+   assert(Display13FBMemory::field<uint32_t>(&c.fb,0x4284)==0 && xe.dsiWakeIncomplete);
+   xe.dsiSystemWakeNotify=true;xe.display13FramebufferEvent=reinterpret_cast<uintptr_t>(&systemEvent);
+   const auto eventsBefore=systemEvents;
+   xe.wakeOK=true;xe.notifyOK=false;
+   assert(XE::wrapDSISetAttribute(&c.fb,attr,2)==kIOReturnNotReady);
+   assert(xe.dsiWakeIncomplete && xe.dsiSystemWakeNotify && !xe.dsiRuntimePower.sleeping);
+   const auto completedWakeCalls=xe.wakeCalls;xe.notifyOK=true;
+   assert(XE::wrapDSISetAttribute(&c.fb,attr,2)==kIOReturnSuccess);
+   assert(!xe.dsiWakeIncomplete && xe.wakeCalls==completedWakeCalls);
    assert(!xe.dsiRuntimePower.sleeping && !xe.dsiStopAttempted && Display13FBMemory::field<uint32_t>(&c.fb,0x4284)==2);
-   auto wakes=xe.wakeCalls;assert(XE::wrapDSISetAttribute(&c.fb,attr,2)==kIOReturnSuccess && xe.wakeCalls==wakes);
+   auto wakes=xe.wakeCalls;assert(XE::wrapDSISetAttribute(&c.fb,attr,2)==kIOReturnSuccess && xe.wakeCalls==wakes && systemEvents==eventsBefore+2);
   }
   xe.dsiRuntimePower.failed=true;auto calls=xe.stopCalls;
   assert(XE::wrapDSISetAttribute(&c.fb,attr,1)==kIOReturnNotReady && xe.stopCalls==calls);
@@ -359,7 +422,8 @@ int main(){
   assert(attrCalls[1]==before && !display13FBPower.dsiNativeWriters);}
  for(unsigned old=0;old<3;++old)for(unsigned state=0;state<4;++state){Case c;put(&c.fb,0x4284,old);const auto before=attrCalls[2];
   const auto expected=old==2 && state==2?kIOReturnSuccess:kIOReturnUnsupported;
-  assert(XE::wrapDSISetPowerState(&c.fb,state)==expected && attrCalls[2]==before);
+  assert(XE::wrapDisplay13SetPowerState(&c.fb,state)==expected && attrCalls[2]==before);
+  assert(xe.dsiWakeIncomplete==0); // no prior sleep or pending notification
   assert(Display13FBMemory::field<uint32_t>(&c.fb,0x4284)==old);
   assert(XE::wrapDSISetAttribute(&c.fb,0x706F7772,state)==expected);}
  {Case c;put(&c.fb,0x4284,2U);assert(XE::wrapDSISetAttribute(&c.fb,0x706F7772,0x100000002ULL)==kIOReturnUnsupported);}
@@ -368,7 +432,11 @@ int main(){
   if(bad==2)xe.dsiNativeWriterHooksReady=false;if(bad==3)display13FBPower.memoryFaulted=true;
   assert(XE::wrapDSISetAttribute(&c.fb,0x77737276,1)==kIOReturnNotReady);
   assert(XE::wrapDSISetConnectionAttribute(&c.fb,0,0x72677363,1)==kIOReturnNotReady);
-  assert(XE::wrapDSISetPowerState(&c.fb,2)==kIOReturnNotReady);
+  assert(XE::wrapDisplay13SetPowerState(&c.fb,2)==kIOReturnNotReady);
+  assert(xe.dsiWakeIncomplete==0); // startup NotReady is not failed wake
+  xe.dsiRuntimePower.sleeping=true;
+  assert(XE::wrapDisplay13SetPowerState(&c.fb,2)==kIOReturnNotReady);
+  assert(xe.dsiWakeIncomplete==1); // same early failure during real restoration
   assert(attrCalls[0]+attrCalls[1]+attrCalls[2]==before && !display13FBPower.dsiNativeWriters);}
  for(bool disabled:{false,true}){Case c;expectedWriters=0;expectedValue=txOptions;expectedAttribute=0x706F7772;expectedConnection=4;expectedPower=0;
   IOService *fb=&c.fb;
@@ -376,7 +444,7 @@ int main(){
   else{panel=nullptr;put(&c.path,0x3640,1U);put(&c.port,0x120,3U);xe.dsiStopAttempted=true;}
   assert(XE::wrapDSISetAttribute(fb,expectedAttribute,expectedValue)==0xe0000121U);
   assert(XE::wrapDSISetConnectionAttribute(fb,expectedConnection,expectedAttribute,expectedValue)==0xe0000122U);
-  assert(XE::wrapDSISetPowerState(fb,expectedPower)==0xe0000123U);}
+  assert(XE::wrapDisplay13SetPowerState(fb,expectedPower)==0xe0000123U);}
  {Case c;auto before=streamCalls;assert(XE::wrapDSISetStream(&c.ctl,&c.fb,&c.path,&paramAnchor)==kIOReturnNotReady);
   assert(streamCalls==before && !fbLock.depth && !owner);}
  {Case c;panel=nullptr;put(&c.path,0x3640,1U);put(&c.port,0x120,3U);expectedPath=&c.path;

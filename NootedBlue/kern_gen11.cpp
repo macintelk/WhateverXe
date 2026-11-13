@@ -15152,7 +15152,7 @@ unsigned long Gen11::loadGuCBinary(void *that)
 		getMember<u32[6]>(that, 0x8c)[i]=guc->params[i];
 	
 	guc_ggtt_invalidate(gt,m_accelerator);
-	//if (guc->fw.file_selected.ver.major > 69) intel_guc_ads_reset(guc);
+	if (guc->fw.file_selected.ver.major > 69) intel_guc_ads_reset(guc);
 	//if (guc->fw.file_selected.ver.major < 69) __guc_ads_init0();
 	
 	intel_guc_write_params(guc,m_accelerator);
@@ -15656,12 +15656,12 @@ static int intel_guc_ads_create(void *that)
 	
 	__guc_ads_init(that);
 	
-	/*intel_guc_ct_init(that);
+	intel_guc_ct_init(that);
 
 	if (intel_guc_submission_is_used(guc)) {
 			intel_guc_submission_init(that);
 
-	}*/
+	}
 	
 	return 1;
 }

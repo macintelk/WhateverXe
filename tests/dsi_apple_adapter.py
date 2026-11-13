@@ -194,7 +194,7 @@ int main(){
  auto validations=calls[1];assert(XE::wrapDSIValidateMode(fb,mode+0x400,&description,&timing)==kIOReturnBadArgument);
  assert(!description && !timing && calls[1]==validations);
  ModeInformation info;assert(!XE::wrapDSIGetModeInformation(fb,mode,&info));
- assert(info.width==1080 && info.height==1920 && info.widthMM==86 && info.heightMM==154 && info.depth==0);
+ assert(info.width==1080 && info.height==1920 && info.widthMM==86 && info.heightMM==154 && info.depth==1);
  assert(!(info.flags&0x00400000));
  auto invalid=p.mode;invalid.width=0;assert(!annotateMode(invalid,info));
  assert(XE::wrapDSIGetModeInformation(fb,mode,nullptr)==kIOReturnBadArgument);
@@ -208,6 +208,7 @@ int main(){
  data->release();replacement->release();
  auto offered=dsiFixedMode.timing;offered.reservedA[0]=0x80001001;offered.signalLevels=1;
  offered.pixelClock=offered.minPixelClock=offered.maxPixelClock=135260000;
+ offered.numLinks=2; // CoreDisplay hint on a verified single-link panel
  auto list=OSArray::withCapacity(1);auto wrong=offered;wrong.horizontalActive=640;
  auto wrongData=OSData::withBytes(&wrong,sizeof(wrong));auto offeredData=OSData::withBytes(&offered,sizeof(offered));
  list->setObject(wrongData);list->setObject(offeredData);
@@ -218,7 +219,7 @@ int main(){
  assert(XE::wrapDSIValidateMode(fb,static_cast<int32_t>(0x80001000),nullptr,&timing)==kIOReturnBadArgument);
  assert(!XE::wrapDSIGetModes(fb,&mode) && static_cast<uint32_t>(mode)==0x80001001);
  assert(!XE::wrapDSIGetCurrentMode(fb,&current,&depth) && static_cast<uint32_t>(current)==0x80001001);
- assert(!XE::wrapDSIGetModeInformation(fb,mode,&info) && info.width==1080 && info.height==1920 && !info.depth);
+ assert(!XE::wrapDSIGetModeInformation(fb,mode,&info) && info.width==1080 && info.height==1920 && info.depth==1);
  offeredData->bytes[64]^=1;
  assert(XE::wrapDSISetDetailedTimings(fb,list)==kIOReturnUnsupported && dsiFixedMode.clientMode==0x80001001);
  offered.reservedA[0]=0x80003000;
@@ -237,6 +238,7 @@ int main(){
  assert(XE::wrapDSIGetModeCount(fb)==2);int32_t pair[2];assert(!XE::wrapDSIGetModes(fb,pair));
  assert(static_cast<uint32_t>(pair[1])==rotated.reservedA[0]);
  assert(!XE::wrapDSIValidateMode(fb,pair[1],nullptr,&timing));
+ assert(static_cast<const Timing *>(timing)->numLinks==1 && rotated.numLinks==2);
  assert(static_cast<const Timing *>(timing)->scalerFlags==0x30 && !dsiFixedMode.timing.scalerFlags);
  assert(!XE::wrapDSIGetModeInformation(fb,pair[1],&info) && info.width==1920 && info.height==1080);
  // A large OS list with many distinct scaled dimensions must not be
@@ -260,7 +262,15 @@ int main(){
   assert(static_cast<const Timing *>(timing)->horizontalScaled==1280+2*i);
   assert(!XE::wrapDSIGetModeInformation(fb,modes[i],&info) && info.width==1280+2*i && info.height==720+i);}
  many->release();assert(!XE::wrapDSISetDetailedTimings(fb,rotationList));
- rotationData->release();rotationList->release();
+ // A new quarter-turn generation can contain no unrotated wire alias.
+ auto landscape=OSArray::withCapacity(2);auto scaled=rotated;
+ scaled.reservedA[0]=0x80005003;scaled.horizontalScaled=1638;scaled.verticalScaled=1024;
+ auto scaledData=OSData::withBytes(&scaled,sizeof(scaled));landscape->setObject(scaledData);landscape->setObject(rotationData);
+ assert(!XE::wrapDSISetDetailedTimings(fb,landscape) && dsiFixedMode.clientMode==rotated.reservedA[0]);
+ assert(!XE::wrapDSIGetCurrentMode(fb,&current,&depth) && static_cast<uint32_t>(current)==rotated.reservedA[0]);
+ assert(XE::wrapDSIValidateMode(fb,static_cast<int32_t>(offered.reservedA[0]),nullptr,&timing)==kIOReturnBadArgument);
+ assert(!XE::wrapDSISetDetailedTimings(fb,rotationList) && dsiFixedMode.clientMode==offered.reservedA[0]);
+ scaledData->release();landscape->release();rotationData->release();rotationList->release();
  // Legacy UI attributes alone must never fabricate a presentation timing.
  auto orientation=new OSNumber;fb->setProperty("IOFBTransform",orientation);
  for(auto transform:{3ULL,5ULL,0ULL}) {

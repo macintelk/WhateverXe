@@ -225,8 +225,58 @@
 	</dict>
 	<key>IOClass</key>
 	<string>IntelAccelerator</string>
+	<key>IODVDBundleName</key>
+	<string>AppleIntelTGLGraphicsVADriver</string>
 	<key>IOGLBundleName</key>
 	<string>AppleIntelTGLGraphicsGLDriver</string>
+	<key>IOGVABGRAEnc</key>
+	<string>Gen10</string>
+	<key>IOGVACodec</key>
+	<string>Gen10</string>
+	<key>IOGVAHEVCDecodeCapabilities</key>
+	<dict>
+		<key>VTPerProfileDetails</key>
+		<dict>
+			<key>1</key>
+			<dict>
+				<key>VTMaxDecodeLevel</key>
+				<integer>186</integer>
+			</dict>
+			<key>2</key>
+			<dict>
+				<key>VTMaxDecodeLevel</key>
+				<integer>186</integer>
+			</dict>
+			<key>3</key>
+			<dict>
+				<key>VTMaxDecodeLevel</key>
+				<integer>186</integer>
+			</dict>
+		</dict>
+		<key>VTSupportedProfileArray</key>
+		<array>
+			<integer>1</integer>
+			<integer>2</integer>
+			<integer>3</integer>
+		</array>
+	</dict>
+	<key>IOGVAHEVCEncodeCapabilities</key>
+	<dict>
+		<key>VTPerProfileDetails</key>
+		<dict>
+			<key>1</key>
+			<dict>
+				<key>VTMaxEncodeLevel</key>
+				<integer>183</integer>
+			</dict>
+		</dict>
+		<key>VTSupportedProfileArray</key>
+		<array>
+			<integer>1</integer>
+		</array>
+	</dict>
+	<key>IOGVAScaler</key>
+	<string>Gen10</string>
 	<key>IOMatchCategory</key>
 	<string>IOAccelerator</string>
 	<key>IOPCIClassMatch</key>
@@ -240,7 +290,7 @@
 	<key>IOSourceVersion</key>
 	<string>0.0.0.0.0</string>
 	<key>IOVARendererID</key>
-	<integer>17301632</integer>
+	<integer>17301568</integer>
 	<key>MetalPluginName</key>
 	<string>AppleIntelTGLGraphicsMTLDriver</string>
 </dict>

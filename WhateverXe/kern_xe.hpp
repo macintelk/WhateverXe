@@ -8,6 +8,7 @@
 #ifndef kern_xe_hpp
 #define kern_xe_hpp
 
+#include "kern_dsi_sleep_image.hpp"
 #include "kern_tgl_tc_boot.hpp"
 #include "kern_dsi_boot.hpp"
 #include "kern_dsi_apple_timing.hpp"
@@ -40,7 +41,6 @@
 #include <Headers/kern_disasm.hpp>
 #include <IOKit/IOService.h>
 #include <IOKit/IOLocks.h>
-
 #include "kern_gen11.hpp"
 
 class IOPCIDevice;
@@ -52,6 +52,7 @@ namespace XELP { namespace DSI { struct Profile; } }
 class XE {
 public:
 	void init();
+    void captureFirmware(IOPCIDevice *,const XELP::Profile &);
     void selectProfile(const XELP::Profile &profile);
 	void deinit();
 
@@ -74,6 +75,17 @@ public:
 	 *  @return true if patched anything
 	 */
 	bool processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);
+    bool ownedDisplay13Framebuffer(IOService *fb) const;
+    bool failedDSIWakeFor(IOService *fb) const;
+    bool isIntelDonor(size_t index) const;
+    bool isGraphicsStack(size_t index) const;
+    bool isIntelFramebuffer(size_t index) const;
+    bool requiresIntelProvider() const;
+    bool isIntelProvider(size_t index) const;
+    void setHostSurfaceABI(unsigned framebuffer,unsigned accelerator);
+    void setHostSleepReady(bool ready) { hostSleepReady=ready; }
+    void setHostWakeRecoveryReady(bool ready) { hostWakeRecoveryReady=ready; }
+    void setHostFramebufferEvent(mach_vm_address_t event) { hostFramebufferEvent=event; }
 
 private:
     bool adlpLoadOnly {};
@@ -136,6 +148,8 @@ private:
     XELP::SmallGTResources display12SmallGT;
     XELP::Profile xeProfile;
     XELP::VBT::Ports firmwarePorts;
+    uint64_t firmwareOwnerID {};
+    XELP::Family firmwareFamily {};
     void xelpReadFirmware(IOPCIDevice *pci);
     void xelpLoadDisplayPool(IOService *provider);
     bool xelpInstallHostRPS(KernelPatcher &,size_t,mach_vm_address_t,size_t);
@@ -147,6 +161,7 @@ private:
     bool display13BootReady {false};
     OSData *dsiFirmware {}; // Private immutable copy backing profile/sequence spans.
     XELP::DSI::Profile dsiProfile;
+    uint32_t dsi60HzClockKHz {};
     XELP::DSI::Boot dsiBoot;
     XELP::DSI::GGTTMode dsiGGTT;
     bool prepareDSIFirmware(IOService *);
@@ -245,12 +260,22 @@ private:
     static bool dsiSharedWriterStopped(IOService *,unsigned);
     bool processDSINativeWriters(KernelPatcher &,size_t,mach_vm_address_t,size_t);
     bool processDSINativeTransactions(KernelPatcher &,size_t,mach_vm_address_t,size_t);
-    bool processDSINativeAttributes(KernelPatcher &,size_t,mach_vm_address_t,size_t);
+    bool processDisplay13NativeAttributes(KernelPatcher &,size_t,mach_vm_address_t,size_t);
     mach_vm_address_t orgDSIAttributes[4] {};
+    mach_vm_address_t display13FramebufferEvent {},hostFramebufferEvent {};
+    uint32_t dsiWakeDegraded {},dsiWakeIncomplete {},dsiWakeRejections {};
+    bool hostSleepReady {},hostWakeRecoveryReady {};
+    bool dsiSystemWakeNotify {},display13PagingLayoutKnown {},dsiFirstWakeLatch {};
+    bool dsiPowerOffNotified {};
+    uint32_t dsiPowerCallbackBusy {},dsiPowerOffEvents {},dsiPowerOnEvents {};
+    uint32_t dsiRestoredEpoch {}; // Last shared reset consumed by this transport.
+    bool finishDisplay13SystemWake(IOService *,bool nativePowerOn=false);
+    uint32_t displayWakeEventEpoch {},displayWakeEventBusy {},displayWakeEventErrors {};
+    uint8_t displayWakeEventPhase[3] {};
     static uint32_t wrapDSISetStream(IOService *,IOService *,OSObject *,const void *);
     static uint32_t wrapDSISetAttribute(IOService *,uint32_t,uintptr_t);
     static uint32_t wrapDSISetConnectionAttribute(IOService *,int32_t,uint32_t,uintptr_t);
-    static uint32_t wrapDSISetPowerState(IOService *,uint32_t);
+    static uint32_t wrapDisplay13SetPowerState(IOService *,uint32_t);
     mach_vm_address_t orgDSITransaction[5] {};
     static int beginDSIFramebufferWriter(IOService *);
     static uint32_t wrapDSIFlipTransaction(IOService *,void *,uint64_t,void *);
@@ -266,6 +291,7 @@ private:
     bool dsiHostTest {};
     bool dsiStopTest {};
     bool dsiPowerTest {};
+    XELP::DSI::SystemSleepImage dsiSleepImage;
     struct {
         bool sleeping {},failed {};uint32_t cycles {};
         XELP::DSI::Surface::Plane plane;
@@ -284,7 +310,7 @@ private:
     mach_vm_address_t dsiComputeGeometry {},dsiModeCPU[4] {};
     bool publishDSINativeBacking();
     bool publishDSINativeMode(IOService *);
-    uint32_t setDSIPresentation(IOService *,uint32_t,const XELP::DSI::AppleAdapter::Timing &);
+    uint32_t setDSIPresentation(IOService *,uint32_t,const XELP::DSI::AppleAdapter::Timing &,uint32_t depth=0);
     bool releaseDSILogical(IOService *);
     bool probeDSIModeGeometry(IOService *);
     bool prepareDSINativeBacking(IOService *);
@@ -398,6 +424,11 @@ private:
 	static void wrapAlderLakeNPowerInit(void *power, void *controller);
 	static void wrapAlderLakeNEngineEnable(void *power);
 	static void wrapAlderLakeNEngineDisable(void *power);
+    static void stopDisplay13Engine(void *power,bool systemSuspend);
+    static bool enableDisplay13EngineLocked(void *power);
+    static bool restoreDisplay13ResourcesLocked(void *power,bool waking);
+    static bool restoreDisplay13Ports(IOService *controller,unsigned onlyDDI=UINT32_MAX);
+    static bool prepareDisplay13Wake(IOService *fb);
 	static void wrapAlderLakeNPowerOverride(void *power,bool enable);
 	static void wrapAlderLakeNPowerRestore(void *power,bool waking);
 	__attribute__((noinline)) bool processDisplay13FramebufferLifecycle(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size);

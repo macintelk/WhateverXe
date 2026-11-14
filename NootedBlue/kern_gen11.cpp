@@ -67,7 +67,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
                 kextG11HWT=*NBlue::callback->framel;
                 kexttglp=true;
         
-        /*if (kextG11FB.loadIndex == index) {
+        if (kextG11FB.loadIndex == index) {
                 kexticl=true;
                 
                 KernelPatcher::SolveRequest solveRequests[] = {
@@ -560,7 +560,7 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t 
                 return true;
                 
                 
-        } else*/ if (kextG11HWT.loadIndex == index || kextG11HWTe.loadIndex == index) {
+        } else if (kextG11HWT.loadIndex == index || kextG11HWTe.loadIndex == index) {
                 //tgl
                 auto kext=kextG11HWT.loadIndex == index ? kextG11HWT: kextG11HWTe;
                 
@@ -8944,10 +8944,13 @@ void intel_pps_unlock_regs_wa(struct intel_display *display)
 
 void Gen11::hwInitializeCState(void *that)
 {
+	if (NBlue::callback->intel_opregion_setup()!=0) panic("BAD BIOS");
+	FBMemMgr_Init(that);
+	
         struct drm_i915_private *i915=NBlue::callback->i915b;
-        if (i915->inidmc) return;
+        //if (i915->inidmc) return;
         struct intel_display *display=i915->display;
-        i915->inidmc=true;
+        //i915->inidmc=true;
         
         
         intel_pps_unlock_regs_wa(display);
@@ -8971,7 +8974,7 @@ void Gen11::hwInitializeCState(void *that)
                         intel_de_write(display, adpa_reg, adpa);
         }
         
-        //if (getMember<int>(that, kexticl ? 0xb38 : 0xb48) != 1) return;//dc6config
+        if (getMember<int>(that, kexticl ? 0xb38 : 0xb48) != 1) return;//dc6config
         
         if (parse_dmc_fw(display)!=0) return;
         

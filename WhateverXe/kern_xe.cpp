@@ -12761,6 +12761,10 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 				tglTopologyReady = patcher.routeMultiple(index, &topology, 1, address, size);
 				IORegistryEntry::getRegistryRoot()->setProperty("TGLWEGRouteTopology", tglTopologyReady);
 				patcher.clearError();
+				
+				KernelPatcher::RouteRequest topology2("__ZN31AppleIntelFramebufferController18hwInitializeCStateEv", Gen11::callback->hwInitializeCState, Gen11::callback->ohwInitializeCState);
+				tglTopologyReady = patcher.routeMultiple(index, &topology2, 1, address, size);
+				patcher.clearError();
 			}
 
 			{

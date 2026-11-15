@@ -14,7 +14,6 @@
 		2E315A622BC6EA4D008411AA /* DYLDPatches.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E315A602BC6EA4D008411AA /* DYLDPatches.cpp */; };
 		2E5BF5832BCC212F0095BDCF /* HDMI.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E5BF5812BCC212F0095BDCF /* HDMI.cpp */; };
 		2E5BF5842BCC212F0095BDCF /* HDMI.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5BF5822BCC212F0095BDCF /* HDMI.hpp */; };
-		2E80A802309E9D2F00C4AC32 /* kern_xepm_tgl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E80A801309E9D2F00C4AC32 /* kern_xepm_tgl.cpp */; };
 		2E8599252FBCFFF4001C9274 /* intel_vbt_defs.h in Headers */ = {isa = PBXBuildFile; fileRef = 2E8599232FBCFFF3001C9274 /* intel_vbt_defs.h */; };
 		2E8599262FBCFFF4001C9274 /* intel_dsi_vbt_defs.h in Headers */ = {isa = PBXBuildFile; fileRef = 2E8599242FBCFFF3001C9274 /* intel_dsi_vbt_defs.h */; };
 		2ED96FA230A6A83C009D355A /* kern_dsi_native_mode.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F1530A6A839009D355A /* kern_dsi_native_mode.hpp */; };
@@ -193,7 +192,6 @@
 		2E315A602BC6EA4D008411AA /* DYLDPatches.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = DYLDPatches.cpp; sourceTree = "<group>"; };
 		2E5BF5812BCC212F0095BDCF /* HDMI.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = HDMI.cpp; sourceTree = "<group>"; };
 		2E5BF5822BCC212F0095BDCF /* HDMI.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = HDMI.hpp; sourceTree = "<group>"; };
-		2E80A801309E9D2F00C4AC32 /* kern_xepm_tgl.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = kern_xepm_tgl.cpp; sourceTree = "<group>"; };
 		2E8599232FBCFFF3001C9274 /* intel_vbt_defs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = intel_vbt_defs.h; sourceTree = "<group>"; };
 		2E8599242FBCFFF3001C9274 /* intel_dsi_vbt_defs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = intel_dsi_vbt_defs.h; sourceTree = "<group>"; };
 		2ED96F1530A6A839009D355A /* kern_dsi_native_mode.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_native_mode.hpp; path = WhateverXe/kern_dsi_native_mode.hpp; sourceTree = SOURCE_ROOT; };
@@ -415,7 +413,6 @@
 				F0BB9E542A57A0340081F5FA /* kern_patcherplus.hpp */,
 				2E8599242FBCFFF3001C9274 /* intel_dsi_vbt_defs.h */,
 				2E8599232FBCFFF3001C9274 /* intel_vbt_defs.h */,
-				2E80A801309E9D2F00C4AC32 /* kern_xepm_tgl.cpp */,
 				2ED96F5B30A6A83B009D355A /* kern_adls_boot.hpp */,
 				2ED96F9530A6A83C009D355A /* kern_adls_clock.hpp */,
 				2ED96F7430A6A83B009D355A /* kern_alderlake_n_gpu.hpp */,
@@ -859,7 +856,6 @@
 				2ED96FEC30A6A83C009D355A /* kern_dvmt.cpp in Sources */,
 				F0AF08BB2A0F373F00B63C2B /* kern_gen11.cpp in Sources */,
 				CE405ED91E4A080700AA0B3D /* plugin_start.cpp in Sources */,
-				2E80A802309E9D2F00C4AC32 /* kern_xepm_tgl.cpp in Sources */,
 				2ED96FC930A6A83C009D355A /* kern_dsi_adapter_backing.inc in Sources */,
 				2ED9701F30A6A83C009D355A /* kern_dsi_adapter_diagnostics.inc in Sources */,
 				2ED9701530A6A83C009D355A /* kern_host.cpp in Sources */,

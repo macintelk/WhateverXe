@@ -12,152 +12,153 @@
 		2E1CC3E32BA5DBD9004EC8F6 /* DisplayMergeNub.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E1CC3E12BA5DBD9004EC8F6 /* DisplayMergeNub.cpp */; };
 		2E315A612BC6EA4D008411AA /* DYLDPatches.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E315A5F2BC6EA4D008411AA /* DYLDPatches.hpp */; };
 		2E315A622BC6EA4D008411AA /* DYLDPatches.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E315A602BC6EA4D008411AA /* DYLDPatches.cpp */; };
+		2E5423AA30ACE4EF00F2ACFF /* kern_xelp_sst_program.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54231C30ACE4EA00F2ACFF /* kern_xelp_sst_program.hpp */; };
+		2E5423AB30ACE4EF00F2ACFF /* kern_dsi_panel.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54231D30ACE4EA00F2ACFF /* kern_dsi_panel.hpp */; };
+		2E5423AC30ACE4EF00F2ACFF /* kern_display13_dsi_trial.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54231E30ACE4EA00F2ACFF /* kern_display13_dsi_trial.hpp */; };
+		2E5423AD30ACE4EF00F2ACFF /* kern_xelp_platform.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54231F30ACE4EA00F2ACFF /* kern_xelp_platform.hpp */; };
+		2E5423AE30ACE4EF00F2ACFF /* kern_display13_tc_clock.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232030ACE4EA00F2ACFF /* kern_display13_tc_clock.hpp */; };
+		2E5423AF30ACE4EF00F2ACFF /* kern_tgl_submit_history.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232130ACE4EA00F2ACFF /* kern_tgl_submit_history.hpp */; };
+		2E5423B030ACE4EF00F2ACFF /* kern_dvmt.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E54232230ACE4EA00F2ACFF /* kern_dvmt.cpp */; };
+		2E5423B130ACE4EF00F2ACFF /* kern_xelp_display_contract.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232330ACE4EA00F2ACFF /* kern_xelp_display_contract.hpp */; };
+		2E5423B230ACE4EF00F2ACFF /* kern_tgl_hang_graph.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232430ACE4EA00F2ACFF /* kern_tgl_hang_graph.hpp */; };
+		2E5423B330ACE4EF00F2ACFF /* kern_tgl_hang_pending.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232530ACE4EA00F2ACFF /* kern_tgl_hang_pending.hpp */; };
+		2E5423B430ACE4EF00F2ACFF /* kern_tgl_submit_capture.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232630ACE4EA00F2ACFF /* kern_tgl_submit_capture.hpp */; };
+		2E5423B530ACE4EF00F2ACFF /* kern_xelp_queue_memory.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232730ACE4EA00F2ACFF /* kern_xelp_queue_memory.hpp */; };
+		2E5423B630ACE4EF00F2ACFF /* kern_tgl_recovery.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232830ACE4EA00F2ACFF /* kern_tgl_recovery.hpp */; };
+		2E5423B730ACE4EF00F2ACFF /* kern_alderlake_n_gpu.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232930ACE4EA00F2ACFF /* kern_alderlake_n_gpu.hpp */; };
+		2E5423B830ACE4EF00F2ACFF /* kern_framebuffer_training_native.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232A30ACE4EA00F2ACFF /* kern_framebuffer_training_native.hpp */; };
+		2E5423B930ACE4EF00F2ACFF /* kern_display13_boot.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232B30ACE4EA00F2ACFF /* kern_display13_boot.hpp */; };
+		2E5423BA30ACE4EF00F2ACFF /* kern_tgl_fb_binding.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232C30ACE4EA00F2ACFF /* kern_tgl_fb_binding.hpp */; };
+		2E5423BB30ACE4EF00F2ACFF /* kern_display13_tc_mode.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232D30ACE4EA00F2ACFF /* kern_display13_tc_mode.hpp */; };
+		2E5423BC30ACE4EF00F2ACFF /* kern_tgl_fia.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232E30ACE4EA00F2ACFF /* kern_tgl_fia.hpp */; };
+		2E5423BD30ACE4EF00F2ACFF /* kern_tgl_panel_depth.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54232F30ACE4EA00F2ACFF /* kern_tgl_panel_depth.hpp */; };
+		2E5423BE30ACE4EF00F2ACFF /* kern_xelp_combo_policy.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233030ACE4EA00F2ACFF /* kern_xelp_combo_policy.hpp */; };
+		2E5423BF30ACE4EF00F2ACFF /* kern_tgl_pcode_gate.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233130ACE4EB00F2ACFF /* kern_tgl_pcode_gate.hpp */; };
+		2E5423C030ACE4EF00F2ACFF /* kern_dsi_adapter_backing.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2E54233230ACE4EB00F2ACFF /* kern_dsi_adapter_backing.inc */; };
+		2E5423C130ACE4EF00F2ACFF /* kern_tgl_hdmi_wiring.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233330ACE4EB00F2ACFF /* kern_tgl_hdmi_wiring.hpp */; };
+		2E5423C230ACE4EF00F2ACFF /* kern_xe.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E54233430ACE4EB00F2ACFF /* kern_xe.cpp */; };
+		2E5423C330ACE4EF00F2ACFF /* kern_tgl_vm.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233530ACE4EB00F2ACFF /* kern_tgl_vm.hpp */; };
+		2E5423C430ACE4EF00F2ACFF /* kern_display13_framebuffer_power.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2E54233630ACE4EB00F2ACFF /* kern_display13_framebuffer_power.inc */; };
+		2E5423C530ACE4EF00F2ACFF /* kern_dsi_native_cache.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233730ACE4EB00F2ACFF /* kern_dsi_native_cache.hpp */; };
+		2E5423C630ACE4EF00F2ACFF /* kern_dsi_ggtt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233830ACE4EB00F2ACFF /* kern_dsi_ggtt.hpp */; };
+		2E5423C730ACE4EF00F2ACFF /* kern_tgl_aux_call.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233930ACE4EB00F2ACFF /* kern_tgl_aux_call.hpp */; };
+		2E5423C830ACE4EF00F2ACFF /* kern_tgl_gsync.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233A30ACE4EB00F2ACFF /* kern_tgl_gsync.hpp */; };
+		2E5423C930ACE4EF00F2ACFF /* kern_dsi_backlight.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233B30ACE4EB00F2ACFF /* kern_dsi_backlight.hpp */; };
+		2E5423CA30ACE4EF00F2ACFF /* kern_tgl_port_map.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233C30ACE4EB00F2ACFF /* kern_tgl_port_map.hpp */; };
+		2E5423CB30ACE4EF00F2ACFF /* kern_xelp_gt_resources.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233D30ACE4EB00F2ACFF /* kern_xelp_gt_resources.hpp */; };
+		2E5423CC30ACE4EF00F2ACFF /* kern_xelp_display_resources.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233E30ACE4EB00F2ACFF /* kern_xelp_display_resources.hpp */; };
+		2E5423CD30ACE4EF00F2ACFF /* kern_host.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54233F30ACE4EB00F2ACFF /* kern_host.hpp */; };
+		2E5423CE30ACE4EF00F2ACFF /* kern_display13_fb_irq.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234030ACE4EB00F2ACFF /* kern_display13_fb_irq.hpp */; };
+		2E5423CF30ACE4EF00F2ACFF /* kern_display13_fb_topology.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234130ACE4EB00F2ACFF /* kern_display13_fb_topology.hpp */; };
+		2E5423D030ACE4EF00F2ACFF /* kern_host.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E54234230ACE4EB00F2ACFF /* kern_host.cpp */; };
+		2E5423D130ACE4EF00F2ACFF /* kern_dsi_commands.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234330ACE4EB00F2ACFF /* kern_dsi_commands.hpp */; };
+		2E5423D230ACE4EF00F2ACFF /* kern_display13_hdmi_wiring.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234430ACE4EB00F2ACFF /* kern_display13_hdmi_wiring.hpp */; };
+		2E5423D330ACE4EF00F2ACFF /* kern_tgl_combo_dp.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234530ACE4EB00F2ACFF /* kern_tgl_combo_dp.hpp */; };
+		2E5423D430ACE4EF00F2ACFF /* kern_edp_aux_backlight.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234630ACE4EB00F2ACFF /* kern_edp_aux_backlight.hpp */; };
+		2E5423D530ACE4EF00F2ACFF /* kern_display13_transcoder.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234730ACE4EB00F2ACFF /* kern_display13_transcoder.hpp */; };
+		2E5423D630ACE4EF00F2ACFF /* kern_display13_output_wiring.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234830ACE4EB00F2ACFF /* kern_display13_output_wiring.hpp */; };
+		2E5423D730ACE4EF00F2ACFF /* kern_dsi_native_backing.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234930ACE4EB00F2ACFF /* kern_dsi_native_backing.hpp */; };
+		2E5423D830ACE4EF00F2ACFF /* kern_dsi_sequence.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234A30ACE4EB00F2ACFF /* kern_dsi_sequence.hpp */; };
+		2E5423D930ACE4EF00F2ACFF /* kern_dsi_surface.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234B30ACE4EB00F2ACFF /* kern_dsi_surface.hpp */; };
+		2E5423DA30ACE4EF00F2ACFF /* kern_dsi_adapter_diagnostics.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2E54234C30ACE4EB00F2ACFF /* kern_dsi_adapter_diagnostics.inc */; };
+		2E5423DB30ACE4EF00F2ACFF /* kern_dsi_profile.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234D30ACE4EB00F2ACFF /* kern_dsi_profile.hpp */; };
+		2E5423DC30ACE4EF00F2ACFF /* kern_display13_panel.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234E30ACE4EC00F2ACFF /* kern_display13_panel.hpp */; };
+		2E5423DD30ACE4EF00F2ACFF /* kern_tgl_tc_native.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54234F30ACE4EC00F2ACFF /* kern_tgl_tc_native.hpp */; };
+		2E5423DE30ACE4EF00F2ACFF /* kern_xe.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235030ACE4EC00F2ACFF /* kern_xe.hpp */; };
+		2E5423DF30ACE4EF00F2ACFF /* kern_dsi_sleep_image.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235130ACE4EC00F2ACFF /* kern_dsi_sleep_image.hpp */; };
+		2E5423E030ACE4EF00F2ACFF /* kern_display13_color.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235230ACE4EC00F2ACFF /* kern_display13_color.hpp */; };
+		2E5423E130ACE4EF00F2ACFF /* kern_xelp_gop_stop.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235330ACE4EC00F2ACFF /* kern_xelp_gop_stop.hpp */; };
+		2E5423E230ACE4EF00F2ACFF /* kern_xelp_os.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235430ACE4EC00F2ACFF /* kern_xelp_os.hpp */; };
+		2E5423E330ACE4EF00F2ACFF /* kern_display13_fb_gtt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235530ACE4EC00F2ACFF /* kern_display13_fb_gtt.hpp */; };
+		2E5423E430ACE4EF00F2ACFF /* kern_xelp_probe.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235630ACE4EC00F2ACFF /* kern_xelp_probe.hpp */; };
+		2E5423E530ACE4EF00F2ACFF /* kern_display13_fb_memory.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235730ACE4EC00F2ACFF /* kern_display13_fb_memory.hpp */; };
+		2E5423E630ACE4EF00F2ACFF /* kern_xelp_panel_power.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235830ACE4EC00F2ACFF /* kern_xelp_panel_power.hpp */; };
+		2E5423E730ACE4EF00F2ACFF /* kern_xelp_port_wait.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235930ACE4EC00F2ACFF /* kern_xelp_port_wait.hpp */; };
+		2E5423E830ACE4EF00F2ACFF /* kern_tgl_hang_ggtt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235A30ACE4EC00F2ACFF /* kern_tgl_hang_ggtt.hpp */; };
+		2E5423E930ACE4EF00F2ACFF /* kern_dsi_adapter_lifecycle.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2E54235B30ACE4EC00F2ACFF /* kern_dsi_adapter_lifecycle.inc */; };
+		2E5423EA30ACE4EF00F2ACFF /* kern_display13_wm.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235C30ACE4EC00F2ACFF /* kern_display13_wm.hpp */; };
+		2E5423EB30ACE4EF00F2ACFF /* kern_tgl_boot_readout.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235D30ACE4EC00F2ACFF /* kern_tgl_boot_readout.hpp */; };
+		2E5423EC30ACE4EF00F2ACFF /* kern_tgl_hang_detail.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235E30ACE4EC00F2ACFF /* kern_tgl_hang_detail.hpp */; };
+		2E5423ED30ACE4EF00F2ACFF /* kern_display13_power_bridge.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54235F30ACE4EC00F2ACFF /* kern_display13_power_bridge.hpp */; };
+		2E5423EE30ACE4EF00F2ACFF /* kern_xelp_link_requirements.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236030ACE4EC00F2ACFF /* kern_xelp_link_requirements.hpp */; };
+		2E5423EF30ACE4EF00F2ACFF /* kern_donor.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236130ACE4EC00F2ACFF /* kern_donor.hpp */; };
+		2E5423F030ACE4EF00F2ACFF /* kern_host_power_contract.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236230ACE4EC00F2ACFF /* kern_host_power_contract.hpp */; };
+		2E5423F130ACE4EF00F2ACFF /* kern_dsi_session.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236330ACE4EC00F2ACFF /* kern_dsi_session.hpp */; };
+		2E5423F230ACE4EF00F2ACFF /* kern_xelp_combo_clock.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236430ACE4EC00F2ACFF /* kern_xelp_combo_clock.hpp */; };
+		2E5423F330ACE4EF00F2ACFF /* kern_tgl_training_scope.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236530ACE4EC00F2ACFF /* kern_tgl_training_scope.hpp */; };
+		2E5423F430ACE4EF00F2ACFF /* kern_dsi_adapter_boot.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2E54236630ACE4EC00F2ACFF /* kern_dsi_adapter_boot.inc */; };
+		2E5423F530ACE4EF00F2ACFF /* kern_xelp_queue_trace.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236730ACE4EC00F2ACFF /* kern_xelp_queue_trace.hpp */; };
+		2E5423F630ACE4EF00F2ACFF /* kern_display13_tc_lightup.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236830ACE4EC00F2ACFF /* kern_display13_tc_lightup.hpp */; };
+		2E5423F730ACE4EF00F2ACFF /* kern_dsi_attributes.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236930ACE4EC00F2ACFF /* kern_dsi_attributes.hpp */; };
+		2E5423F830ACE4EF00F2ACFF /* kern_tgl_tc_mode.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236A30ACE4EC00F2ACFF /* kern_tgl_tc_mode.hpp */; };
+		2E5423F930ACE4EF00F2ACFF /* kern_xe_data_policy.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236B30ACE4EC00F2ACFF /* kern_xe_data_policy.hpp */; };
+		2E5423FA30ACE4EF00F2ACFF /* kern_display13_cursor.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236C30ACE4EC00F2ACFF /* kern_display13_cursor.hpp */; };
+		2E5423FB30ACE4EF00F2ACFF /* kern_display13_dbuf.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236D30ACE4EC00F2ACFF /* kern_display13_dbuf.hpp */; };
+		2E5423FC30ACE4EF00F2ACFF /* kern_dsi_math.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236E30ACE4ED00F2ACFF /* kern_dsi_math.hpp */; };
+		2E5423FD30ACE4EF00F2ACFF /* kern_tgl_context_cache.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54236F30ACE4ED00F2ACFF /* kern_tgl_context_cache.hpp */; };
+		2E5423FE30ACE4EF00F2ACFF /* kern_xelp_geometry.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237030ACE4ED00F2ACFF /* kern_xelp_geometry.hpp */; };
+		2E5423FF30ACE4EF00F2ACFF /* kern_display13_fb_sysmem.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237130ACE4ED00F2ACFF /* kern_display13_fb_sysmem.hpp */; };
+		2E54240030ACE4EF00F2ACFF /* kern_dvmt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237230ACE4ED00F2ACFF /* kern_dvmt.hpp */; };
+		2E54240130ACE4EF00F2ACFF /* kern_tgl_tc_boot.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237330ACE4ED00F2ACFF /* kern_tgl_tc_boot.hpp */; };
+		2E54240230ACE4EF00F2ACFF /* kern_donor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E54237430ACE4ED00F2ACFF /* kern_donor.cpp */; };
+		2E54240330ACE4EF00F2ACFF /* kern_dsi_adapter_state.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2E54237530ACE4ED00F2ACFF /* kern_dsi_adapter_state.inc */; };
+		2E54240430ACE4EF00F2ACFF /* kern_framebuffer_donor.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237630ACE4ED00F2ACFF /* kern_framebuffer_donor.hpp */; };
+		2E54240530ACE4EF00F2ACFF /* kern_dsi_boot.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237730ACE4ED00F2ACFF /* kern_dsi_boot.hpp */; };
+		2E54240630ACE4EF00F2ACFF /* kern_tgl_gmbus.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237830ACE4ED00F2ACFF /* kern_tgl_gmbus.hpp */; };
+		2E54240730ACE4EF00F2ACFF /* kern_dsi_restart.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237930ACE4ED00F2ACFF /* kern_dsi_restart.hpp */; };
+		2E54240830ACE4EF00F2ACFF /* kern_xelp_memory_layout.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237A30ACE4ED00F2ACFF /* kern_xelp_memory_layout.hpp */; };
+		2E54240930ACE4EF00F2ACFF /* kern_display13_power.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237B30ACE4ED00F2ACFF /* kern_display13_power.hpp */; };
+		2E54240A30ACE4EF00F2ACFF /* kern_dsi_readout.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237C30ACE4ED00F2ACFF /* kern_dsi_readout.hpp */; };
+		2E54240B30ACE4EF00F2ACFF /* kern_tgl_start_order.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237D30ACE4ED00F2ACFF /* kern_tgl_start_order.hpp */; };
+		2E54240C30ACE4EF00F2ACFF /* kern_xelp_sst_route.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237E30ACE4ED00F2ACFF /* kern_xelp_sst_route.hpp */; };
+		2E54240D30ACE4EF00F2ACFF /* kern_tgl_combo_signal.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54237F30ACE4ED00F2ACFF /* kern_tgl_combo_signal.hpp */; };
+		2E54240E30ACE4EF00F2ACFF /* kern_xelp_forcewake_irq.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238030ACE4ED00F2ACFF /* kern_xelp_forcewake_irq.hpp */; };
+		2E54240F30ACE4EF00F2ACFF /* kern_tgl_hang_refs.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238130ACE4ED00F2ACFF /* kern_tgl_hang_refs.hpp */; };
+		2E54241030ACE4EF00F2ACFF /* kern_xelp_donor.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238230ACE4ED00F2ACFF /* kern_xelp_donor.hpp */; };
+		2E54241130ACE4EF00F2ACFF /* kern_dsi_host.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238330ACE4ED00F2ACFF /* kern_dsi_host.hpp */; };
+		2E54241230ACE4EF00F2ACFF /* kern_tgl_ppgtt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238430ACE4ED00F2ACFF /* kern_tgl_ppgtt.hpp */; };
+		2E54241330ACE4EF00F2ACFF /* kern_display13_firmware.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238530ACE4ED00F2ACFF /* kern_display13_firmware.hpp */; };
+		2E54241430ACE4EF00F2ACFF /* kern_tgl_same_tail.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238630ACE4ED00F2ACFF /* kern_tgl_same_tail.hpp */; };
+		2E54241530ACE4EF00F2ACFF /* kern_display13_tc_dp.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238730ACE4ED00F2ACFF /* kern_display13_tc_dp.hpp */; };
+		2E54241630ACE4EF00F2ACFF /* kern_xelp_native_placement.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238830ACE4ED00F2ACFF /* kern_xelp_native_placement.hpp */; };
+		2E54241730ACE4EF00F2ACFF /* kern_vbt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238930ACE4ED00F2ACFF /* kern_vbt.hpp */; };
+		2E54241830ACE4EF00F2ACFF /* kern_adls_boot.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238A30ACE4ED00F2ACFF /* kern_adls_boot.hpp */; };
+		2E54241930ACE4EF00F2ACFF /* kern_tgl_port_use.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238B30ACE4ED00F2ACFF /* kern_tgl_port_use.hpp */; };
+		2E54241A30ACE4EF00F2ACFF /* kern_dsi_quiesce.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238C30ACE4EE00F2ACFF /* kern_dsi_quiesce.hpp */; };
+		2E54241B30ACE4EF00F2ACFF /* kern_tgl_csb.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238D30ACE4EE00F2ACFF /* kern_tgl_csb.hpp */; };
+		2E54241C30ACE4EF00F2ACFF /* kern_xe_data_access.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E54238E30ACE4EE00F2ACFF /* kern_xe_data_access.cpp */; };
+		2E54241D30ACE4EF00F2ACFF /* kern_xelp_panel_pwm.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54238F30ACE4EE00F2ACFF /* kern_xelp_panel_pwm.hpp */; };
+		2E54241E30ACE4EF00F2ACFF /* kern_tgl_tc_cold.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239030ACE4EE00F2ACFF /* kern_tgl_tc_cold.hpp */; };
+		2E54241F30ACE4EF00F2ACFF /* kern_backlight_profile.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239130ACE4EE00F2ACFF /* kern_backlight_profile.hpp */; };
+		2E54242030ACE4EF00F2ACFF /* kern_tgl_hang_select.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239230ACE4EE00F2ACFF /* kern_tgl_hang_select.hpp */; };
+		2E54242130ACE4EF00F2ACFF /* kern_tgl_native_fia.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239330ACE4EE00F2ACFF /* kern_tgl_native_fia.hpp */; };
+		2E54242230ACE4EF00F2ACFF /* kern_xe_data_access.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239430ACE4EE00F2ACFF /* kern_xe_data_access.hpp */; };
+		2E54242330ACE4EF00F2ACFF /* kern_dsi_adapter_modes.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2E54239530ACE4EE00F2ACFF /* kern_dsi_adapter_modes.inc */; };
+		2E54242430ACE4EF00F2ACFF /* kern_adls_clock.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239630ACE4EE00F2ACFF /* kern_adls_clock.hpp */; };
+		2E54242530ACE4EF00F2ACFF /* kern_firmware.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E54239730ACE4EE00F2ACFF /* kern_firmware.cpp */; };
+		2E54242630ACE4EF00F2ACFF /* kern_display13_clock.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239830ACE4EE00F2ACFF /* kern_display13_clock.hpp */; };
+		2E54242730ACE4EF00F2ACFF /* kern_xelp_devices.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239930ACE4EE00F2ACFF /* kern_xelp_devices.hpp */; };
+		2E54242830ACE4EF00F2ACFF /* kern_alderlake_n.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239A30ACE4EE00F2ACFF /* kern_alderlake_n.hpp */; };
+		2E54242930ACE4EF00F2ACFF /* kern_tgl_pcode_edram.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239B30ACE4EE00F2ACFF /* kern_tgl_pcode_edram.hpp */; };
+		2E54242A30ACE4EF00F2ACFF /* kern_display13_tc.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239C30ACE4EE00F2ACFF /* kern_display13_tc.hpp */; };
+		2E54242B30ACE4EF00F2ACFF /* kern_tgl_rpcs.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239D30ACE4EE00F2ACFF /* kern_tgl_rpcs.hpp */; };
+		2E54242C30ACE4EF00F2ACFF /* kern_display13_tc_native.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239E30ACE4EE00F2ACFF /* kern_display13_tc_native.hpp */; };
+		2E54242D30ACE4EF00F2ACFF /* kern_display13_tc_aux.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E54239F30ACE4EE00F2ACFF /* kern_display13_tc_aux.hpp */; };
+		2E54242E30ACE4EF00F2ACFF /* kern_alderlake_s.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5423A030ACE4EE00F2ACFF /* kern_alderlake_s.hpp */; };
+		2E54242F30ACE4EF00F2ACFF /* kern_dsi_native_mode.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5423A130ACE4EE00F2ACFF /* kern_dsi_native_mode.hpp */; };
+		2E54243030ACE4EF00F2ACFF /* kern_dsi_clock.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5423A230ACE4EE00F2ACFF /* kern_dsi_clock.hpp */; };
+		2E54243130ACE4EF00F2ACFF /* kern_graphics_activation.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5423A330ACE4EE00F2ACFF /* kern_graphics_activation.hpp */; };
+		2E54243230ACE4EF00F2ACFF /* kern_tgl_hang_prestop.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5423A430ACE4EE00F2ACFF /* kern_tgl_hang_prestop.hpp */; };
+		2E54243330ACE4EF00F2ACFF /* kern_start.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E5423A530ACE4EE00F2ACFF /* kern_start.cpp */; };
+		2E54243430ACE4EF00F2ACFF /* kern_xelp_call_target.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5423A630ACE4EE00F2ACFF /* kern_xelp_call_target.hpp */; };
+		2E54243530ACE4EF00F2ACFF /* kern_xelp_device.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5423A730ACE4EE00F2ACFF /* kern_xelp_device.hpp */; };
+		2E54243630ACE4EF00F2ACFF /* kern_display13_retirement.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5423A830ACE4EE00F2ACFF /* kern_display13_retirement.hpp */; };
+		2E54243730ACE4EF00F2ACFF /* kern_dsi_apple_timing.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5423A930ACE4EF00F2ACFF /* kern_dsi_apple_timing.hpp */; };
 		2E5BF5832BCC212F0095BDCF /* HDMI.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E5BF5812BCC212F0095BDCF /* HDMI.cpp */; };
 		2E5BF5842BCC212F0095BDCF /* HDMI.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2E5BF5822BCC212F0095BDCF /* HDMI.hpp */; };
 		2E80A802309E9D2F00C4AC32 /* kern_xepm_tgl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2E80A801309E9D2F00C4AC32 /* kern_xepm_tgl.cpp */; };
 		2E8599252FBCFFF4001C9274 /* intel_vbt_defs.h in Headers */ = {isa = PBXBuildFile; fileRef = 2E8599232FBCFFF3001C9274 /* intel_vbt_defs.h */; };
 		2E8599262FBCFFF4001C9274 /* intel_dsi_vbt_defs.h in Headers */ = {isa = PBXBuildFile; fileRef = 2E8599242FBCFFF3001C9274 /* intel_dsi_vbt_defs.h */; };
-		2ED96FA230A6A83C009D355A /* kern_dsi_native_mode.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F1530A6A839009D355A /* kern_dsi_native_mode.hpp */; };
-		2ED96FA330A6A83C009D355A /* kern_tgl_hang_select.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F1630A6A839009D355A /* kern_tgl_hang_select.hpp */; };
-		2ED96FA430A6A83C009D355A /* kern_dsi_adapter_boot.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F1730A6A839009D355A /* kern_dsi_adapter_boot.inc */; };
-		2ED96FA530A6A83C009D355A /* kern_tgl_submit_history.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F1830A6A839009D355A /* kern_tgl_submit_history.hpp */; };
-		2ED96FA630A6A83C009D355A /* kern_xelp_port_wait.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F1930A6A839009D355A /* kern_xelp_port_wait.hpp */; };
-		2ED96FA730A6A83C009D355A /* kern_xelp_queue_trace.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F1A30A6A839009D355A /* kern_xelp_queue_trace.hpp */; };
-		2ED96FA830A6A83C009D355A /* kern_tgl_tc_boot.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F1B30A6A839009D355A /* kern_tgl_tc_boot.hpp */; };
-		2ED96FA930A6A83C009D355A /* kern_display13_fb_gtt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F1C30A6A839009D355A /* kern_display13_fb_gtt.hpp */; };
-		2ED96FAA30A6A83C009D355A /* kern_xe_data_access.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F1D30A6A839009D355A /* kern_xe_data_access.cpp */; };
-		2ED96FAB30A6A83C009D355A /* kern_tgl_native_fia.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F1E30A6A839009D355A /* kern_tgl_native_fia.hpp */; };
-		2ED96FAC30A6A83C009D355A /* kern_display13_tc_mode.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F1F30A6A839009D355A /* kern_display13_tc_mode.hpp */; };
-		2ED96FAD30A6A83C009D355A /* kern_display13_color.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2030A6A839009D355A /* kern_display13_color.hpp */; };
-		2ED96FAE30A6A83C009D355A /* kern_display13_wm.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2130A6A839009D355A /* kern_display13_wm.hpp */; };
-		2ED96FAF30A6A83C009D355A /* kern_dsi_adapter_lifecycle.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F2230A6A839009D355A /* kern_dsi_adapter_lifecycle.inc */; };
-		2ED96FB030A6A83C009D355A /* kern_tgl_aux_call.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2330A6A839009D355A /* kern_tgl_aux_call.hpp */; };
-		2ED96FB130A6A83C009D355A /* kern_display13_tc_dp.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2430A6A839009D355A /* kern_display13_tc_dp.hpp */; };
-		2ED96FB230A6A83C009D355A /* kern_donor.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2530A6A83A009D355A /* kern_donor.hpp */; };
-		2ED96FB330A6A83C009D355A /* kern_display13_tc_clock.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2630A6A83A009D355A /* kern_display13_tc_clock.hpp */; };
-		2ED96FB430A6A83C009D355A /* kern_xelp_display_resources.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2730A6A83A009D355A /* kern_xelp_display_resources.hpp */; };
-		2ED96FB530A6A83C009D355A /* kern_tgl_tc_cold.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2830A6A83A009D355A /* kern_tgl_tc_cold.hpp */; };
-		2ED96FB630A6A83C009D355A /* kern_tgl_start_order.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2930A6A83A009D355A /* kern_tgl_start_order.hpp */; };
-		2ED96FB730A6A83C009D355A /* kern_dsi_readout.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2A30A6A83A009D355A /* kern_dsi_readout.hpp */; };
-		2ED96FB830A6A83C009D355A /* kern_donor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F2B30A6A83A009D355A /* kern_donor.cpp */; };
-		2ED96FB930A6A83C009D355A /* kern_dsi_ggtt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2C30A6A83A009D355A /* kern_dsi_ggtt.hpp */; };
-		2ED96FBA30A6A83C009D355A /* kern_graphics_activation.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2D30A6A83A009D355A /* kern_graphics_activation.hpp */; };
-		2ED96FBB30A6A83C009D355A /* kern_display13_clock.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2E30A6A83A009D355A /* kern_display13_clock.hpp */; };
-		2ED96FBC30A6A83C009D355A /* kern_tgl_ppgtt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F2F30A6A83A009D355A /* kern_tgl_ppgtt.hpp */; };
-		2ED96FBD30A6A83C009D355A /* kern_xelp_call_target.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3030A6A83A009D355A /* kern_xelp_call_target.hpp */; };
-		2ED96FBE30A6A83C009D355A /* kern_xelp_gop_stop.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3130A6A83A009D355A /* kern_xelp_gop_stop.hpp */; };
-		2ED96FBF30A6A83C009D355A /* kern_tgl_gmbus.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3230A6A83A009D355A /* kern_tgl_gmbus.hpp */; };
-		2ED96FC030A6A83C009D355A /* kern_xelp_device.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3330A6A83A009D355A /* kern_xelp_device.hpp */; };
-		2ED96FC130A6A83C009D355A /* kern_display13_power_bridge.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3430A6A83A009D355A /* kern_display13_power_bridge.hpp */; };
-		2ED96FC230A6A83C009D355A /* kern_tgl_hang_ggtt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3530A6A83A009D355A /* kern_tgl_hang_ggtt.hpp */; };
-		2ED96FC330A6A83C009D355A /* kern_dsi_host.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3630A6A83A009D355A /* kern_dsi_host.hpp */; };
-		2ED96FC430A6A83C009D355A /* kern_xelp_probe.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3730A6A83A009D355A /* kern_xelp_probe.hpp */; };
-		2ED96FC530A6A83C009D355A /* kern_tgl_combo_dp.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3830A6A83A009D355A /* kern_tgl_combo_dp.hpp */; };
-		2ED96FC630A6A83C009D355A /* kern_display13_dsi_trial.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3930A6A83A009D355A /* kern_display13_dsi_trial.hpp */; };
-		2ED96FC730A6A83C009D355A /* kern_xelp_sst_program.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3A30A6A83A009D355A /* kern_xelp_sst_program.hpp */; };
-		2ED96FC830A6A83C009D355A /* kern_dsi_quiesce.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3B30A6A83A009D355A /* kern_dsi_quiesce.hpp */; };
-		2ED96FC930A6A83C009D355A /* kern_dsi_adapter_backing.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F3C30A6A83A009D355A /* kern_dsi_adapter_backing.inc */; };
-		2ED96FCA30A6A83C009D355A /* kern_tgl_boot_readout.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3D30A6A83A009D355A /* kern_tgl_boot_readout.hpp */; };
-		2ED96FCB30A6A83C009D355A /* kern_tgl_same_tail.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3E30A6A83A009D355A /* kern_tgl_same_tail.hpp */; };
-		2ED96FCC30A6A83C009D355A /* kern_xe.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F3F30A6A83A009D355A /* kern_xe.hpp */; };
-		2ED96FCD30A6A83C009D355A /* kern_xelp_combo_clock.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4030A6A83A009D355A /* kern_xelp_combo_clock.hpp */; };
-		2ED96FCE30A6A83C009D355A /* kern_tgl_fia.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4130A6A83A009D355A /* kern_tgl_fia.hpp */; };
-		2ED96FCF30A6A83C009D355A /* kern_xelp_panel_power.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4230A6A83A009D355A /* kern_xelp_panel_power.hpp */; };
-		2ED96FD030A6A83C009D355A /* kern_display13_tc.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4330A6A83A009D355A /* kern_display13_tc.hpp */; };
-		2ED96FD130A6A83C009D355A /* kern_display13_hdmi_wiring.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4430A6A83A009D355A /* kern_display13_hdmi_wiring.hpp */; };
-		2ED96FD230A6A83C009D355A /* kern_display13_power.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4530A6A83A009D355A /* kern_display13_power.hpp */; };
-		2ED96FD330A6A83C009D355A /* kern_alderlake_n.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4630A6A83A009D355A /* kern_alderlake_n.hpp */; };
-		2ED96FD430A6A83C009D355A /* kern_dsi_backlight.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4730A6A83A009D355A /* kern_dsi_backlight.hpp */; };
-		2ED96FD530A6A83C009D355A /* kern_display13_tc_native.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4830A6A83A009D355A /* kern_display13_tc_native.hpp */; };
-		2ED96FD630A6A83C009D355A /* kern_tgl_vm.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4930A6A83A009D355A /* kern_tgl_vm.hpp */; };
-		2ED96FD730A6A83C009D355A /* kern_vbt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4A30A6A83A009D355A /* kern_vbt.hpp */; };
-		2ED96FD830A6A83C009D355A /* kern_display13_cursor.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4B30A6A83A009D355A /* kern_display13_cursor.hpp */; };
-		2ED96FD930A6A83C009D355A /* kern_tgl_rpcs.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4C30A6A83A009D355A /* kern_tgl_rpcs.hpp */; };
-		2ED96FDA30A6A83C009D355A /* kern_xe_data_access.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4D30A6A83A009D355A /* kern_xe_data_access.hpp */; };
-		2ED96FDB30A6A83C009D355A /* kern_display13_tc_lightup.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4E30A6A83A009D355A /* kern_display13_tc_lightup.hpp */; };
-		2ED96FDC30A6A83C009D355A /* kern_xelp_panel_pwm.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F4F30A6A83A009D355A /* kern_xelp_panel_pwm.hpp */; };
-		2ED96FDD30A6A83C009D355A /* kern_tgl_hang_prestop.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5030A6A83A009D355A /* kern_tgl_hang_prestop.hpp */; };
-		2ED96FDE30A6A83C009D355A /* kern_display13_fb_irq.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5130A6A83A009D355A /* kern_display13_fb_irq.hpp */; };
-		2ED96FDF30A6A83C009D355A /* kern_dsi_restart.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5230A6A83A009D355A /* kern_dsi_restart.hpp */; };
-		2ED96FE030A6A83C009D355A /* kern_display13_transcoder.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5330A6A83A009D355A /* kern_display13_transcoder.hpp */; };
-		2ED96FE130A6A83C009D355A /* kern_backlight_profile.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5430A6A83B009D355A /* kern_backlight_profile.hpp */; };
-		2ED96FE230A6A83C009D355A /* kern_tgl_pcode_gate.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5530A6A83B009D355A /* kern_tgl_pcode_gate.hpp */; };
-		2ED96FE330A6A83C009D355A /* kern_xelp_geometry.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5630A6A83B009D355A /* kern_xelp_geometry.hpp */; };
-		2ED96FE430A6A83C009D355A /* kern_display13_output_wiring.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5730A6A83B009D355A /* kern_display13_output_wiring.hpp */; };
-		2ED96FE530A6A83C009D355A /* kern_firmware.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F5830A6A83B009D355A /* kern_firmware.cpp */; };
-		2ED96FE630A6A83C009D355A /* kern_dsi_boot.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5930A6A83B009D355A /* kern_dsi_boot.hpp */; };
-		2ED96FE730A6A83C009D355A /* kern_display13_fb_memory.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5A30A6A83B009D355A /* kern_display13_fb_memory.hpp */; };
-		2ED96FE830A6A83C009D355A /* kern_adls_boot.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5B30A6A83B009D355A /* kern_adls_boot.hpp */; };
-		2ED96FE930A6A83C009D355A /* kern_dsi_profile.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5C30A6A83B009D355A /* kern_dsi_profile.hpp */; };
-		2ED96FEA30A6A83C009D355A /* kern_tgl_port_map.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5D30A6A83B009D355A /* kern_tgl_port_map.hpp */; };
-		2ED96FEB30A6A83C009D355A /* kern_tgl_training_scope.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F5E30A6A83B009D355A /* kern_tgl_training_scope.hpp */; };
-		2ED96FEC30A6A83C009D355A /* kern_dvmt.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F5F30A6A83B009D355A /* kern_dvmt.cpp */; };
-		2ED96FED30A6A83C009D355A /* kern_xelp_link_requirements.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6030A6A83B009D355A /* kern_xelp_link_requirements.hpp */; };
-		2ED96FEE30A6A83C009D355A /* kern_dsi_commands.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6130A6A83B009D355A /* kern_dsi_commands.hpp */; };
-		2ED96FEF30A6A83C009D355A /* kern_tgl_port_use.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6230A6A83B009D355A /* kern_tgl_port_use.hpp */; };
-		2ED96FF030A6A83C009D355A /* kern_dsi_sequence.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6330A6A83B009D355A /* kern_dsi_sequence.hpp */; };
-		2ED96FF130A6A83C009D355A /* kern_tgl_hang_refs.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6430A6A83B009D355A /* kern_tgl_hang_refs.hpp */; };
-		2ED96FF230A6A83C009D355A /* kern_xelp_display_contract.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6530A6A83B009D355A /* kern_xelp_display_contract.hpp */; };
-		2ED96FF330A6A83C009D355A /* kern_dsi_surface.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6630A6A83B009D355A /* kern_dsi_surface.hpp */; };
-		2ED96FF430A6A83C009D355A /* kern_dsi_native_backing.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6730A6A83B009D355A /* kern_dsi_native_backing.hpp */; };
-		2ED96FF530A6A83C009D355A /* kern_xelp_sst_route.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6830A6A83B009D355A /* kern_xelp_sst_route.hpp */; };
-		2ED96FF630A6A83C009D355A /* kern_tgl_context_cache.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6930A6A83B009D355A /* kern_tgl_context_cache.hpp */; };
-		2ED96FF730A6A83C009D355A /* kern_display13_fb_sysmem.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6A30A6A83B009D355A /* kern_display13_fb_sysmem.hpp */; };
-		2ED96FF830A6A83C009D355A /* kern_xelp_queue_memory.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6B30A6A83B009D355A /* kern_xelp_queue_memory.hpp */; };
-		2ED96FF930A6A83C009D355A /* kern_framebuffer_donor.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6C30A6A83B009D355A /* kern_framebuffer_donor.hpp */; };
-		2ED96FFA30A6A83C009D355A /* kern_dsi_native_cache.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6D30A6A83B009D355A /* kern_dsi_native_cache.hpp */; };
-		2ED96FFB30A6A83C009D355A /* kern_xelp_native_placement.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6E30A6A83B009D355A /* kern_xelp_native_placement.hpp */; };
-		2ED96FFC30A6A83C009D355A /* kern_tgl_hdmi_wiring.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F6F30A6A83B009D355A /* kern_tgl_hdmi_wiring.hpp */; };
-		2ED96FFD30A6A83C009D355A /* kern_xelp_os.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7030A6A83B009D355A /* kern_xelp_os.hpp */; };
-		2ED96FFE30A6A83C009D355A /* kern_dsi_clock.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7130A6A83B009D355A /* kern_dsi_clock.hpp */; };
-		2ED96FFF30A6A83C009D355A /* kern_dsi_adapter_state.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F7230A6A83B009D355A /* kern_dsi_adapter_state.inc */; };
-		2ED9700030A6A83C009D355A /* kern_xelp_donor.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7330A6A83B009D355A /* kern_xelp_donor.hpp */; };
-		2ED9700130A6A83C009D355A /* kern_alderlake_n_gpu.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7430A6A83B009D355A /* kern_alderlake_n_gpu.hpp */; };
-		2ED9700230A6A83C009D355A /* kern_xelp_gt_resources.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7530A6A83B009D355A /* kern_xelp_gt_resources.hpp */; };
-		2ED9700330A6A83C009D355A /* kern_dsi_sleep_image.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7630A6A83B009D355A /* kern_dsi_sleep_image.hpp */; };
-		2ED9700430A6A83C009D355A /* kern_display13_tc_aux.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7730A6A83B009D355A /* kern_display13_tc_aux.hpp */; };
-		2ED9700530A6A83C009D355A /* kern_tgl_submit_capture.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7830A6A83B009D355A /* kern_tgl_submit_capture.hpp */; };
-		2ED9700630A6A83C009D355A /* kern_framebuffer_training_native.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7930A6A83B009D355A /* kern_framebuffer_training_native.hpp */; };
-		2ED9700730A6A83C009D355A /* kern_start.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F7A30A6A83B009D355A /* kern_start.cpp */; };
-		2ED9700830A6A83C009D355A /* kern_tgl_hang_detail.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7B30A6A83B009D355A /* kern_tgl_hang_detail.hpp */; };
-		2ED9700930A6A83C009D355A /* kern_tgl_gsync.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7C30A6A83B009D355A /* kern_tgl_gsync.hpp */; };
-		2ED9700A30A6A83C009D355A /* kern_dsi_adapter_modes.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F7D30A6A83B009D355A /* kern_dsi_adapter_modes.inc */; };
-		2ED9700B30A6A83C009D355A /* kern_dsi_math.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7E30A6A83B009D355A /* kern_dsi_math.hpp */; };
-		2ED9700C30A6A83C009D355A /* kern_xelp_memory_layout.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F7F30A6A83B009D355A /* kern_xelp_memory_layout.hpp */; };
-		2ED9700D30A6A83C009D355A /* kern_alderlake_s.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8030A6A83B009D355A /* kern_alderlake_s.hpp */; };
-		2ED9700E30A6A83C009D355A /* kern_display13_fb_topology.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8130A6A83B009D355A /* kern_display13_fb_topology.hpp */; };
-		2ED9700F30A6A83C009D355A /* kern_host_power_contract.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8230A6A83B009D355A /* kern_host_power_contract.hpp */; };
-		2ED9701030A6A83C009D355A /* kern_xe.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F8330A6A83B009D355A /* kern_xe.cpp */; };
-		2ED9701130A6A83C009D355A /* kern_tgl_pcode_edram.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8430A6A83B009D355A /* kern_tgl_pcode_edram.hpp */; };
-		2ED9701230A6A83C009D355A /* kern_dsi_session.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8530A6A83C009D355A /* kern_dsi_session.hpp */; };
-		2ED9701330A6A83C009D355A /* kern_display13_framebuffer_power.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F8630A6A83C009D355A /* kern_display13_framebuffer_power.inc */; };
-		2ED9701430A6A83C009D355A /* kern_xelp_devices.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8730A6A83C009D355A /* kern_xelp_devices.hpp */; };
-		2ED9701530A6A83C009D355A /* kern_host.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F8830A6A83C009D355A /* kern_host.cpp */; };
-		2ED9701630A6A83C009D355A /* kern_tgl_tc_mode.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8930A6A83C009D355A /* kern_tgl_tc_mode.hpp */; };
-		2ED9701730A6A83C009D355A /* kern_tgl_recovery.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8A30A6A83C009D355A /* kern_tgl_recovery.hpp */; };
-		2ED9701830A6A83C009D355A /* kern_tgl_fb_binding.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8B30A6A83C009D355A /* kern_tgl_fb_binding.hpp */; };
-		2ED9701930A6A83C009D355A /* kern_dsi_attributes.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8C30A6A83C009D355A /* kern_dsi_attributes.hpp */; };
-		2ED9701A30A6A83C009D355A /* kern_tgl_csb.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8D30A6A83C009D355A /* kern_tgl_csb.hpp */; };
-		2ED9701B30A6A83C009D355A /* kern_dsi_panel.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8E30A6A83C009D355A /* kern_dsi_panel.hpp */; };
-		2ED9701C30A6A83C009D355A /* kern_tgl_tc_native.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F8F30A6A83C009D355A /* kern_tgl_tc_native.hpp */; };
-		2ED9701D30A6A83C009D355A /* kern_xelp_platform.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9030A6A83C009D355A /* kern_xelp_platform.hpp */; };
-		2ED9701E30A6A83C009D355A /* kern_tgl_hang_graph.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9130A6A83C009D355A /* kern_tgl_hang_graph.hpp */; };
-		2ED9701F30A6A83C009D355A /* kern_dsi_adapter_diagnostics.inc in Sources */ = {isa = PBXBuildFile; fileRef = 2ED96F9230A6A83C009D355A /* kern_dsi_adapter_diagnostics.inc */; };
-		2ED9702030A6A83C009D355A /* kern_tgl_hang_pending.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9330A6A83C009D355A /* kern_tgl_hang_pending.hpp */; };
-		2ED9702130A6A83C009D355A /* kern_dvmt.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9430A6A83C009D355A /* kern_dvmt.hpp */; };
-		2ED9702230A6A83C009D355A /* kern_adls_clock.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9530A6A83C009D355A /* kern_adls_clock.hpp */; };
-		2ED9702330A6A83C009D355A /* kern_display13_firmware.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9630A6A83C009D355A /* kern_display13_firmware.hpp */; };
-		2ED9702430A6A83C009D355A /* kern_host.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9730A6A83C009D355A /* kern_host.hpp */; };
-		2ED9702530A6A83C009D355A /* kern_xe_data_policy.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9830A6A83C009D355A /* kern_xe_data_policy.hpp */; };
-		2ED9702630A6A83C009D355A /* kern_dsi_apple_timing.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9930A6A83C009D355A /* kern_dsi_apple_timing.hpp */; };
-		2ED9702730A6A83C009D355A /* kern_display13_panel.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9A30A6A83C009D355A /* kern_display13_panel.hpp */; };
-		2ED9702830A6A83C009D355A /* kern_xelp_combo_policy.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9B30A6A83C009D355A /* kern_xelp_combo_policy.hpp */; };
-		2ED9702930A6A83C009D355A /* kern_display13_boot.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9C30A6A83C009D355A /* kern_display13_boot.hpp */; };
-		2ED9702A30A6A83C009D355A /* kern_tgl_combo_signal.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9D30A6A83C009D355A /* kern_tgl_combo_signal.hpp */; };
-		2ED9702B30A6A83C009D355A /* kern_display13_dbuf.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9E30A6A83C009D355A /* kern_display13_dbuf.hpp */; };
-		2ED9702C30A6A83C009D355A /* kern_xelp_forcewake_irq.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96F9F30A6A83C009D355A /* kern_xelp_forcewake_irq.hpp */; };
-		2ED9702D30A6A83C009D355A /* kern_display13_retirement.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96FA030A6A83C009D355A /* kern_display13_retirement.hpp */; };
-		2ED9702E30A6A83C009D355A /* kern_tgl_panel_depth.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2ED96FA130A6A83C009D355A /* kern_tgl_panel_depth.hpp */; };
 		2EE611B22FA6C10F00E58E2A /* Firmware.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2EE611AE2FA6C10F00E58E2A /* Firmware.cpp */; };
 		2EE611B32FA6C10F00E58E2A /* Firmware.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2EE611AF2FA6C10F00E58E2A /* Firmware.hpp */; };
 		2EE611B42FA6C10F00E58E2A /* ZlibAlloc.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 2EE611B02FA6C10F00E58E2A /* ZlibAlloc.hpp */; };
@@ -191,152 +192,153 @@
 		2E1CC3E12BA5DBD9004EC8F6 /* DisplayMergeNub.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = DisplayMergeNub.cpp; sourceTree = "<group>"; };
 		2E315A5F2BC6EA4D008411AA /* DYLDPatches.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = DYLDPatches.hpp; sourceTree = "<group>"; };
 		2E315A602BC6EA4D008411AA /* DYLDPatches.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = DYLDPatches.cpp; sourceTree = "<group>"; };
+		2E54231C30ACE4EA00F2ACFF /* kern_xelp_sst_program.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_sst_program.hpp; path = WhateverXe/kern_xelp_sst_program.hpp; sourceTree = SOURCE_ROOT; };
+		2E54231D30ACE4EA00F2ACFF /* kern_dsi_panel.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_panel.hpp; path = WhateverXe/kern_dsi_panel.hpp; sourceTree = SOURCE_ROOT; };
+		2E54231E30ACE4EA00F2ACFF /* kern_display13_dsi_trial.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_dsi_trial.hpp; path = WhateverXe/kern_display13_dsi_trial.hpp; sourceTree = SOURCE_ROOT; };
+		2E54231F30ACE4EA00F2ACFF /* kern_xelp_platform.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_platform.hpp; path = WhateverXe/kern_xelp_platform.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232030ACE4EA00F2ACFF /* kern_display13_tc_clock.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_clock.hpp; path = WhateverXe/kern_display13_tc_clock.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232130ACE4EA00F2ACFF /* kern_tgl_submit_history.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_submit_history.hpp; path = WhateverXe/kern_tgl_submit_history.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232230ACE4EA00F2ACFF /* kern_dvmt.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_dvmt.cpp; path = WhateverXe/kern_dvmt.cpp; sourceTree = SOURCE_ROOT; };
+		2E54232330ACE4EA00F2ACFF /* kern_xelp_display_contract.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_display_contract.hpp; path = WhateverXe/kern_xelp_display_contract.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232430ACE4EA00F2ACFF /* kern_tgl_hang_graph.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_graph.hpp; path = WhateverXe/kern_tgl_hang_graph.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232530ACE4EA00F2ACFF /* kern_tgl_hang_pending.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_pending.hpp; path = WhateverXe/kern_tgl_hang_pending.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232630ACE4EA00F2ACFF /* kern_tgl_submit_capture.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_submit_capture.hpp; path = WhateverXe/kern_tgl_submit_capture.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232730ACE4EA00F2ACFF /* kern_xelp_queue_memory.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_queue_memory.hpp; path = WhateverXe/kern_xelp_queue_memory.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232830ACE4EA00F2ACFF /* kern_tgl_recovery.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_recovery.hpp; path = WhateverXe/kern_tgl_recovery.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232930ACE4EA00F2ACFF /* kern_alderlake_n_gpu.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_alderlake_n_gpu.hpp; path = WhateverXe/kern_alderlake_n_gpu.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232A30ACE4EA00F2ACFF /* kern_framebuffer_training_native.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_framebuffer_training_native.hpp; path = WhateverXe/kern_framebuffer_training_native.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232B30ACE4EA00F2ACFF /* kern_display13_boot.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_boot.hpp; path = WhateverXe/kern_display13_boot.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232C30ACE4EA00F2ACFF /* kern_tgl_fb_binding.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_fb_binding.hpp; path = WhateverXe/kern_tgl_fb_binding.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232D30ACE4EA00F2ACFF /* kern_display13_tc_mode.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_mode.hpp; path = WhateverXe/kern_display13_tc_mode.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232E30ACE4EA00F2ACFF /* kern_tgl_fia.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_fia.hpp; path = WhateverXe/kern_tgl_fia.hpp; sourceTree = SOURCE_ROOT; };
+		2E54232F30ACE4EA00F2ACFF /* kern_tgl_panel_depth.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_panel_depth.hpp; path = WhateverXe/kern_tgl_panel_depth.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233030ACE4EA00F2ACFF /* kern_xelp_combo_policy.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_combo_policy.hpp; path = WhateverXe/kern_xelp_combo_policy.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233130ACE4EB00F2ACFF /* kern_tgl_pcode_gate.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_pcode_gate.hpp; path = WhateverXe/kern_tgl_pcode_gate.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233230ACE4EB00F2ACFF /* kern_dsi_adapter_backing.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_backing.inc; path = WhateverXe/kern_dsi_adapter_backing.inc; sourceTree = SOURCE_ROOT; };
+		2E54233330ACE4EB00F2ACFF /* kern_tgl_hdmi_wiring.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hdmi_wiring.hpp; path = WhateverXe/kern_tgl_hdmi_wiring.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233430ACE4EB00F2ACFF /* kern_xe.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_xe.cpp; path = WhateverXe/kern_xe.cpp; sourceTree = SOURCE_ROOT; };
+		2E54233530ACE4EB00F2ACFF /* kern_tgl_vm.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_vm.hpp; path = WhateverXe/kern_tgl_vm.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233630ACE4EB00F2ACFF /* kern_display13_framebuffer_power.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_display13_framebuffer_power.inc; path = WhateverXe/kern_display13_framebuffer_power.inc; sourceTree = SOURCE_ROOT; };
+		2E54233730ACE4EB00F2ACFF /* kern_dsi_native_cache.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_native_cache.hpp; path = WhateverXe/kern_dsi_native_cache.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233830ACE4EB00F2ACFF /* kern_dsi_ggtt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_ggtt.hpp; path = WhateverXe/kern_dsi_ggtt.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233930ACE4EB00F2ACFF /* kern_tgl_aux_call.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_aux_call.hpp; path = WhateverXe/kern_tgl_aux_call.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233A30ACE4EB00F2ACFF /* kern_tgl_gsync.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_gsync.hpp; path = WhateverXe/kern_tgl_gsync.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233B30ACE4EB00F2ACFF /* kern_dsi_backlight.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_backlight.hpp; path = WhateverXe/kern_dsi_backlight.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233C30ACE4EB00F2ACFF /* kern_tgl_port_map.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_port_map.hpp; path = WhateverXe/kern_tgl_port_map.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233D30ACE4EB00F2ACFF /* kern_xelp_gt_resources.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_gt_resources.hpp; path = WhateverXe/kern_xelp_gt_resources.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233E30ACE4EB00F2ACFF /* kern_xelp_display_resources.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_display_resources.hpp; path = WhateverXe/kern_xelp_display_resources.hpp; sourceTree = SOURCE_ROOT; };
+		2E54233F30ACE4EB00F2ACFF /* kern_host.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_host.hpp; path = WhateverXe/kern_host.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234030ACE4EB00F2ACFF /* kern_display13_fb_irq.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_fb_irq.hpp; path = WhateverXe/kern_display13_fb_irq.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234130ACE4EB00F2ACFF /* kern_display13_fb_topology.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_fb_topology.hpp; path = WhateverXe/kern_display13_fb_topology.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234230ACE4EB00F2ACFF /* kern_host.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_host.cpp; path = WhateverXe/kern_host.cpp; sourceTree = SOURCE_ROOT; };
+		2E54234330ACE4EB00F2ACFF /* kern_dsi_commands.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_commands.hpp; path = WhateverXe/kern_dsi_commands.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234430ACE4EB00F2ACFF /* kern_display13_hdmi_wiring.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_hdmi_wiring.hpp; path = WhateverXe/kern_display13_hdmi_wiring.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234530ACE4EB00F2ACFF /* kern_tgl_combo_dp.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_combo_dp.hpp; path = WhateverXe/kern_tgl_combo_dp.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234630ACE4EB00F2ACFF /* kern_edp_aux_backlight.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_edp_aux_backlight.hpp; path = WhateverXe/kern_edp_aux_backlight.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234730ACE4EB00F2ACFF /* kern_display13_transcoder.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_transcoder.hpp; path = WhateverXe/kern_display13_transcoder.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234830ACE4EB00F2ACFF /* kern_display13_output_wiring.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_output_wiring.hpp; path = WhateverXe/kern_display13_output_wiring.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234930ACE4EB00F2ACFF /* kern_dsi_native_backing.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_native_backing.hpp; path = WhateverXe/kern_dsi_native_backing.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234A30ACE4EB00F2ACFF /* kern_dsi_sequence.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_sequence.hpp; path = WhateverXe/kern_dsi_sequence.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234B30ACE4EB00F2ACFF /* kern_dsi_surface.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_surface.hpp; path = WhateverXe/kern_dsi_surface.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234C30ACE4EB00F2ACFF /* kern_dsi_adapter_diagnostics.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_diagnostics.inc; path = WhateverXe/kern_dsi_adapter_diagnostics.inc; sourceTree = SOURCE_ROOT; };
+		2E54234D30ACE4EB00F2ACFF /* kern_dsi_profile.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_profile.hpp; path = WhateverXe/kern_dsi_profile.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234E30ACE4EC00F2ACFF /* kern_display13_panel.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_panel.hpp; path = WhateverXe/kern_display13_panel.hpp; sourceTree = SOURCE_ROOT; };
+		2E54234F30ACE4EC00F2ACFF /* kern_tgl_tc_native.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_tc_native.hpp; path = WhateverXe/kern_tgl_tc_native.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235030ACE4EC00F2ACFF /* kern_xe.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xe.hpp; path = WhateverXe/kern_xe.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235130ACE4EC00F2ACFF /* kern_dsi_sleep_image.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_sleep_image.hpp; path = WhateverXe/kern_dsi_sleep_image.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235230ACE4EC00F2ACFF /* kern_display13_color.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_color.hpp; path = WhateverXe/kern_display13_color.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235330ACE4EC00F2ACFF /* kern_xelp_gop_stop.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_gop_stop.hpp; path = WhateverXe/kern_xelp_gop_stop.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235430ACE4EC00F2ACFF /* kern_xelp_os.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_os.hpp; path = WhateverXe/kern_xelp_os.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235530ACE4EC00F2ACFF /* kern_display13_fb_gtt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_fb_gtt.hpp; path = WhateverXe/kern_display13_fb_gtt.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235630ACE4EC00F2ACFF /* kern_xelp_probe.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_probe.hpp; path = WhateverXe/kern_xelp_probe.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235730ACE4EC00F2ACFF /* kern_display13_fb_memory.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_fb_memory.hpp; path = WhateverXe/kern_display13_fb_memory.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235830ACE4EC00F2ACFF /* kern_xelp_panel_power.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_panel_power.hpp; path = WhateverXe/kern_xelp_panel_power.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235930ACE4EC00F2ACFF /* kern_xelp_port_wait.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_port_wait.hpp; path = WhateverXe/kern_xelp_port_wait.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235A30ACE4EC00F2ACFF /* kern_tgl_hang_ggtt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_ggtt.hpp; path = WhateverXe/kern_tgl_hang_ggtt.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235B30ACE4EC00F2ACFF /* kern_dsi_adapter_lifecycle.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_lifecycle.inc; path = WhateverXe/kern_dsi_adapter_lifecycle.inc; sourceTree = SOURCE_ROOT; };
+		2E54235C30ACE4EC00F2ACFF /* kern_display13_wm.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_wm.hpp; path = WhateverXe/kern_display13_wm.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235D30ACE4EC00F2ACFF /* kern_tgl_boot_readout.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_boot_readout.hpp; path = WhateverXe/kern_tgl_boot_readout.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235E30ACE4EC00F2ACFF /* kern_tgl_hang_detail.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_detail.hpp; path = WhateverXe/kern_tgl_hang_detail.hpp; sourceTree = SOURCE_ROOT; };
+		2E54235F30ACE4EC00F2ACFF /* kern_display13_power_bridge.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_power_bridge.hpp; path = WhateverXe/kern_display13_power_bridge.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236030ACE4EC00F2ACFF /* kern_xelp_link_requirements.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_link_requirements.hpp; path = WhateverXe/kern_xelp_link_requirements.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236130ACE4EC00F2ACFF /* kern_donor.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_donor.hpp; path = WhateverXe/kern_donor.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236230ACE4EC00F2ACFF /* kern_host_power_contract.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_host_power_contract.hpp; path = WhateverXe/kern_host_power_contract.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236330ACE4EC00F2ACFF /* kern_dsi_session.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_session.hpp; path = WhateverXe/kern_dsi_session.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236430ACE4EC00F2ACFF /* kern_xelp_combo_clock.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_combo_clock.hpp; path = WhateverXe/kern_xelp_combo_clock.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236530ACE4EC00F2ACFF /* kern_tgl_training_scope.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_training_scope.hpp; path = WhateverXe/kern_tgl_training_scope.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236630ACE4EC00F2ACFF /* kern_dsi_adapter_boot.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_boot.inc; path = WhateverXe/kern_dsi_adapter_boot.inc; sourceTree = SOURCE_ROOT; };
+		2E54236730ACE4EC00F2ACFF /* kern_xelp_queue_trace.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_queue_trace.hpp; path = WhateverXe/kern_xelp_queue_trace.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236830ACE4EC00F2ACFF /* kern_display13_tc_lightup.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_lightup.hpp; path = WhateverXe/kern_display13_tc_lightup.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236930ACE4EC00F2ACFF /* kern_dsi_attributes.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_attributes.hpp; path = WhateverXe/kern_dsi_attributes.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236A30ACE4EC00F2ACFF /* kern_tgl_tc_mode.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_tc_mode.hpp; path = WhateverXe/kern_tgl_tc_mode.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236B30ACE4EC00F2ACFF /* kern_xe_data_policy.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xe_data_policy.hpp; path = WhateverXe/kern_xe_data_policy.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236C30ACE4EC00F2ACFF /* kern_display13_cursor.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_cursor.hpp; path = WhateverXe/kern_display13_cursor.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236D30ACE4EC00F2ACFF /* kern_display13_dbuf.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_dbuf.hpp; path = WhateverXe/kern_display13_dbuf.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236E30ACE4ED00F2ACFF /* kern_dsi_math.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_math.hpp; path = WhateverXe/kern_dsi_math.hpp; sourceTree = SOURCE_ROOT; };
+		2E54236F30ACE4ED00F2ACFF /* kern_tgl_context_cache.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_context_cache.hpp; path = WhateverXe/kern_tgl_context_cache.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237030ACE4ED00F2ACFF /* kern_xelp_geometry.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_geometry.hpp; path = WhateverXe/kern_xelp_geometry.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237130ACE4ED00F2ACFF /* kern_display13_fb_sysmem.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_fb_sysmem.hpp; path = WhateverXe/kern_display13_fb_sysmem.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237230ACE4ED00F2ACFF /* kern_dvmt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dvmt.hpp; path = WhateverXe/kern_dvmt.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237330ACE4ED00F2ACFF /* kern_tgl_tc_boot.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_tc_boot.hpp; path = WhateverXe/kern_tgl_tc_boot.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237430ACE4ED00F2ACFF /* kern_donor.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_donor.cpp; path = WhateverXe/kern_donor.cpp; sourceTree = SOURCE_ROOT; };
+		2E54237530ACE4ED00F2ACFF /* kern_dsi_adapter_state.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_state.inc; path = WhateverXe/kern_dsi_adapter_state.inc; sourceTree = SOURCE_ROOT; };
+		2E54237630ACE4ED00F2ACFF /* kern_framebuffer_donor.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_framebuffer_donor.hpp; path = WhateverXe/kern_framebuffer_donor.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237730ACE4ED00F2ACFF /* kern_dsi_boot.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_boot.hpp; path = WhateverXe/kern_dsi_boot.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237830ACE4ED00F2ACFF /* kern_tgl_gmbus.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_gmbus.hpp; path = WhateverXe/kern_tgl_gmbus.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237930ACE4ED00F2ACFF /* kern_dsi_restart.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_restart.hpp; path = WhateverXe/kern_dsi_restart.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237A30ACE4ED00F2ACFF /* kern_xelp_memory_layout.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_memory_layout.hpp; path = WhateverXe/kern_xelp_memory_layout.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237B30ACE4ED00F2ACFF /* kern_display13_power.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_power.hpp; path = WhateverXe/kern_display13_power.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237C30ACE4ED00F2ACFF /* kern_dsi_readout.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_readout.hpp; path = WhateverXe/kern_dsi_readout.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237D30ACE4ED00F2ACFF /* kern_tgl_start_order.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_start_order.hpp; path = WhateverXe/kern_tgl_start_order.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237E30ACE4ED00F2ACFF /* kern_xelp_sst_route.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_sst_route.hpp; path = WhateverXe/kern_xelp_sst_route.hpp; sourceTree = SOURCE_ROOT; };
+		2E54237F30ACE4ED00F2ACFF /* kern_tgl_combo_signal.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_combo_signal.hpp; path = WhateverXe/kern_tgl_combo_signal.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238030ACE4ED00F2ACFF /* kern_xelp_forcewake_irq.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_forcewake_irq.hpp; path = WhateverXe/kern_xelp_forcewake_irq.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238130ACE4ED00F2ACFF /* kern_tgl_hang_refs.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_refs.hpp; path = WhateverXe/kern_tgl_hang_refs.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238230ACE4ED00F2ACFF /* kern_xelp_donor.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_donor.hpp; path = WhateverXe/kern_xelp_donor.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238330ACE4ED00F2ACFF /* kern_dsi_host.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_host.hpp; path = WhateverXe/kern_dsi_host.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238430ACE4ED00F2ACFF /* kern_tgl_ppgtt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_ppgtt.hpp; path = WhateverXe/kern_tgl_ppgtt.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238530ACE4ED00F2ACFF /* kern_display13_firmware.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_firmware.hpp; path = WhateverXe/kern_display13_firmware.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238630ACE4ED00F2ACFF /* kern_tgl_same_tail.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_same_tail.hpp; path = WhateverXe/kern_tgl_same_tail.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238730ACE4ED00F2ACFF /* kern_display13_tc_dp.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_dp.hpp; path = WhateverXe/kern_display13_tc_dp.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238830ACE4ED00F2ACFF /* kern_xelp_native_placement.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_native_placement.hpp; path = WhateverXe/kern_xelp_native_placement.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238930ACE4ED00F2ACFF /* kern_vbt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_vbt.hpp; path = WhateverXe/kern_vbt.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238A30ACE4ED00F2ACFF /* kern_adls_boot.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_adls_boot.hpp; path = WhateverXe/kern_adls_boot.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238B30ACE4ED00F2ACFF /* kern_tgl_port_use.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_port_use.hpp; path = WhateverXe/kern_tgl_port_use.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238C30ACE4EE00F2ACFF /* kern_dsi_quiesce.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_quiesce.hpp; path = WhateverXe/kern_dsi_quiesce.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238D30ACE4EE00F2ACFF /* kern_tgl_csb.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_csb.hpp; path = WhateverXe/kern_tgl_csb.hpp; sourceTree = SOURCE_ROOT; };
+		2E54238E30ACE4EE00F2ACFF /* kern_xe_data_access.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_xe_data_access.cpp; path = WhateverXe/kern_xe_data_access.cpp; sourceTree = SOURCE_ROOT; };
+		2E54238F30ACE4EE00F2ACFF /* kern_xelp_panel_pwm.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_panel_pwm.hpp; path = WhateverXe/kern_xelp_panel_pwm.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239030ACE4EE00F2ACFF /* kern_tgl_tc_cold.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_tc_cold.hpp; path = WhateverXe/kern_tgl_tc_cold.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239130ACE4EE00F2ACFF /* kern_backlight_profile.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_backlight_profile.hpp; path = WhateverXe/kern_backlight_profile.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239230ACE4EE00F2ACFF /* kern_tgl_hang_select.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_select.hpp; path = WhateverXe/kern_tgl_hang_select.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239330ACE4EE00F2ACFF /* kern_tgl_native_fia.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_native_fia.hpp; path = WhateverXe/kern_tgl_native_fia.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239430ACE4EE00F2ACFF /* kern_xe_data_access.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xe_data_access.hpp; path = WhateverXe/kern_xe_data_access.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239530ACE4EE00F2ACFF /* kern_dsi_adapter_modes.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_modes.inc; path = WhateverXe/kern_dsi_adapter_modes.inc; sourceTree = SOURCE_ROOT; };
+		2E54239630ACE4EE00F2ACFF /* kern_adls_clock.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_adls_clock.hpp; path = WhateverXe/kern_adls_clock.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239730ACE4EE00F2ACFF /* kern_firmware.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_firmware.cpp; path = WhateverXe/kern_firmware.cpp; sourceTree = SOURCE_ROOT; };
+		2E54239830ACE4EE00F2ACFF /* kern_display13_clock.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_clock.hpp; path = WhateverXe/kern_display13_clock.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239930ACE4EE00F2ACFF /* kern_xelp_devices.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_devices.hpp; path = WhateverXe/kern_xelp_devices.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239A30ACE4EE00F2ACFF /* kern_alderlake_n.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_alderlake_n.hpp; path = WhateverXe/kern_alderlake_n.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239B30ACE4EE00F2ACFF /* kern_tgl_pcode_edram.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_pcode_edram.hpp; path = WhateverXe/kern_tgl_pcode_edram.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239C30ACE4EE00F2ACFF /* kern_display13_tc.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc.hpp; path = WhateverXe/kern_display13_tc.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239D30ACE4EE00F2ACFF /* kern_tgl_rpcs.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_rpcs.hpp; path = WhateverXe/kern_tgl_rpcs.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239E30ACE4EE00F2ACFF /* kern_display13_tc_native.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_native.hpp; path = WhateverXe/kern_display13_tc_native.hpp; sourceTree = SOURCE_ROOT; };
+		2E54239F30ACE4EE00F2ACFF /* kern_display13_tc_aux.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_aux.hpp; path = WhateverXe/kern_display13_tc_aux.hpp; sourceTree = SOURCE_ROOT; };
+		2E5423A030ACE4EE00F2ACFF /* kern_alderlake_s.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_alderlake_s.hpp; path = WhateverXe/kern_alderlake_s.hpp; sourceTree = SOURCE_ROOT; };
+		2E5423A130ACE4EE00F2ACFF /* kern_dsi_native_mode.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_native_mode.hpp; path = WhateverXe/kern_dsi_native_mode.hpp; sourceTree = SOURCE_ROOT; };
+		2E5423A230ACE4EE00F2ACFF /* kern_dsi_clock.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_clock.hpp; path = WhateverXe/kern_dsi_clock.hpp; sourceTree = SOURCE_ROOT; };
+		2E5423A330ACE4EE00F2ACFF /* kern_graphics_activation.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_graphics_activation.hpp; path = WhateverXe/kern_graphics_activation.hpp; sourceTree = SOURCE_ROOT; };
+		2E5423A430ACE4EE00F2ACFF /* kern_tgl_hang_prestop.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_prestop.hpp; path = WhateverXe/kern_tgl_hang_prestop.hpp; sourceTree = SOURCE_ROOT; };
+		2E5423A530ACE4EE00F2ACFF /* kern_start.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_start.cpp; path = WhateverXe/kern_start.cpp; sourceTree = SOURCE_ROOT; };
+		2E5423A630ACE4EE00F2ACFF /* kern_xelp_call_target.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_call_target.hpp; path = WhateverXe/kern_xelp_call_target.hpp; sourceTree = SOURCE_ROOT; };
+		2E5423A730ACE4EE00F2ACFF /* kern_xelp_device.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_device.hpp; path = WhateverXe/kern_xelp_device.hpp; sourceTree = SOURCE_ROOT; };
+		2E5423A830ACE4EE00F2ACFF /* kern_display13_retirement.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_retirement.hpp; path = WhateverXe/kern_display13_retirement.hpp; sourceTree = SOURCE_ROOT; };
+		2E5423A930ACE4EF00F2ACFF /* kern_dsi_apple_timing.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_apple_timing.hpp; path = WhateverXe/kern_dsi_apple_timing.hpp; sourceTree = SOURCE_ROOT; };
 		2E5BF5812BCC212F0095BDCF /* HDMI.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = HDMI.cpp; sourceTree = "<group>"; };
 		2E5BF5822BCC212F0095BDCF /* HDMI.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = HDMI.hpp; sourceTree = "<group>"; };
 		2E80A801309E9D2F00C4AC32 /* kern_xepm_tgl.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = kern_xepm_tgl.cpp; sourceTree = "<group>"; };
 		2E8599232FBCFFF3001C9274 /* intel_vbt_defs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = intel_vbt_defs.h; sourceTree = "<group>"; };
 		2E8599242FBCFFF3001C9274 /* intel_dsi_vbt_defs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = intel_dsi_vbt_defs.h; sourceTree = "<group>"; };
-		2ED96F1530A6A839009D355A /* kern_dsi_native_mode.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_native_mode.hpp; path = WhateverXe/kern_dsi_native_mode.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F1630A6A839009D355A /* kern_tgl_hang_select.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_select.hpp; path = WhateverXe/kern_tgl_hang_select.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F1730A6A839009D355A /* kern_dsi_adapter_boot.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_boot.inc; path = WhateverXe/kern_dsi_adapter_boot.inc; sourceTree = SOURCE_ROOT; };
-		2ED96F1830A6A839009D355A /* kern_tgl_submit_history.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_submit_history.hpp; path = WhateverXe/kern_tgl_submit_history.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F1930A6A839009D355A /* kern_xelp_port_wait.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_port_wait.hpp; path = WhateverXe/kern_xelp_port_wait.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F1A30A6A839009D355A /* kern_xelp_queue_trace.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_queue_trace.hpp; path = WhateverXe/kern_xelp_queue_trace.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F1B30A6A839009D355A /* kern_tgl_tc_boot.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_tc_boot.hpp; path = WhateverXe/kern_tgl_tc_boot.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F1C30A6A839009D355A /* kern_display13_fb_gtt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_fb_gtt.hpp; path = WhateverXe/kern_display13_fb_gtt.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F1D30A6A839009D355A /* kern_xe_data_access.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_xe_data_access.cpp; path = WhateverXe/kern_xe_data_access.cpp; sourceTree = SOURCE_ROOT; };
-		2ED96F1E30A6A839009D355A /* kern_tgl_native_fia.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_native_fia.hpp; path = WhateverXe/kern_tgl_native_fia.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F1F30A6A839009D355A /* kern_display13_tc_mode.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_mode.hpp; path = WhateverXe/kern_display13_tc_mode.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2030A6A839009D355A /* kern_display13_color.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_color.hpp; path = WhateverXe/kern_display13_color.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2130A6A839009D355A /* kern_display13_wm.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_wm.hpp; path = WhateverXe/kern_display13_wm.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2230A6A839009D355A /* kern_dsi_adapter_lifecycle.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_lifecycle.inc; path = WhateverXe/kern_dsi_adapter_lifecycle.inc; sourceTree = SOURCE_ROOT; };
-		2ED96F2330A6A839009D355A /* kern_tgl_aux_call.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_aux_call.hpp; path = WhateverXe/kern_tgl_aux_call.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2430A6A839009D355A /* kern_display13_tc_dp.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_dp.hpp; path = WhateverXe/kern_display13_tc_dp.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2530A6A83A009D355A /* kern_donor.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_donor.hpp; path = WhateverXe/kern_donor.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2630A6A83A009D355A /* kern_display13_tc_clock.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_clock.hpp; path = WhateverXe/kern_display13_tc_clock.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2730A6A83A009D355A /* kern_xelp_display_resources.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_display_resources.hpp; path = WhateverXe/kern_xelp_display_resources.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2830A6A83A009D355A /* kern_tgl_tc_cold.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_tc_cold.hpp; path = WhateverXe/kern_tgl_tc_cold.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2930A6A83A009D355A /* kern_tgl_start_order.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_start_order.hpp; path = WhateverXe/kern_tgl_start_order.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2A30A6A83A009D355A /* kern_dsi_readout.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_readout.hpp; path = WhateverXe/kern_dsi_readout.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2B30A6A83A009D355A /* kern_donor.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_donor.cpp; path = WhateverXe/kern_donor.cpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2C30A6A83A009D355A /* kern_dsi_ggtt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_ggtt.hpp; path = WhateverXe/kern_dsi_ggtt.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2D30A6A83A009D355A /* kern_graphics_activation.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_graphics_activation.hpp; path = WhateverXe/kern_graphics_activation.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2E30A6A83A009D355A /* kern_display13_clock.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_clock.hpp; path = WhateverXe/kern_display13_clock.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F2F30A6A83A009D355A /* kern_tgl_ppgtt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_ppgtt.hpp; path = WhateverXe/kern_tgl_ppgtt.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3030A6A83A009D355A /* kern_xelp_call_target.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_call_target.hpp; path = WhateverXe/kern_xelp_call_target.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3130A6A83A009D355A /* kern_xelp_gop_stop.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_gop_stop.hpp; path = WhateverXe/kern_xelp_gop_stop.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3230A6A83A009D355A /* kern_tgl_gmbus.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_gmbus.hpp; path = WhateverXe/kern_tgl_gmbus.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3330A6A83A009D355A /* kern_xelp_device.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_device.hpp; path = WhateverXe/kern_xelp_device.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3430A6A83A009D355A /* kern_display13_power_bridge.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_power_bridge.hpp; path = WhateverXe/kern_display13_power_bridge.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3530A6A83A009D355A /* kern_tgl_hang_ggtt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_ggtt.hpp; path = WhateverXe/kern_tgl_hang_ggtt.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3630A6A83A009D355A /* kern_dsi_host.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_host.hpp; path = WhateverXe/kern_dsi_host.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3730A6A83A009D355A /* kern_xelp_probe.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_probe.hpp; path = WhateverXe/kern_xelp_probe.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3830A6A83A009D355A /* kern_tgl_combo_dp.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_combo_dp.hpp; path = WhateverXe/kern_tgl_combo_dp.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3930A6A83A009D355A /* kern_display13_dsi_trial.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_dsi_trial.hpp; path = WhateverXe/kern_display13_dsi_trial.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3A30A6A83A009D355A /* kern_xelp_sst_program.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_sst_program.hpp; path = WhateverXe/kern_xelp_sst_program.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3B30A6A83A009D355A /* kern_dsi_quiesce.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_quiesce.hpp; path = WhateverXe/kern_dsi_quiesce.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3C30A6A83A009D355A /* kern_dsi_adapter_backing.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_backing.inc; path = WhateverXe/kern_dsi_adapter_backing.inc; sourceTree = SOURCE_ROOT; };
-		2ED96F3D30A6A83A009D355A /* kern_tgl_boot_readout.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_boot_readout.hpp; path = WhateverXe/kern_tgl_boot_readout.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3E30A6A83A009D355A /* kern_tgl_same_tail.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_same_tail.hpp; path = WhateverXe/kern_tgl_same_tail.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F3F30A6A83A009D355A /* kern_xe.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xe.hpp; path = WhateverXe/kern_xe.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4030A6A83A009D355A /* kern_xelp_combo_clock.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_combo_clock.hpp; path = WhateverXe/kern_xelp_combo_clock.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4130A6A83A009D355A /* kern_tgl_fia.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_fia.hpp; path = WhateverXe/kern_tgl_fia.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4230A6A83A009D355A /* kern_xelp_panel_power.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_panel_power.hpp; path = WhateverXe/kern_xelp_panel_power.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4330A6A83A009D355A /* kern_display13_tc.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc.hpp; path = WhateverXe/kern_display13_tc.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4430A6A83A009D355A /* kern_display13_hdmi_wiring.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_hdmi_wiring.hpp; path = WhateverXe/kern_display13_hdmi_wiring.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4530A6A83A009D355A /* kern_display13_power.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_power.hpp; path = WhateverXe/kern_display13_power.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4630A6A83A009D355A /* kern_alderlake_n.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_alderlake_n.hpp; path = WhateverXe/kern_alderlake_n.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4730A6A83A009D355A /* kern_dsi_backlight.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_backlight.hpp; path = WhateverXe/kern_dsi_backlight.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4830A6A83A009D355A /* kern_display13_tc_native.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_native.hpp; path = WhateverXe/kern_display13_tc_native.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4930A6A83A009D355A /* kern_tgl_vm.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_vm.hpp; path = WhateverXe/kern_tgl_vm.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4A30A6A83A009D355A /* kern_vbt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_vbt.hpp; path = WhateverXe/kern_vbt.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4B30A6A83A009D355A /* kern_display13_cursor.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_cursor.hpp; path = WhateverXe/kern_display13_cursor.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4C30A6A83A009D355A /* kern_tgl_rpcs.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_rpcs.hpp; path = WhateverXe/kern_tgl_rpcs.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4D30A6A83A009D355A /* kern_xe_data_access.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xe_data_access.hpp; path = WhateverXe/kern_xe_data_access.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4E30A6A83A009D355A /* kern_display13_tc_lightup.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_lightup.hpp; path = WhateverXe/kern_display13_tc_lightup.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F4F30A6A83A009D355A /* kern_xelp_panel_pwm.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_panel_pwm.hpp; path = WhateverXe/kern_xelp_panel_pwm.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5030A6A83A009D355A /* kern_tgl_hang_prestop.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_prestop.hpp; path = WhateverXe/kern_tgl_hang_prestop.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5130A6A83A009D355A /* kern_display13_fb_irq.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_fb_irq.hpp; path = WhateverXe/kern_display13_fb_irq.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5230A6A83A009D355A /* kern_dsi_restart.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_restart.hpp; path = WhateverXe/kern_dsi_restart.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5330A6A83A009D355A /* kern_display13_transcoder.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_transcoder.hpp; path = WhateverXe/kern_display13_transcoder.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5430A6A83B009D355A /* kern_backlight_profile.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_backlight_profile.hpp; path = WhateverXe/kern_backlight_profile.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5530A6A83B009D355A /* kern_tgl_pcode_gate.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_pcode_gate.hpp; path = WhateverXe/kern_tgl_pcode_gate.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5630A6A83B009D355A /* kern_xelp_geometry.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_geometry.hpp; path = WhateverXe/kern_xelp_geometry.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5730A6A83B009D355A /* kern_display13_output_wiring.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_output_wiring.hpp; path = WhateverXe/kern_display13_output_wiring.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5830A6A83B009D355A /* kern_firmware.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_firmware.cpp; path = WhateverXe/kern_firmware.cpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5930A6A83B009D355A /* kern_dsi_boot.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_boot.hpp; path = WhateverXe/kern_dsi_boot.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5A30A6A83B009D355A /* kern_display13_fb_memory.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_fb_memory.hpp; path = WhateverXe/kern_display13_fb_memory.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5B30A6A83B009D355A /* kern_adls_boot.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_adls_boot.hpp; path = WhateverXe/kern_adls_boot.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5C30A6A83B009D355A /* kern_dsi_profile.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_profile.hpp; path = WhateverXe/kern_dsi_profile.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5D30A6A83B009D355A /* kern_tgl_port_map.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_port_map.hpp; path = WhateverXe/kern_tgl_port_map.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5E30A6A83B009D355A /* kern_tgl_training_scope.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_training_scope.hpp; path = WhateverXe/kern_tgl_training_scope.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F5F30A6A83B009D355A /* kern_dvmt.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_dvmt.cpp; path = WhateverXe/kern_dvmt.cpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6030A6A83B009D355A /* kern_xelp_link_requirements.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_link_requirements.hpp; path = WhateverXe/kern_xelp_link_requirements.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6130A6A83B009D355A /* kern_dsi_commands.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_commands.hpp; path = WhateverXe/kern_dsi_commands.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6230A6A83B009D355A /* kern_tgl_port_use.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_port_use.hpp; path = WhateverXe/kern_tgl_port_use.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6330A6A83B009D355A /* kern_dsi_sequence.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_sequence.hpp; path = WhateverXe/kern_dsi_sequence.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6430A6A83B009D355A /* kern_tgl_hang_refs.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_refs.hpp; path = WhateverXe/kern_tgl_hang_refs.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6530A6A83B009D355A /* kern_xelp_display_contract.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_display_contract.hpp; path = WhateverXe/kern_xelp_display_contract.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6630A6A83B009D355A /* kern_dsi_surface.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_surface.hpp; path = WhateverXe/kern_dsi_surface.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6730A6A83B009D355A /* kern_dsi_native_backing.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_native_backing.hpp; path = WhateverXe/kern_dsi_native_backing.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6830A6A83B009D355A /* kern_xelp_sst_route.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_sst_route.hpp; path = WhateverXe/kern_xelp_sst_route.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6930A6A83B009D355A /* kern_tgl_context_cache.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_context_cache.hpp; path = WhateverXe/kern_tgl_context_cache.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6A30A6A83B009D355A /* kern_display13_fb_sysmem.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_fb_sysmem.hpp; path = WhateverXe/kern_display13_fb_sysmem.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6B30A6A83B009D355A /* kern_xelp_queue_memory.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_queue_memory.hpp; path = WhateverXe/kern_xelp_queue_memory.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6C30A6A83B009D355A /* kern_framebuffer_donor.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_framebuffer_donor.hpp; path = WhateverXe/kern_framebuffer_donor.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6D30A6A83B009D355A /* kern_dsi_native_cache.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_native_cache.hpp; path = WhateverXe/kern_dsi_native_cache.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6E30A6A83B009D355A /* kern_xelp_native_placement.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_native_placement.hpp; path = WhateverXe/kern_xelp_native_placement.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F6F30A6A83B009D355A /* kern_tgl_hdmi_wiring.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hdmi_wiring.hpp; path = WhateverXe/kern_tgl_hdmi_wiring.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7030A6A83B009D355A /* kern_xelp_os.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_os.hpp; path = WhateverXe/kern_xelp_os.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7130A6A83B009D355A /* kern_dsi_clock.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_clock.hpp; path = WhateverXe/kern_dsi_clock.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7230A6A83B009D355A /* kern_dsi_adapter_state.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_state.inc; path = WhateverXe/kern_dsi_adapter_state.inc; sourceTree = SOURCE_ROOT; };
-		2ED96F7330A6A83B009D355A /* kern_xelp_donor.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_donor.hpp; path = WhateverXe/kern_xelp_donor.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7430A6A83B009D355A /* kern_alderlake_n_gpu.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_alderlake_n_gpu.hpp; path = WhateverXe/kern_alderlake_n_gpu.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7530A6A83B009D355A /* kern_xelp_gt_resources.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_gt_resources.hpp; path = WhateverXe/kern_xelp_gt_resources.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7630A6A83B009D355A /* kern_dsi_sleep_image.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_sleep_image.hpp; path = WhateverXe/kern_dsi_sleep_image.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7730A6A83B009D355A /* kern_display13_tc_aux.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_tc_aux.hpp; path = WhateverXe/kern_display13_tc_aux.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7830A6A83B009D355A /* kern_tgl_submit_capture.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_submit_capture.hpp; path = WhateverXe/kern_tgl_submit_capture.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7930A6A83B009D355A /* kern_framebuffer_training_native.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_framebuffer_training_native.hpp; path = WhateverXe/kern_framebuffer_training_native.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7A30A6A83B009D355A /* kern_start.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_start.cpp; path = WhateverXe/kern_start.cpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7B30A6A83B009D355A /* kern_tgl_hang_detail.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_detail.hpp; path = WhateverXe/kern_tgl_hang_detail.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7C30A6A83B009D355A /* kern_tgl_gsync.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_gsync.hpp; path = WhateverXe/kern_tgl_gsync.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7D30A6A83B009D355A /* kern_dsi_adapter_modes.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_modes.inc; path = WhateverXe/kern_dsi_adapter_modes.inc; sourceTree = SOURCE_ROOT; };
-		2ED96F7E30A6A83B009D355A /* kern_dsi_math.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_math.hpp; path = WhateverXe/kern_dsi_math.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F7F30A6A83B009D355A /* kern_xelp_memory_layout.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_memory_layout.hpp; path = WhateverXe/kern_xelp_memory_layout.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8030A6A83B009D355A /* kern_alderlake_s.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_alderlake_s.hpp; path = WhateverXe/kern_alderlake_s.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8130A6A83B009D355A /* kern_display13_fb_topology.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_fb_topology.hpp; path = WhateverXe/kern_display13_fb_topology.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8230A6A83B009D355A /* kern_host_power_contract.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_host_power_contract.hpp; path = WhateverXe/kern_host_power_contract.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8330A6A83B009D355A /* kern_xe.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_xe.cpp; path = WhateverXe/kern_xe.cpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8430A6A83B009D355A /* kern_tgl_pcode_edram.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_pcode_edram.hpp; path = WhateverXe/kern_tgl_pcode_edram.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8530A6A83C009D355A /* kern_dsi_session.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_session.hpp; path = WhateverXe/kern_dsi_session.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8630A6A83C009D355A /* kern_display13_framebuffer_power.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_display13_framebuffer_power.inc; path = WhateverXe/kern_display13_framebuffer_power.inc; sourceTree = SOURCE_ROOT; };
-		2ED96F8730A6A83C009D355A /* kern_xelp_devices.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_devices.hpp; path = WhateverXe/kern_xelp_devices.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8830A6A83C009D355A /* kern_host.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = kern_host.cpp; path = WhateverXe/kern_host.cpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8930A6A83C009D355A /* kern_tgl_tc_mode.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_tc_mode.hpp; path = WhateverXe/kern_tgl_tc_mode.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8A30A6A83C009D355A /* kern_tgl_recovery.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_recovery.hpp; path = WhateverXe/kern_tgl_recovery.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8B30A6A83C009D355A /* kern_tgl_fb_binding.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_fb_binding.hpp; path = WhateverXe/kern_tgl_fb_binding.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8C30A6A83C009D355A /* kern_dsi_attributes.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_attributes.hpp; path = WhateverXe/kern_dsi_attributes.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8D30A6A83C009D355A /* kern_tgl_csb.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_csb.hpp; path = WhateverXe/kern_tgl_csb.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8E30A6A83C009D355A /* kern_dsi_panel.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_panel.hpp; path = WhateverXe/kern_dsi_panel.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F8F30A6A83C009D355A /* kern_tgl_tc_native.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_tc_native.hpp; path = WhateverXe/kern_tgl_tc_native.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9030A6A83C009D355A /* kern_xelp_platform.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_platform.hpp; path = WhateverXe/kern_xelp_platform.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9130A6A83C009D355A /* kern_tgl_hang_graph.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_graph.hpp; path = WhateverXe/kern_tgl_hang_graph.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9230A6A83C009D355A /* kern_dsi_adapter_diagnostics.inc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.pascal; name = kern_dsi_adapter_diagnostics.inc; path = WhateverXe/kern_dsi_adapter_diagnostics.inc; sourceTree = SOURCE_ROOT; };
-		2ED96F9330A6A83C009D355A /* kern_tgl_hang_pending.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_hang_pending.hpp; path = WhateverXe/kern_tgl_hang_pending.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9430A6A83C009D355A /* kern_dvmt.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dvmt.hpp; path = WhateverXe/kern_dvmt.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9530A6A83C009D355A /* kern_adls_clock.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_adls_clock.hpp; path = WhateverXe/kern_adls_clock.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9630A6A83C009D355A /* kern_display13_firmware.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_firmware.hpp; path = WhateverXe/kern_display13_firmware.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9730A6A83C009D355A /* kern_host.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_host.hpp; path = WhateverXe/kern_host.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9830A6A83C009D355A /* kern_xe_data_policy.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xe_data_policy.hpp; path = WhateverXe/kern_xe_data_policy.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9930A6A83C009D355A /* kern_dsi_apple_timing.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_dsi_apple_timing.hpp; path = WhateverXe/kern_dsi_apple_timing.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9A30A6A83C009D355A /* kern_display13_panel.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_panel.hpp; path = WhateverXe/kern_display13_panel.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9B30A6A83C009D355A /* kern_xelp_combo_policy.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_combo_policy.hpp; path = WhateverXe/kern_xelp_combo_policy.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9C30A6A83C009D355A /* kern_display13_boot.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_boot.hpp; path = WhateverXe/kern_display13_boot.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9D30A6A83C009D355A /* kern_tgl_combo_signal.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_combo_signal.hpp; path = WhateverXe/kern_tgl_combo_signal.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9E30A6A83C009D355A /* kern_display13_dbuf.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_dbuf.hpp; path = WhateverXe/kern_display13_dbuf.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96F9F30A6A83C009D355A /* kern_xelp_forcewake_irq.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_xelp_forcewake_irq.hpp; path = WhateverXe/kern_xelp_forcewake_irq.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96FA030A6A83C009D355A /* kern_display13_retirement.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_display13_retirement.hpp; path = WhateverXe/kern_display13_retirement.hpp; sourceTree = SOURCE_ROOT; };
-		2ED96FA130A6A83C009D355A /* kern_tgl_panel_depth.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = kern_tgl_panel_depth.hpp; path = WhateverXe/kern_tgl_panel_depth.hpp; sourceTree = SOURCE_ROOT; };
 		2EE611AE2FA6C10F00E58E2A /* Firmware.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Firmware.cpp; sourceTree = "<group>"; };
 		2EE611AF2FA6C10F00E58E2A /* Firmware.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = Firmware.hpp; sourceTree = "<group>"; };
 		2EE611B02FA6C10F00E58E2A /* ZlibAlloc.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = ZlibAlloc.hpp; sourceTree = "<group>"; };
@@ -416,147 +418,148 @@
 				2E8599242FBCFFF3001C9274 /* intel_dsi_vbt_defs.h */,
 				2E8599232FBCFFF3001C9274 /* intel_vbt_defs.h */,
 				2E80A801309E9D2F00C4AC32 /* kern_xepm_tgl.cpp */,
-				2ED96F5B30A6A83B009D355A /* kern_adls_boot.hpp */,
-				2ED96F9530A6A83C009D355A /* kern_adls_clock.hpp */,
-				2ED96F7430A6A83B009D355A /* kern_alderlake_n_gpu.hpp */,
-				2ED96F4630A6A83A009D355A /* kern_alderlake_n.hpp */,
-				2ED96F8030A6A83B009D355A /* kern_alderlake_s.hpp */,
-				2ED96F5430A6A83B009D355A /* kern_backlight_profile.hpp */,
-				2ED96F9C30A6A83C009D355A /* kern_display13_boot.hpp */,
-				2ED96F2E30A6A83A009D355A /* kern_display13_clock.hpp */,
-				2ED96F2030A6A839009D355A /* kern_display13_color.hpp */,
-				2ED96F4B30A6A83A009D355A /* kern_display13_cursor.hpp */,
-				2ED96F9E30A6A83C009D355A /* kern_display13_dbuf.hpp */,
-				2ED96F3930A6A83A009D355A /* kern_display13_dsi_trial.hpp */,
-				2ED96F1C30A6A839009D355A /* kern_display13_fb_gtt.hpp */,
-				2ED96F5130A6A83A009D355A /* kern_display13_fb_irq.hpp */,
-				2ED96F5A30A6A83B009D355A /* kern_display13_fb_memory.hpp */,
-				2ED96F6A30A6A83B009D355A /* kern_display13_fb_sysmem.hpp */,
-				2ED96F8130A6A83B009D355A /* kern_display13_fb_topology.hpp */,
-				2ED96F9630A6A83C009D355A /* kern_display13_firmware.hpp */,
-				2ED96F8630A6A83C009D355A /* kern_display13_framebuffer_power.inc */,
-				2ED96F4430A6A83A009D355A /* kern_display13_hdmi_wiring.hpp */,
-				2ED96F5730A6A83B009D355A /* kern_display13_output_wiring.hpp */,
-				2ED96F9A30A6A83C009D355A /* kern_display13_panel.hpp */,
-				2ED96F3430A6A83A009D355A /* kern_display13_power_bridge.hpp */,
-				2ED96F4530A6A83A009D355A /* kern_display13_power.hpp */,
-				2ED96FA030A6A83C009D355A /* kern_display13_retirement.hpp */,
-				2ED96F7730A6A83B009D355A /* kern_display13_tc_aux.hpp */,
-				2ED96F2630A6A83A009D355A /* kern_display13_tc_clock.hpp */,
-				2ED96F2430A6A839009D355A /* kern_display13_tc_dp.hpp */,
-				2ED96F4E30A6A83A009D355A /* kern_display13_tc_lightup.hpp */,
-				2ED96F1F30A6A839009D355A /* kern_display13_tc_mode.hpp */,
-				2ED96F4830A6A83A009D355A /* kern_display13_tc_native.hpp */,
-				2ED96F4330A6A83A009D355A /* kern_display13_tc.hpp */,
-				2ED96F5330A6A83A009D355A /* kern_display13_transcoder.hpp */,
-				2ED96F2130A6A839009D355A /* kern_display13_wm.hpp */,
-				2ED96F2B30A6A83A009D355A /* kern_donor.cpp */,
-				2ED96F2530A6A83A009D355A /* kern_donor.hpp */,
-				2ED96F3C30A6A83A009D355A /* kern_dsi_adapter_backing.inc */,
-				2ED96F1730A6A839009D355A /* kern_dsi_adapter_boot.inc */,
-				2ED96F9230A6A83C009D355A /* kern_dsi_adapter_diagnostics.inc */,
-				2ED96F2230A6A839009D355A /* kern_dsi_adapter_lifecycle.inc */,
-				2ED96F7D30A6A83B009D355A /* kern_dsi_adapter_modes.inc */,
-				2ED96F7230A6A83B009D355A /* kern_dsi_adapter_state.inc */,
-				2ED96F9930A6A83C009D355A /* kern_dsi_apple_timing.hpp */,
-				2ED96F8C30A6A83C009D355A /* kern_dsi_attributes.hpp */,
-				2ED96F4730A6A83A009D355A /* kern_dsi_backlight.hpp */,
-				2ED96F5930A6A83B009D355A /* kern_dsi_boot.hpp */,
-				2ED96F7130A6A83B009D355A /* kern_dsi_clock.hpp */,
-				2ED96F6130A6A83B009D355A /* kern_dsi_commands.hpp */,
-				2ED96F2C30A6A83A009D355A /* kern_dsi_ggtt.hpp */,
-				2ED96F3630A6A83A009D355A /* kern_dsi_host.hpp */,
-				2ED96F7E30A6A83B009D355A /* kern_dsi_math.hpp */,
-				2ED96F6730A6A83B009D355A /* kern_dsi_native_backing.hpp */,
-				2ED96F6D30A6A83B009D355A /* kern_dsi_native_cache.hpp */,
-				2ED96F1530A6A839009D355A /* kern_dsi_native_mode.hpp */,
-				2ED96F8E30A6A83C009D355A /* kern_dsi_panel.hpp */,
-				2ED96F5C30A6A83B009D355A /* kern_dsi_profile.hpp */,
-				2ED96F3B30A6A83A009D355A /* kern_dsi_quiesce.hpp */,
-				2ED96F2A30A6A83A009D355A /* kern_dsi_readout.hpp */,
-				2ED96F5230A6A83A009D355A /* kern_dsi_restart.hpp */,
-				2ED96F6330A6A83B009D355A /* kern_dsi_sequence.hpp */,
-				2ED96F8530A6A83C009D355A /* kern_dsi_session.hpp */,
-				2ED96F7630A6A83B009D355A /* kern_dsi_sleep_image.hpp */,
-				2ED96F6630A6A83B009D355A /* kern_dsi_surface.hpp */,
-				2ED96F5F30A6A83B009D355A /* kern_dvmt.cpp */,
-				2ED96F9430A6A83C009D355A /* kern_dvmt.hpp */,
-				2ED96F5830A6A83B009D355A /* kern_firmware.cpp */,
-				2ED96F6C30A6A83B009D355A /* kern_framebuffer_donor.hpp */,
-				2ED96F7930A6A83B009D355A /* kern_framebuffer_training_native.hpp */,
-				2ED96F2D30A6A83A009D355A /* kern_graphics_activation.hpp */,
-				2ED96F8230A6A83B009D355A /* kern_host_power_contract.hpp */,
-				2ED96F8830A6A83C009D355A /* kern_host.cpp */,
-				2ED96F9730A6A83C009D355A /* kern_host.hpp */,
-				2ED96F7A30A6A83B009D355A /* kern_start.cpp */,
-				2ED96F2330A6A839009D355A /* kern_tgl_aux_call.hpp */,
-				2ED96F3D30A6A83A009D355A /* kern_tgl_boot_readout.hpp */,
-				2ED96F3830A6A83A009D355A /* kern_tgl_combo_dp.hpp */,
-				2ED96F9D30A6A83C009D355A /* kern_tgl_combo_signal.hpp */,
-				2ED96F6930A6A83B009D355A /* kern_tgl_context_cache.hpp */,
-				2ED96F8D30A6A83C009D355A /* kern_tgl_csb.hpp */,
-				2ED96F8B30A6A83C009D355A /* kern_tgl_fb_binding.hpp */,
-				2ED96F4130A6A83A009D355A /* kern_tgl_fia.hpp */,
-				2ED96F3230A6A83A009D355A /* kern_tgl_gmbus.hpp */,
-				2ED96F7C30A6A83B009D355A /* kern_tgl_gsync.hpp */,
-				2ED96F7B30A6A83B009D355A /* kern_tgl_hang_detail.hpp */,
-				2ED96F3530A6A83A009D355A /* kern_tgl_hang_ggtt.hpp */,
-				2ED96F9130A6A83C009D355A /* kern_tgl_hang_graph.hpp */,
-				2ED96F9330A6A83C009D355A /* kern_tgl_hang_pending.hpp */,
-				2ED96F5030A6A83A009D355A /* kern_tgl_hang_prestop.hpp */,
-				2ED96F6430A6A83B009D355A /* kern_tgl_hang_refs.hpp */,
-				2ED96F1630A6A839009D355A /* kern_tgl_hang_select.hpp */,
-				2ED96F6F30A6A83B009D355A /* kern_tgl_hdmi_wiring.hpp */,
-				2ED96F1E30A6A839009D355A /* kern_tgl_native_fia.hpp */,
-				2ED96FA130A6A83C009D355A /* kern_tgl_panel_depth.hpp */,
-				2ED96F8430A6A83B009D355A /* kern_tgl_pcode_edram.hpp */,
-				2ED96F5530A6A83B009D355A /* kern_tgl_pcode_gate.hpp */,
-				2ED96F5D30A6A83B009D355A /* kern_tgl_port_map.hpp */,
-				2ED96F6230A6A83B009D355A /* kern_tgl_port_use.hpp */,
-				2ED96F2F30A6A83A009D355A /* kern_tgl_ppgtt.hpp */,
-				2ED96F8A30A6A83C009D355A /* kern_tgl_recovery.hpp */,
-				2ED96F4C30A6A83A009D355A /* kern_tgl_rpcs.hpp */,
-				2ED96F3E30A6A83A009D355A /* kern_tgl_same_tail.hpp */,
-				2ED96F2930A6A83A009D355A /* kern_tgl_start_order.hpp */,
-				2ED96F7830A6A83B009D355A /* kern_tgl_submit_capture.hpp */,
-				2ED96F1830A6A839009D355A /* kern_tgl_submit_history.hpp */,
-				2ED96F1B30A6A839009D355A /* kern_tgl_tc_boot.hpp */,
-				2ED96F2830A6A83A009D355A /* kern_tgl_tc_cold.hpp */,
-				2ED96F8930A6A83C009D355A /* kern_tgl_tc_mode.hpp */,
-				2ED96F8F30A6A83C009D355A /* kern_tgl_tc_native.hpp */,
-				2ED96F5E30A6A83B009D355A /* kern_tgl_training_scope.hpp */,
-				2ED96F4930A6A83A009D355A /* kern_tgl_vm.hpp */,
-				2ED96F4A30A6A83A009D355A /* kern_vbt.hpp */,
-				2ED96F1D30A6A839009D355A /* kern_xe_data_access.cpp */,
-				2ED96F4D30A6A83A009D355A /* kern_xe_data_access.hpp */,
-				2ED96F9830A6A83C009D355A /* kern_xe_data_policy.hpp */,
-				2ED96F8330A6A83B009D355A /* kern_xe.cpp */,
-				2ED96F3F30A6A83A009D355A /* kern_xe.hpp */,
-				2ED96F3030A6A83A009D355A /* kern_xelp_call_target.hpp */,
-				2ED96F4030A6A83A009D355A /* kern_xelp_combo_clock.hpp */,
-				2ED96F9B30A6A83C009D355A /* kern_xelp_combo_policy.hpp */,
-				2ED96F3330A6A83A009D355A /* kern_xelp_device.hpp */,
-				2ED96F8730A6A83C009D355A /* kern_xelp_devices.hpp */,
-				2ED96F6530A6A83B009D355A /* kern_xelp_display_contract.hpp */,
-				2ED96F2730A6A83A009D355A /* kern_xelp_display_resources.hpp */,
-				2ED96F7330A6A83B009D355A /* kern_xelp_donor.hpp */,
-				2ED96F9F30A6A83C009D355A /* kern_xelp_forcewake_irq.hpp */,
-				2ED96F5630A6A83B009D355A /* kern_xelp_geometry.hpp */,
-				2ED96F3130A6A83A009D355A /* kern_xelp_gop_stop.hpp */,
-				2ED96F7530A6A83B009D355A /* kern_xelp_gt_resources.hpp */,
-				2ED96F6030A6A83B009D355A /* kern_xelp_link_requirements.hpp */,
-				2ED96F7F30A6A83B009D355A /* kern_xelp_memory_layout.hpp */,
-				2ED96F6E30A6A83B009D355A /* kern_xelp_native_placement.hpp */,
-				2ED96F7030A6A83B009D355A /* kern_xelp_os.hpp */,
-				2ED96F4230A6A83A009D355A /* kern_xelp_panel_power.hpp */,
-				2ED96F4F30A6A83A009D355A /* kern_xelp_panel_pwm.hpp */,
-				2ED96F9030A6A83C009D355A /* kern_xelp_platform.hpp */,
-				2ED96F1930A6A839009D355A /* kern_xelp_port_wait.hpp */,
-				2ED96F3730A6A83A009D355A /* kern_xelp_probe.hpp */,
-				2ED96F6B30A6A83B009D355A /* kern_xelp_queue_memory.hpp */,
-				2ED96F1A30A6A839009D355A /* kern_xelp_queue_trace.hpp */,
-				2ED96F3A30A6A83A009D355A /* kern_xelp_sst_program.hpp */,
-				2ED96F6830A6A83B009D355A /* kern_xelp_sst_route.hpp */,
+				2E54238A30ACE4ED00F2ACFF /* kern_adls_boot.hpp */,
+				2E54239630ACE4EE00F2ACFF /* kern_adls_clock.hpp */,
+				2E54232930ACE4EA00F2ACFF /* kern_alderlake_n_gpu.hpp */,
+				2E54239A30ACE4EE00F2ACFF /* kern_alderlake_n.hpp */,
+				2E5423A030ACE4EE00F2ACFF /* kern_alderlake_s.hpp */,
+				2E54239130ACE4EE00F2ACFF /* kern_backlight_profile.hpp */,
+				2E54232B30ACE4EA00F2ACFF /* kern_display13_boot.hpp */,
+				2E54239830ACE4EE00F2ACFF /* kern_display13_clock.hpp */,
+				2E54235230ACE4EC00F2ACFF /* kern_display13_color.hpp */,
+				2E54236C30ACE4EC00F2ACFF /* kern_display13_cursor.hpp */,
+				2E54236D30ACE4EC00F2ACFF /* kern_display13_dbuf.hpp */,
+				2E54231E30ACE4EA00F2ACFF /* kern_display13_dsi_trial.hpp */,
+				2E54235530ACE4EC00F2ACFF /* kern_display13_fb_gtt.hpp */,
+				2E54234030ACE4EB00F2ACFF /* kern_display13_fb_irq.hpp */,
+				2E54235730ACE4EC00F2ACFF /* kern_display13_fb_memory.hpp */,
+				2E54237130ACE4ED00F2ACFF /* kern_display13_fb_sysmem.hpp */,
+				2E54234130ACE4EB00F2ACFF /* kern_display13_fb_topology.hpp */,
+				2E54238530ACE4ED00F2ACFF /* kern_display13_firmware.hpp */,
+				2E54233630ACE4EB00F2ACFF /* kern_display13_framebuffer_power.inc */,
+				2E54234430ACE4EB00F2ACFF /* kern_display13_hdmi_wiring.hpp */,
+				2E54234830ACE4EB00F2ACFF /* kern_display13_output_wiring.hpp */,
+				2E54234E30ACE4EC00F2ACFF /* kern_display13_panel.hpp */,
+				2E54235F30ACE4EC00F2ACFF /* kern_display13_power_bridge.hpp */,
+				2E54237B30ACE4ED00F2ACFF /* kern_display13_power.hpp */,
+				2E5423A830ACE4EE00F2ACFF /* kern_display13_retirement.hpp */,
+				2E54239F30ACE4EE00F2ACFF /* kern_display13_tc_aux.hpp */,
+				2E54232030ACE4EA00F2ACFF /* kern_display13_tc_clock.hpp */,
+				2E54238730ACE4ED00F2ACFF /* kern_display13_tc_dp.hpp */,
+				2E54236830ACE4EC00F2ACFF /* kern_display13_tc_lightup.hpp */,
+				2E54232D30ACE4EA00F2ACFF /* kern_display13_tc_mode.hpp */,
+				2E54239E30ACE4EE00F2ACFF /* kern_display13_tc_native.hpp */,
+				2E54239C30ACE4EE00F2ACFF /* kern_display13_tc.hpp */,
+				2E54234730ACE4EB00F2ACFF /* kern_display13_transcoder.hpp */,
+				2E54235C30ACE4EC00F2ACFF /* kern_display13_wm.hpp */,
+				2E54237430ACE4ED00F2ACFF /* kern_donor.cpp */,
+				2E54236130ACE4EC00F2ACFF /* kern_donor.hpp */,
+				2E54233230ACE4EB00F2ACFF /* kern_dsi_adapter_backing.inc */,
+				2E54236630ACE4EC00F2ACFF /* kern_dsi_adapter_boot.inc */,
+				2E54234C30ACE4EB00F2ACFF /* kern_dsi_adapter_diagnostics.inc */,
+				2E54235B30ACE4EC00F2ACFF /* kern_dsi_adapter_lifecycle.inc */,
+				2E54239530ACE4EE00F2ACFF /* kern_dsi_adapter_modes.inc */,
+				2E54237530ACE4ED00F2ACFF /* kern_dsi_adapter_state.inc */,
+				2E5423A930ACE4EF00F2ACFF /* kern_dsi_apple_timing.hpp */,
+				2E54236930ACE4EC00F2ACFF /* kern_dsi_attributes.hpp */,
+				2E54233B30ACE4EB00F2ACFF /* kern_dsi_backlight.hpp */,
+				2E54237730ACE4ED00F2ACFF /* kern_dsi_boot.hpp */,
+				2E5423A230ACE4EE00F2ACFF /* kern_dsi_clock.hpp */,
+				2E54234330ACE4EB00F2ACFF /* kern_dsi_commands.hpp */,
+				2E54233830ACE4EB00F2ACFF /* kern_dsi_ggtt.hpp */,
+				2E54238330ACE4ED00F2ACFF /* kern_dsi_host.hpp */,
+				2E54236E30ACE4ED00F2ACFF /* kern_dsi_math.hpp */,
+				2E54234930ACE4EB00F2ACFF /* kern_dsi_native_backing.hpp */,
+				2E54233730ACE4EB00F2ACFF /* kern_dsi_native_cache.hpp */,
+				2E5423A130ACE4EE00F2ACFF /* kern_dsi_native_mode.hpp */,
+				2E54231D30ACE4EA00F2ACFF /* kern_dsi_panel.hpp */,
+				2E54234D30ACE4EB00F2ACFF /* kern_dsi_profile.hpp */,
+				2E54238C30ACE4EE00F2ACFF /* kern_dsi_quiesce.hpp */,
+				2E54237C30ACE4ED00F2ACFF /* kern_dsi_readout.hpp */,
+				2E54237930ACE4ED00F2ACFF /* kern_dsi_restart.hpp */,
+				2E54234A30ACE4EB00F2ACFF /* kern_dsi_sequence.hpp */,
+				2E54236330ACE4EC00F2ACFF /* kern_dsi_session.hpp */,
+				2E54235130ACE4EC00F2ACFF /* kern_dsi_sleep_image.hpp */,
+				2E54234B30ACE4EB00F2ACFF /* kern_dsi_surface.hpp */,
+				2E54232230ACE4EA00F2ACFF /* kern_dvmt.cpp */,
+				2E54237230ACE4ED00F2ACFF /* kern_dvmt.hpp */,
+				2E54234630ACE4EB00F2ACFF /* kern_edp_aux_backlight.hpp */,
+				2E54239730ACE4EE00F2ACFF /* kern_firmware.cpp */,
+				2E54237630ACE4ED00F2ACFF /* kern_framebuffer_donor.hpp */,
+				2E54232A30ACE4EA00F2ACFF /* kern_framebuffer_training_native.hpp */,
+				2E5423A330ACE4EE00F2ACFF /* kern_graphics_activation.hpp */,
+				2E54236230ACE4EC00F2ACFF /* kern_host_power_contract.hpp */,
+				2E54234230ACE4EB00F2ACFF /* kern_host.cpp */,
+				2E54233F30ACE4EB00F2ACFF /* kern_host.hpp */,
+				2E5423A530ACE4EE00F2ACFF /* kern_start.cpp */,
+				2E54233930ACE4EB00F2ACFF /* kern_tgl_aux_call.hpp */,
+				2E54235D30ACE4EC00F2ACFF /* kern_tgl_boot_readout.hpp */,
+				2E54234530ACE4EB00F2ACFF /* kern_tgl_combo_dp.hpp */,
+				2E54237F30ACE4ED00F2ACFF /* kern_tgl_combo_signal.hpp */,
+				2E54236F30ACE4ED00F2ACFF /* kern_tgl_context_cache.hpp */,
+				2E54238D30ACE4EE00F2ACFF /* kern_tgl_csb.hpp */,
+				2E54232C30ACE4EA00F2ACFF /* kern_tgl_fb_binding.hpp */,
+				2E54232E30ACE4EA00F2ACFF /* kern_tgl_fia.hpp */,
+				2E54237830ACE4ED00F2ACFF /* kern_tgl_gmbus.hpp */,
+				2E54233A30ACE4EB00F2ACFF /* kern_tgl_gsync.hpp */,
+				2E54235E30ACE4EC00F2ACFF /* kern_tgl_hang_detail.hpp */,
+				2E54235A30ACE4EC00F2ACFF /* kern_tgl_hang_ggtt.hpp */,
+				2E54232430ACE4EA00F2ACFF /* kern_tgl_hang_graph.hpp */,
+				2E54232530ACE4EA00F2ACFF /* kern_tgl_hang_pending.hpp */,
+				2E5423A430ACE4EE00F2ACFF /* kern_tgl_hang_prestop.hpp */,
+				2E54238130ACE4ED00F2ACFF /* kern_tgl_hang_refs.hpp */,
+				2E54239230ACE4EE00F2ACFF /* kern_tgl_hang_select.hpp */,
+				2E54233330ACE4EB00F2ACFF /* kern_tgl_hdmi_wiring.hpp */,
+				2E54239330ACE4EE00F2ACFF /* kern_tgl_native_fia.hpp */,
+				2E54232F30ACE4EA00F2ACFF /* kern_tgl_panel_depth.hpp */,
+				2E54239B30ACE4EE00F2ACFF /* kern_tgl_pcode_edram.hpp */,
+				2E54233130ACE4EB00F2ACFF /* kern_tgl_pcode_gate.hpp */,
+				2E54233C30ACE4EB00F2ACFF /* kern_tgl_port_map.hpp */,
+				2E54238B30ACE4ED00F2ACFF /* kern_tgl_port_use.hpp */,
+				2E54238430ACE4ED00F2ACFF /* kern_tgl_ppgtt.hpp */,
+				2E54232830ACE4EA00F2ACFF /* kern_tgl_recovery.hpp */,
+				2E54239D30ACE4EE00F2ACFF /* kern_tgl_rpcs.hpp */,
+				2E54238630ACE4ED00F2ACFF /* kern_tgl_same_tail.hpp */,
+				2E54237D30ACE4ED00F2ACFF /* kern_tgl_start_order.hpp */,
+				2E54232630ACE4EA00F2ACFF /* kern_tgl_submit_capture.hpp */,
+				2E54232130ACE4EA00F2ACFF /* kern_tgl_submit_history.hpp */,
+				2E54237330ACE4ED00F2ACFF /* kern_tgl_tc_boot.hpp */,
+				2E54239030ACE4EE00F2ACFF /* kern_tgl_tc_cold.hpp */,
+				2E54236A30ACE4EC00F2ACFF /* kern_tgl_tc_mode.hpp */,
+				2E54234F30ACE4EC00F2ACFF /* kern_tgl_tc_native.hpp */,
+				2E54236530ACE4EC00F2ACFF /* kern_tgl_training_scope.hpp */,
+				2E54233530ACE4EB00F2ACFF /* kern_tgl_vm.hpp */,
+				2E54238930ACE4ED00F2ACFF /* kern_vbt.hpp */,
+				2E54238E30ACE4EE00F2ACFF /* kern_xe_data_access.cpp */,
+				2E54239430ACE4EE00F2ACFF /* kern_xe_data_access.hpp */,
+				2E54236B30ACE4EC00F2ACFF /* kern_xe_data_policy.hpp */,
+				2E54233430ACE4EB00F2ACFF /* kern_xe.cpp */,
+				2E54235030ACE4EC00F2ACFF /* kern_xe.hpp */,
+				2E5423A630ACE4EE00F2ACFF /* kern_xelp_call_target.hpp */,
+				2E54236430ACE4EC00F2ACFF /* kern_xelp_combo_clock.hpp */,
+				2E54233030ACE4EA00F2ACFF /* kern_xelp_combo_policy.hpp */,
+				2E5423A730ACE4EE00F2ACFF /* kern_xelp_device.hpp */,
+				2E54239930ACE4EE00F2ACFF /* kern_xelp_devices.hpp */,
+				2E54232330ACE4EA00F2ACFF /* kern_xelp_display_contract.hpp */,
+				2E54233E30ACE4EB00F2ACFF /* kern_xelp_display_resources.hpp */,
+				2E54238230ACE4ED00F2ACFF /* kern_xelp_donor.hpp */,
+				2E54238030ACE4ED00F2ACFF /* kern_xelp_forcewake_irq.hpp */,
+				2E54237030ACE4ED00F2ACFF /* kern_xelp_geometry.hpp */,
+				2E54235330ACE4EC00F2ACFF /* kern_xelp_gop_stop.hpp */,
+				2E54233D30ACE4EB00F2ACFF /* kern_xelp_gt_resources.hpp */,
+				2E54236030ACE4EC00F2ACFF /* kern_xelp_link_requirements.hpp */,
+				2E54237A30ACE4ED00F2ACFF /* kern_xelp_memory_layout.hpp */,
+				2E54238830ACE4ED00F2ACFF /* kern_xelp_native_placement.hpp */,
+				2E54235430ACE4EC00F2ACFF /* kern_xelp_os.hpp */,
+				2E54235830ACE4EC00F2ACFF /* kern_xelp_panel_power.hpp */,
+				2E54238F30ACE4EE00F2ACFF /* kern_xelp_panel_pwm.hpp */,
+				2E54231F30ACE4EA00F2ACFF /* kern_xelp_platform.hpp */,
+				2E54235930ACE4EC00F2ACFF /* kern_xelp_port_wait.hpp */,
+				2E54235630ACE4EC00F2ACFF /* kern_xelp_probe.hpp */,
+				2E54232730ACE4EA00F2ACFF /* kern_xelp_queue_memory.hpp */,
+				2E54236730ACE4EC00F2ACFF /* kern_xelp_queue_trace.hpp */,
+				2E54231C30ACE4EA00F2ACFF /* kern_xelp_sst_program.hpp */,
+				2E54237E30ACE4ED00F2ACFF /* kern_xelp_sst_route.hpp */,
 			);
 			path = NootedBlue;
 			sourceTree = "<group>";
@@ -614,142 +617,143 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				2ED96FB730A6A83C009D355A /* kern_dsi_readout.hpp in Headers */,
-				2ED96FC030A6A83C009D355A /* kern_xelp_device.hpp in Headers */,
-				2ED96FC330A6A83C009D355A /* kern_dsi_host.hpp in Headers */,
+				2E5423C930ACE4EF00F2ACFF /* kern_dsi_backlight.hpp in Headers */,
+				2E5423B630ACE4EF00F2ACFF /* kern_tgl_recovery.hpp in Headers */,
 				F0AF08BC2A0F373F00B63C2B /* kern_gen11.hpp in Headers */,
+				2E5423F030ACE4EF00F2ACFF /* kern_host_power_contract.hpp in Headers */,
+				2E54240530ACE4EF00F2ACFF /* kern_dsi_boot.hpp in Headers */,
+				2E54243730ACE4EF00F2ACFF /* kern_dsi_apple_timing.hpp in Headers */,
+				2E5423F130ACE4EF00F2ACFF /* kern_dsi_session.hpp in Headers */,
+				2E5423E230ACE4EF00F2ACFF /* kern_xelp_os.hpp in Headers */,
+				2E54242830ACE4EF00F2ACFF /* kern_alderlake_n.hpp in Headers */,
+				2E5423B230ACE4EF00F2ACFF /* kern_tgl_hang_graph.hpp in Headers */,
+				2E54240D30ACE4EF00F2ACFF /* kern_tgl_combo_signal.hpp in Headers */,
+				2E5423FC30ACE4EF00F2ACFF /* kern_dsi_math.hpp in Headers */,
+				2E5423AD30ACE4EF00F2ACFF /* kern_xelp_platform.hpp in Headers */,
+				2E5423BC30ACE4EF00F2ACFF /* kern_tgl_fia.hpp in Headers */,
+				2E5423C830ACE4EF00F2ACFF /* kern_tgl_gsync.hpp in Headers */,
+				2E5423E830ACE4EF00F2ACFF /* kern_tgl_hang_ggtt.hpp in Headers */,
+				2E5423B730ACE4EF00F2ACFF /* kern_alderlake_n_gpu.hpp in Headers */,
 				2E315A612BC6EA4D008411AA /* DYLDPatches.hpp in Headers */,
-				2ED96FBA30A6A83C009D355A /* kern_graphics_activation.hpp in Headers */,
-				2ED96FDE30A6A83C009D355A /* kern_display13_fb_irq.hpp in Headers */,
-				2ED96FFE30A6A83C009D355A /* kern_dsi_clock.hpp in Headers */,
-				2ED96FC530A6A83C009D355A /* kern_tgl_combo_dp.hpp in Headers */,
+				2E5423C130ACE4EF00F2ACFF /* kern_tgl_hdmi_wiring.hpp in Headers */,
+				2E54240830ACE4EF00F2ACFF /* kern_xelp_memory_layout.hpp in Headers */,
+				2E54241130ACE4EF00F2ACFF /* kern_dsi_host.hpp in Headers */,
+				2E5423DB30ACE4EF00F2ACFF /* kern_dsi_profile.hpp in Headers */,
+				2E5423E330ACE4EF00F2ACFF /* kern_display13_fb_gtt.hpp in Headers */,
+				2E5423CE30ACE4EF00F2ACFF /* kern_display13_fb_irq.hpp in Headers */,
+				2E5423D130ACE4EF00F2ACFF /* kern_dsi_commands.hpp in Headers */,
+				2E5423FD30ACE4EF00F2ACFF /* kern_tgl_context_cache.hpp in Headers */,
+				2E54241B30ACE4EF00F2ACFF /* kern_tgl_csb.hpp in Headers */,
+				2E54242730ACE4EF00F2ACFF /* kern_xelp_devices.hpp in Headers */,
+				2E5423D830ACE4EF00F2ACFF /* kern_dsi_sequence.hpp in Headers */,
 				2E1CC3E22BA5DBD9004EC8F6 /* DisplayMergeNub.h in Headers */,
-				2ED9701930A6A83C009D355A /* kern_dsi_attributes.hpp in Headers */,
-				2ED96FD930A6A83C009D355A /* kern_tgl_rpcs.hpp in Headers */,
-				2ED9702530A6A83C009D355A /* kern_xe_data_policy.hpp in Headers */,
-				2ED9701830A6A83C009D355A /* kern_tgl_fb_binding.hpp in Headers */,
-				2ED9700F30A6A83C009D355A /* kern_host_power_contract.hpp in Headers */,
+				2E54241630ACE4EF00F2ACFF /* kern_xelp_native_placement.hpp in Headers */,
+				2E5423BB30ACE4EF00F2ACFF /* kern_display13_tc_mode.hpp in Headers */,
+				2E5423E630ACE4EF00F2ACFF /* kern_xelp_panel_power.hpp in Headers */,
+				2E5423AA30ACE4EF00F2ACFF /* kern_xelp_sst_program.hpp in Headers */,
+				2E5423F930ACE4EF00F2ACFF /* kern_xe_data_policy.hpp in Headers */,
+				2E5423B330ACE4EF00F2ACFF /* kern_tgl_hang_pending.hpp in Headers */,
+				2E5423AE30ACE4EF00F2ACFF /* kern_display13_tc_clock.hpp in Headers */,
+				2E5423B530ACE4EF00F2ACFF /* kern_xelp_queue_memory.hpp in Headers */,
+				2E5423D230ACE4EF00F2ACFF /* kern_display13_hdmi_wiring.hpp in Headers */,
+				2E5423BA30ACE4EF00F2ACFF /* kern_tgl_fb_binding.hpp in Headers */,
+				2E54241D30ACE4EF00F2ACFF /* kern_xelp_panel_pwm.hpp in Headers */,
+				2E5423CD30ACE4EF00F2ACFF /* kern_host.hpp in Headers */,
+				2E54242430ACE4EF00F2ACFF /* kern_adls_clock.hpp in Headers */,
 				2E5BF5842BCC212F0095BDCF /* HDMI.hpp in Headers */,
-				2ED96FDC30A6A83C009D355A /* kern_xelp_panel_pwm.hpp in Headers */,
-				2ED9702330A6A83C009D355A /* kern_display13_firmware.hpp in Headers */,
-				2ED9702B30A6A83C009D355A /* kern_display13_dbuf.hpp in Headers */,
-				2ED96FA830A6A83C009D355A /* kern_tgl_tc_boot.hpp in Headers */,
+				2E5423F530ACE4EF00F2ACFF /* kern_xelp_queue_trace.hpp in Headers */,
+				2E5423D730ACE4EF00F2ACFF /* kern_dsi_native_backing.hpp in Headers */,
+				2E5423BF30ACE4EF00F2ACFF /* kern_tgl_pcode_gate.hpp in Headers */,
+				2E5423AC30ACE4EF00F2ACFF /* kern_display13_dsi_trial.hpp in Headers */,
 				2EE611B42FA6C10F00E58E2A /* ZlibAlloc.hpp in Headers */,
-				2ED9701630A6A83C009D355A /* kern_tgl_tc_mode.hpp in Headers */,
-				2ED9702C30A6A83C009D355A /* kern_xelp_forcewake_irq.hpp in Headers */,
-				2ED96FE030A6A83C009D355A /* kern_display13_transcoder.hpp in Headers */,
-				2ED96FCA30A6A83C009D355A /* kern_tgl_boot_readout.hpp in Headers */,
-				2ED96FDD30A6A83C009D355A /* kern_tgl_hang_prestop.hpp in Headers */,
-				2ED9700030A6A83C009D355A /* kern_xelp_donor.hpp in Headers */,
-				2ED96FD030A6A83C009D355A /* kern_display13_tc.hpp in Headers */,
-				2ED9701430A6A83C009D355A /* kern_xelp_devices.hpp in Headers */,
-				2ED96FEE30A6A83C009D355A /* kern_dsi_commands.hpp in Headers */,
-				2ED9702730A6A83C009D355A /* kern_display13_panel.hpp in Headers */,
-				2ED96FFD30A6A83C009D355A /* kern_xelp_os.hpp in Headers */,
-				2ED96FA230A6A83C009D355A /* kern_dsi_native_mode.hpp in Headers */,
-				2ED96FE330A6A83C009D355A /* kern_xelp_geometry.hpp in Headers */,
+				2E5423E430ACE4EF00F2ACFF /* kern_xelp_probe.hpp in Headers */,
+				2E5423F630ACE4EF00F2ACFF /* kern_display13_tc_lightup.hpp in Headers */,
+				2E54243630ACE4EF00F2ACFF /* kern_display13_retirement.hpp in Headers */,
+				2E54241230ACE4EF00F2ACFF /* kern_tgl_ppgtt.hpp in Headers */,
+				2E5423DF30ACE4EF00F2ACFF /* kern_dsi_sleep_image.hpp in Headers */,
 				2E8599262FBCFFF4001C9274 /* intel_dsi_vbt_defs.h in Headers */,
-				2ED9701130A6A83C009D355A /* kern_tgl_pcode_edram.hpp in Headers */,
-				2ED96FCF30A6A83C009D355A /* kern_xelp_panel_power.hpp in Headers */,
-				2ED96FB930A6A83C009D355A /* kern_dsi_ggtt.hpp in Headers */,
-				2ED96FC230A6A83C009D355A /* kern_tgl_hang_ggtt.hpp in Headers */,
-				2ED9700E30A6A83C009D355A /* kern_display13_fb_topology.hpp in Headers */,
-				2ED96FF330A6A83C009D355A /* kern_dsi_surface.hpp in Headers */,
-				2ED96FFB30A6A83C009D355A /* kern_xelp_native_placement.hpp in Headers */,
-				2ED96FCE30A6A83C009D355A /* kern_tgl_fia.hpp in Headers */,
-				2ED9702A30A6A83C009D355A /* kern_tgl_combo_signal.hpp in Headers */,
-				2ED9700D30A6A83C009D355A /* kern_alderlake_s.hpp in Headers */,
-				2ED9701E30A6A83C009D355A /* kern_tgl_hang_graph.hpp in Headers */,
-				2ED96FE130A6A83C009D355A /* kern_backlight_profile.hpp in Headers */,
-				2ED96FE830A6A83C009D355A /* kern_adls_boot.hpp in Headers */,
-				2ED9700930A6A83C009D355A /* kern_tgl_gsync.hpp in Headers */,
-				2ED96FCB30A6A83C009D355A /* kern_tgl_same_tail.hpp in Headers */,
-				2ED96FE930A6A83C009D355A /* kern_dsi_profile.hpp in Headers */,
-				2ED9700C30A6A83C009D355A /* kern_xelp_memory_layout.hpp in Headers */,
-				2ED9701230A6A83C009D355A /* kern_dsi_session.hpp in Headers */,
-				2ED96FF030A6A83C009D355A /* kern_dsi_sequence.hpp in Headers */,
-				2ED96FCD30A6A83C009D355A /* kern_xelp_combo_clock.hpp in Headers */,
-				2ED96FC830A6A83C009D355A /* kern_dsi_quiesce.hpp in Headers */,
-				2ED9702030A6A83C009D355A /* kern_tgl_hang_pending.hpp in Headers */,
-				2ED96FB030A6A83C009D355A /* kern_tgl_aux_call.hpp in Headers */,
-				2ED9702630A6A83C009D355A /* kern_dsi_apple_timing.hpp in Headers */,
-				2ED9702D30A6A83C009D355A /* kern_display13_retirement.hpp in Headers */,
-				2ED96FF830A6A83C009D355A /* kern_xelp_queue_memory.hpp in Headers */,
-				2ED96FD430A6A83C009D355A /* kern_dsi_backlight.hpp in Headers */,
-				2ED96FFC30A6A83C009D355A /* kern_tgl_hdmi_wiring.hpp in Headers */,
-				2ED96FED30A6A83C009D355A /* kern_xelp_link_requirements.hpp in Headers */,
-				2ED96FBC30A6A83C009D355A /* kern_tgl_ppgtt.hpp in Headers */,
-				2ED96FA630A6A83C009D355A /* kern_xelp_port_wait.hpp in Headers */,
-				2ED96FEB30A6A83C009D355A /* kern_tgl_training_scope.hpp in Headers */,
-				2ED96FE630A6A83C009D355A /* kern_dsi_boot.hpp in Headers */,
-				2ED96FB130A6A83C009D355A /* kern_display13_tc_dp.hpp in Headers */,
-				2ED9701730A6A83C009D355A /* kern_tgl_recovery.hpp in Headers */,
-				2ED96FF930A6A83C009D355A /* kern_framebuffer_donor.hpp in Headers */,
-				2ED96FD730A6A83C009D355A /* kern_vbt.hpp in Headers */,
-				2ED96FB430A6A83C009D355A /* kern_xelp_display_resources.hpp in Headers */,
-				2ED96FB330A6A83C009D355A /* kern_display13_tc_clock.hpp in Headers */,
-				2ED96FC130A6A83C009D355A /* kern_display13_power_bridge.hpp in Headers */,
-				2ED96FA530A6A83C009D355A /* kern_tgl_submit_history.hpp in Headers */,
-				2ED9702930A6A83C009D355A /* kern_display13_boot.hpp in Headers */,
-				2ED96FD530A6A83C009D355A /* kern_display13_tc_native.hpp in Headers */,
-				2ED9700830A6A83C009D355A /* kern_tgl_hang_detail.hpp in Headers */,
-				2ED96FDA30A6A83C009D355A /* kern_xe_data_access.hpp in Headers */,
-				2ED96FC730A6A83C009D355A /* kern_xelp_sst_program.hpp in Headers */,
-				2ED96FF530A6A83C009D355A /* kern_xelp_sst_route.hpp in Headers */,
-				2ED96FD230A6A83C009D355A /* kern_display13_power.hpp in Headers */,
-				2ED96FF130A6A83C009D355A /* kern_tgl_hang_refs.hpp in Headers */,
-				2ED96FE430A6A83C009D355A /* kern_display13_output_wiring.hpp in Headers */,
-				2ED96FE230A6A83C009D355A /* kern_tgl_pcode_gate.hpp in Headers */,
-				2ED96FCC30A6A83C009D355A /* kern_xe.hpp in Headers */,
-				2ED9700430A6A83C009D355A /* kern_display13_tc_aux.hpp in Headers */,
-				2ED96FA730A6A83C009D355A /* kern_xelp_queue_trace.hpp in Headers */,
-				2ED96FA330A6A83C009D355A /* kern_tgl_hang_select.hpp in Headers */,
-				2ED96FDB30A6A83C009D355A /* kern_display13_tc_lightup.hpp in Headers */,
-				2ED96FC430A6A83C009D355A /* kern_xelp_probe.hpp in Headers */,
-				2ED96FDF30A6A83C009D355A /* kern_dsi_restart.hpp in Headers */,
-				2ED9701B30A6A83C009D355A /* kern_dsi_panel.hpp in Headers */,
-				2ED96FAD30A6A83C009D355A /* kern_display13_color.hpp in Headers */,
-				2ED96FFA30A6A83C009D355A /* kern_dsi_native_cache.hpp in Headers */,
-				2ED9702230A6A83C009D355A /* kern_adls_clock.hpp in Headers */,
-				2ED96FD330A6A83C009D355A /* kern_alderlake_n.hpp in Headers */,
-				2ED96FB630A6A83C009D355A /* kern_tgl_start_order.hpp in Headers */,
-				2ED96FAB30A6A83C009D355A /* kern_tgl_native_fia.hpp in Headers */,
-				2ED96FB230A6A83C009D355A /* kern_donor.hpp in Headers */,
-				2ED96FB530A6A83C009D355A /* kern_tgl_tc_cold.hpp in Headers */,
-				2ED96FF630A6A83C009D355A /* kern_tgl_context_cache.hpp in Headers */,
-				2ED9702130A6A83C009D355A /* kern_dvmt.hpp in Headers */,
-				2ED96FF230A6A83C009D355A /* kern_xelp_display_contract.hpp in Headers */,
-				2ED9700130A6A83C009D355A /* kern_alderlake_n_gpu.hpp in Headers */,
-				2ED96FAC30A6A83C009D355A /* kern_display13_tc_mode.hpp in Headers */,
-				2ED96FD630A6A83C009D355A /* kern_tgl_vm.hpp in Headers */,
-				2ED96FF730A6A83C009D355A /* kern_display13_fb_sysmem.hpp in Headers */,
-				2ED96FEF30A6A83C009D355A /* kern_tgl_port_use.hpp in Headers */,
-				2ED9700330A6A83C009D355A /* kern_dsi_sleep_image.hpp in Headers */,
-				2ED96FEA30A6A83C009D355A /* kern_tgl_port_map.hpp in Headers */,
-				2ED96FD130A6A83C009D355A /* kern_display13_hdmi_wiring.hpp in Headers */,
+				2E5423EE30ACE4EF00F2ACFF /* kern_xelp_link_requirements.hpp in Headers */,
+				2E54240430ACE4EF00F2ACFF /* kern_framebuffer_donor.hpp in Headers */,
+				2E54240C30ACE4EF00F2ACFF /* kern_xelp_sst_route.hpp in Headers */,
+				2E54240930ACE4EF00F2ACFF /* kern_display13_power.hpp in Headers */,
+				2E54241330ACE4EF00F2ACFF /* kern_display13_firmware.hpp in Headers */,
+				2E5423FE30ACE4EF00F2ACFF /* kern_xelp_geometry.hpp in Headers */,
+				2E5423EB30ACE4EF00F2ACFF /* kern_tgl_boot_readout.hpp in Headers */,
+				2E54241A30ACE4EF00F2ACFF /* kern_dsi_quiesce.hpp in Headers */,
+				2E5423DE30ACE4EF00F2ACFF /* kern_xe.hpp in Headers */,
+				2E5423FA30ACE4EF00F2ACFF /* kern_display13_cursor.hpp in Headers */,
+				2E54243130ACE4EF00F2ACFF /* kern_graphics_activation.hpp in Headers */,
+				2E54241F30ACE4EF00F2ACFF /* kern_backlight_profile.hpp in Headers */,
+				2E54242030ACE4EF00F2ACFF /* kern_tgl_hang_select.hpp in Headers */,
+				2E5423EC30ACE4EF00F2ACFF /* kern_tgl_hang_detail.hpp in Headers */,
+				2E54241830ACE4EF00F2ACFF /* kern_adls_boot.hpp in Headers */,
+				2E54241730ACE4EF00F2ACFF /* kern_vbt.hpp in Headers */,
+				2E5423B830ACE4EF00F2ACFF /* kern_framebuffer_training_native.hpp in Headers */,
+				2E5423E530ACE4EF00F2ACFF /* kern_display13_fb_memory.hpp in Headers */,
+				2E5423F330ACE4EF00F2ACFF /* kern_tgl_training_scope.hpp in Headers */,
+				2E5423BE30ACE4EF00F2ACFF /* kern_xelp_combo_policy.hpp in Headers */,
+				2E54241930ACE4EF00F2ACFF /* kern_tgl_port_use.hpp in Headers */,
+				2E54240E30ACE4EF00F2ACFF /* kern_xelp_forcewake_irq.hpp in Headers */,
+				2E54241E30ACE4EF00F2ACFF /* kern_tgl_tc_cold.hpp in Headers */,
+				2E5423CF30ACE4EF00F2ACFF /* kern_display13_fb_topology.hpp in Headers */,
+				2E54242E30ACE4EF00F2ACFF /* kern_alderlake_s.hpp in Headers */,
+				2E5423CA30ACE4EF00F2ACFF /* kern_tgl_port_map.hpp in Headers */,
+				2E5423AF30ACE4EF00F2ACFF /* kern_tgl_submit_history.hpp in Headers */,
+				2E5423FB30ACE4EF00F2ACFF /* kern_display13_dbuf.hpp in Headers */,
+				2E5423DC30ACE4EF00F2ACFF /* kern_display13_panel.hpp in Headers */,
+				2E54243530ACE4EF00F2ACFF /* kern_xelp_device.hpp in Headers */,
+				2E5423CB30ACE4EF00F2ACFF /* kern_xelp_gt_resources.hpp in Headers */,
+				2E54241430ACE4EF00F2ACFF /* kern_tgl_same_tail.hpp in Headers */,
+				2E5423D530ACE4EF00F2ACFF /* kern_display13_transcoder.hpp in Headers */,
+				2E5423F230ACE4EF00F2ACFF /* kern_xelp_combo_clock.hpp in Headers */,
+				2E5423D430ACE4EF00F2ACFF /* kern_edp_aux_backlight.hpp in Headers */,
+				2E5423ED30ACE4EF00F2ACFF /* kern_display13_power_bridge.hpp in Headers */,
+				2E54242B30ACE4EF00F2ACFF /* kern_tgl_rpcs.hpp in Headers */,
+				2E54242630ACE4EF00F2ACFF /* kern_display13_clock.hpp in Headers */,
+				2E5423C630ACE4EF00F2ACFF /* kern_dsi_ggtt.hpp in Headers */,
+				2E54240B30ACE4EF00F2ACFF /* kern_tgl_start_order.hpp in Headers */,
+				2E5423F730ACE4EF00F2ACFF /* kern_dsi_attributes.hpp in Headers */,
+				2E54242D30ACE4EF00F2ACFF /* kern_display13_tc_aux.hpp in Headers */,
+				2E5423F830ACE4EF00F2ACFF /* kern_tgl_tc_mode.hpp in Headers */,
+				2E5423E030ACE4EF00F2ACFF /* kern_display13_color.hpp in Headers */,
+				2E54242F30ACE4EF00F2ACFF /* kern_dsi_native_mode.hpp in Headers */,
+				2E5423DD30ACE4EF00F2ACFF /* kern_tgl_tc_native.hpp in Headers */,
+				2E5423EF30ACE4EF00F2ACFF /* kern_donor.hpp in Headers */,
+				2E5423D930ACE4EF00F2ACFF /* kern_dsi_surface.hpp in Headers */,
+				2E54240630ACE4EF00F2ACFF /* kern_tgl_gmbus.hpp in Headers */,
+				2E54241030ACE4EF00F2ACFF /* kern_xelp_donor.hpp in Headers */,
+				2E5423EA30ACE4EF00F2ACFF /* kern_display13_wm.hpp in Headers */,
+				2E5423B930ACE4EF00F2ACFF /* kern_display13_boot.hpp in Headers */,
+				2E54240A30ACE4EF00F2ACFF /* kern_dsi_readout.hpp in Headers */,
+				2E54243230ACE4EF00F2ACFF /* kern_tgl_hang_prestop.hpp in Headers */,
+				2E54242C30ACE4EF00F2ACFF /* kern_display13_tc_native.hpp in Headers */,
 				F0BB9E562A57A0340081F5FA /* kern_patcherplus.hpp in Headers */,
-				2ED9702430A6A83C009D355A /* kern_host.hpp in Headers */,
-				2ED9701C30A6A83C009D355A /* kern_tgl_tc_native.hpp in Headers */,
-				2ED96FBF30A6A83C009D355A /* kern_tgl_gmbus.hpp in Headers */,
-				2ED96FBB30A6A83C009D355A /* kern_display13_clock.hpp in Headers */,
-				2ED9700B30A6A83C009D355A /* kern_dsi_math.hpp in Headers */,
-				2ED9702830A6A83C009D355A /* kern_xelp_combo_policy.hpp in Headers */,
-				2ED9700530A6A83C009D355A /* kern_tgl_submit_capture.hpp in Headers */,
-				2ED96FA930A6A83C009D355A /* kern_display13_fb_gtt.hpp in Headers */,
-				2ED9700630A6A83C009D355A /* kern_framebuffer_training_native.hpp in Headers */,
 				2E8599252FBCFFF4001C9274 /* intel_vbt_defs.h in Headers */,
-				2ED96FF430A6A83C009D355A /* kern_dsi_native_backing.hpp in Headers */,
-				2ED96FE730A6A83C009D355A /* kern_display13_fb_memory.hpp in Headers */,
+				2E5423E130ACE4EF00F2ACFF /* kern_xelp_gop_stop.hpp in Headers */,
+				2E5423AB30ACE4EF00F2ACFF /* kern_dsi_panel.hpp in Headers */,
+				2E5423B130ACE4EF00F2ACFF /* kern_xelp_display_contract.hpp in Headers */,
+				2E54241530ACE4EF00F2ACFF /* kern_display13_tc_dp.hpp in Headers */,
+				2E5423C730ACE4EF00F2ACFF /* kern_tgl_aux_call.hpp in Headers */,
+				2E54240030ACE4EF00F2ACFF /* kern_dvmt.hpp in Headers */,
+				2E54243030ACE4EF00F2ACFF /* kern_dsi_clock.hpp in Headers */,
+				2E54240730ACE4EF00F2ACFF /* kern_dsi_restart.hpp in Headers */,
+				2E5423B430ACE4EF00F2ACFF /* kern_tgl_submit_capture.hpp in Headers */,
+				2E54240130ACE4EF00F2ACFF /* kern_tgl_tc_boot.hpp in Headers */,
+				2E5423C530ACE4EF00F2ACFF /* kern_dsi_native_cache.hpp in Headers */,
+				2E5423CC30ACE4EF00F2ACFF /* kern_xelp_display_resources.hpp in Headers */,
+				2E5423E730ACE4EF00F2ACFF /* kern_xelp_port_wait.hpp in Headers */,
+				2E54242930ACE4EF00F2ACFF /* kern_tgl_pcode_edram.hpp in Headers */,
+				2E54242130ACE4EF00F2ACFF /* kern_tgl_native_fia.hpp in Headers */,
+				2E5423FF30ACE4EF00F2ACFF /* kern_display13_fb_sysmem.hpp in Headers */,
+				2E5423C330ACE4EF00F2ACFF /* kern_tgl_vm.hpp in Headers */,
 				2EE611B32FA6C10F00E58E2A /* Firmware.hpp in Headers */,
-				2ED9701D30A6A83C009D355A /* kern_xelp_platform.hpp in Headers */,
-				2ED96FD830A6A83C009D355A /* kern_display13_cursor.hpp in Headers */,
-				2ED96FAE30A6A83C009D355A /* kern_display13_wm.hpp in Headers */,
-				2ED9701A30A6A83C009D355A /* kern_tgl_csb.hpp in Headers */,
-				2ED9700230A6A83C009D355A /* kern_xelp_gt_resources.hpp in Headers */,
-				2ED96FBE30A6A83C009D355A /* kern_xelp_gop_stop.hpp in Headers */,
-				2ED96FBD30A6A83C009D355A /* kern_xelp_call_target.hpp in Headers */,
-				2ED96FC630A6A83C009D355A /* kern_display13_dsi_trial.hpp in Headers */,
-				2ED9702E30A6A83C009D355A /* kern_tgl_panel_depth.hpp in Headers */,
+				2E5423BD30ACE4EF00F2ACFF /* kern_tgl_panel_depth.hpp in Headers */,
+				2E54243430ACE4EF00F2ACFF /* kern_xelp_call_target.hpp in Headers */,
+				2E54240F30ACE4EF00F2ACFF /* kern_tgl_hang_refs.hpp in Headers */,
+				2E5423D630ACE4EF00F2ACFF /* kern_display13_output_wiring.hpp in Headers */,
+				2E5423D330ACE4EF00F2ACFF /* kern_tgl_combo_dp.hpp in Headers */,
+				2E54242230ACE4EF00F2ACFF /* kern_xe_data_access.hpp in Headers */,
+				2E54242A30ACE4EF00F2ACFF /* kern_display13_tc.hpp in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -849,30 +853,30 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				2ED9700A30A6A83C009D355A /* kern_dsi_adapter_modes.inc in Sources */,
+				2E5423E930ACE4EF00F2ACFF /* kern_dsi_adapter_lifecycle.inc in Sources */,
 				F009B7A329E4EEBA00786AFF /* kern_nblue.cpp in Sources */,
 				F0BB9E552A57A0340081F5FA /* kern_patcherplus.cpp in Sources */,
-				2ED96FAA30A6A83C009D355A /* kern_xe_data_access.cpp in Sources */,
 				2E5BF5832BCC212F0095BDCF /* HDMI.cpp in Sources */,
+				2E54243330ACE4EF00F2ACFF /* kern_start.cpp in Sources */,
+				2E54242330ACE4EF00F2ACFF /* kern_dsi_adapter_modes.inc in Sources */,
+				2E5423C230ACE4EF00F2ACFF /* kern_xe.cpp in Sources */,
 				2EE611B52FA6C10F00E58E2A /* ZlibAlloc.cpp in Sources */,
 				2EE611B22FA6C10F00E58E2A /* Firmware.cpp in Sources */,
-				2ED96FEC30A6A83C009D355A /* kern_dvmt.cpp in Sources */,
 				F0AF08BB2A0F373F00B63C2B /* kern_gen11.cpp in Sources */,
+				2E5423C430ACE4EF00F2ACFF /* kern_display13_framebuffer_power.inc in Sources */,
+				2E5423F430ACE4EF00F2ACFF /* kern_dsi_adapter_boot.inc in Sources */,
+				2E54242530ACE4EF00F2ACFF /* kern_firmware.cpp in Sources */,
+				2E5423B030ACE4EF00F2ACFF /* kern_dvmt.cpp in Sources */,
+				2E54241C30ACE4EF00F2ACFF /* kern_xe_data_access.cpp in Sources */,
 				CE405ED91E4A080700AA0B3D /* plugin_start.cpp in Sources */,
+				2E5423D030ACE4EF00F2ACFF /* kern_host.cpp in Sources */,
 				2E80A802309E9D2F00C4AC32 /* kern_xepm_tgl.cpp in Sources */,
-				2ED96FC930A6A83C009D355A /* kern_dsi_adapter_backing.inc in Sources */,
-				2ED9701F30A6A83C009D355A /* kern_dsi_adapter_diagnostics.inc in Sources */,
-				2ED9701530A6A83C009D355A /* kern_host.cpp in Sources */,
+				2E54240230ACE4EF00F2ACFF /* kern_donor.cpp in Sources */,
+				2E5423DA30ACE4EF00F2ACFF /* kern_dsi_adapter_diagnostics.inc in Sources */,
+				2E5423C030ACE4EF00F2ACFF /* kern_dsi_adapter_backing.inc in Sources */,
+				2E54240330ACE4EF00F2ACFF /* kern_dsi_adapter_state.inc in Sources */,
 				2E1CC3E32BA5DBD9004EC8F6 /* DisplayMergeNub.cpp in Sources */,
-				2ED9701030A6A83C009D355A /* kern_xe.cpp in Sources */,
-				2ED96FB830A6A83C009D355A /* kern_donor.cpp in Sources */,
-				2ED96FAF30A6A83C009D355A /* kern_dsi_adapter_lifecycle.inc in Sources */,
 				2E315A622BC6EA4D008411AA /* DYLDPatches.cpp in Sources */,
-				2ED96FE530A6A83C009D355A /* kern_firmware.cpp in Sources */,
-				2ED96FA430A6A83C009D355A /* kern_dsi_adapter_boot.inc in Sources */,
-				2ED9701330A6A83C009D355A /* kern_display13_framebuffer_power.inc in Sources */,
-				2ED96FFF30A6A83C009D355A /* kern_dsi_adapter_state.inc in Sources */,
-				2ED9700730A6A83C009D355A /* kern_start.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

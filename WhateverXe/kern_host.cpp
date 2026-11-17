@@ -107,8 +107,8 @@ void XeHost::processKernel(KernelPatcher &patcher) {
   }
  }
 	nblu.iGPU=gpu;
-	nblu.deviceId = WIOKit::readPCIConfigValue(nblu.iGPU, WIOKit::kIOPCIConfigDeviceID);
-	nblu.pciRevision = WIOKit::readPCIConfigValue(nblu.iGPU, WIOKit::kIOPCIConfigRevisionID);
+		nblu.deviceId = WIOKit::readPCIConfigValue(nblu.iGPU, WIOKit::kIOPCIConfigDeviceID);
+		nblu.pciRevision = WIOKit::readPCIConfigValue(nblu.iGPU, WIOKit::kIOPCIConfigRevisionID);
  if(!active || resetFramebuffer==FB_DETECT){resetFramebuffer=FB_NONE;if(!systemWakeRecovery)graphics.switchOff();}
  DeviceInfo::deleter(info);
 }

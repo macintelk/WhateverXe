@@ -17804,7 +17804,29 @@ uint32_t XE::wrapTGLAGDCRegister(void *controller, void *request) {
 uint32_t XE::wrapTGLConnectionAttr(void *fb, int connection, uint32_t attribute, unsigned long *value) {
 	auto id = *reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(fb) + 0x1DC);
 	tglTrace(6, id, false, attribute, connection, 0, 0);
-	const auto r = FunctionCast(wrapTGLConnectionAttr, callbackXE->orgTGLConnectionAttr)(fb, connection, attribute, value);
+	auto r = FunctionCast(wrapTGLConnectionAttr, callbackXE->orgTGLConnectionAttr)(fb, connection, attribute, value);
+	
+	IOService* framebuffer=(IOService*)fb;
+		if (attribute == kConnectionEnable && connection == 0 && (r != kIOReturnSuccess || (value != nullptr && *value == 0))) {
+			const char* const loc = framebuffer != nullptr ? framebuffer->getLocation() : nullptr;
+			const bool isFB0      = (loc == nullptr || (loc[0] == '0' && loc[1] == '\0'));
+			if (isFB0 /*&& singleton().embeddedPanelLink != nullptr)*/) {
+				// Early boot race condition on laptops with internal eDP panels:
+				// When WindowServer starts rapidly (e.g. SetApfsTrimTimeout=0, fast NVMe, non-verbose boot),
+				// WindowServer queries kConnectionEnable while asynchronous eDP link training is still settling.
+				// Rather than immediately reporting "no devices" (which triggers CoreDisplay assertion abort),
+				// briefly poll with bounded delays (up to ~100ms) for link training to complete.
+				for (int retry = 0; retry < 5; retry++) {
+					IOSleep(20);
+					auto r = FunctionCast(wrapTGLConnectionAttr,  callbackXE->orgTGLConnectionAttr)(
+						fb, connection, attribute, value);
+					if (r == kIOReturnSuccess && value != nullptr && *value != 0) {
+						break;
+					}
+				}
+			}
+		}
+	
 	tglTrace(6, id, true, attribute, connection, r, r == 0 && value ? *value : 0);
 	// Preserve the key enable/flags answers even after other attributes follow.
 	if (attribute == 'cena' || attribute == 'enab' || attribute == 'flgs') {

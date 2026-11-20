@@ -150,7 +150,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 					return;
 				}*/
 				
-				if (!sle)
+				/*if (!sle)
 				if ((!strncmp(path, TGLGraphicsMTLDriver2, arrsize(TGLGraphicsMTLDriver2)) )) {
 					const DYLDPatch patches[] = {
 						//{kTGLGraphicsMTLDrivero, kTGLGraphicsMTLDriverp, "GPUBundles mtl path"},
@@ -158,7 +158,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 					};
 					DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
 					return;
-				}
+				}*/
 				
 				/*if (sle)
 				if ((!strncmp(path, TGLGraphicsGLDriver, arrsize(TGLGraphicsGLDriver)) )) {
@@ -194,14 +194,16 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 		if (UNLIKELY(KernelPatcher::findAndReplace(const_cast<void *>(data), PAGE_SIZE, kVideoToolboxDRMModelOriginal,
 												   arrsize(kVideoToolboxDRMModelOriginal), BaseDeviceInfo::get().modelIdentifier, 20))) {
 			DBGLOG("DYLD", "Applied 'VideoToolbox DRM model check' patch");
-		}
+		}*/
 		
+	static const UInt8 s1[] = {0x84, 0xDB, 0x74, 0x29, 0x44, 0x89, 0xF7, 0xBE, 0x41, 0x52, 0x47, 0x42, 0xF2, 0x0F, 0x10, 0x45, 0xE8, 0xF2, 0x0F, 0x10, 0x4D, 0xE0};
+	static const UInt8 rs1[] = {0x84, 0xDB, 0xeb, 0x29, 0x44, 0x89, 0xF7, 0xBE, 0x41, 0x52, 0x47, 0x42, 0xF2, 0x0F, 0x10, 0x45, 0xE8, 0xF2, 0x0F, 0x10, 0x4D, 0xE0};
+	
 		const DYLDPatch patches[] = {
-			{kAGVABoardIdOriginal, kAGVABoardIdPatched, "iMacPro1,1 spoof (AppleGVA)"},
-			{kHEVCEncBoardIdOriginal, kHEVCEncBoardIdPatched, "iMacPro1,1 spoof (AppleGVAHEVCEncoder)"},
+			{s1, rs1, "SkyLight::supported_detachable_format("},
 		};
 		DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
-		*/
+		
 	
 	
 }

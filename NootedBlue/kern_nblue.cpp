@@ -126,7 +126,7 @@ void NBlue::processPatcher(KernelPatcher &patcher) {
 	
 	this->tglid=true;
 	
-	//dyldpatches.processPatcher(patcher);
+	dyldpatches.processPatcher(patcher);
 	
 	KernelPatcher::RouteRequest request{"__ZN11IOCatalogue10addDriversEP7OSArrayb", wrapAddDrivers,
 										this->orgAddDrivers};

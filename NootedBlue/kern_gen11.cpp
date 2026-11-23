@@ -8974,7 +8974,7 @@ void Gen11::hwInitializeCState(void *that)
                         intel_de_write(display, adpa_reg, adpa);
         }
         
-        if (getMember<int>(that, kexticl ? 0xb38 : 0xb48) != 1) return;//dc6config
+        //if (getMember<int>(that, kexticl ? 0xb38 : 0xb48) != 1) return;//dc6config
         
         if (parse_dmc_fw(display)!=0) return;
         

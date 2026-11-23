@@ -39,7 +39,8 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 	FunctionCast(wrapCsValidatePage, callback->orgCsValidatePage)(vp, pager, page_offset, data, validated_p, tainted_p,
 		nx_p);
 
-
+	if (validated_p == nullptr || *validated_p == 0) return;
+	
 	char path[PATH_MAX];
 	int pathlen = PATH_MAX;
 	if (vn_getpath(vp, path, &pathlen) != 0) { return; }
@@ -65,7 +66,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 		
 		NBlue::callback->tglid=true;
 		
-		if (NBlue::callback->tglid && !tglread) {
+		/*if (NBlue::callback->tglid && !tglread) {
 			vnode_t vnode = NULLVP;
 			vfs_context_t ctxt = vfs_context_create(nullptr);
 			errno_t err = vnode_lookup(TGLGraphicsMTLDriver2, 0, &vnode, ctxt);
@@ -84,9 +85,9 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 			}
 			
 			if (ok) tglread=true;
-		}
+		}*/
 			
-			if (!ok && NBlue::callback->iclid) {
+			/*if (!ok && NBlue::callback->iclid) {
 				if ((!strncmp(path, libMTLIGCCompilerPluginPath, arrsize(libMTLIGCCompilerPluginPath)) )) {
 					const DYLDPatch patches[] = {
 						{klibMTLIGCCompilerPluginOriginal2b, klibMTLIGCCompilerPluginOriginal2, "path"},
@@ -116,7 +117,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 					return;
 				}
 				
-			}
+			}*/
 			
 			if (ok && NBlue::callback->tglid) {
 				
@@ -225,6 +226,8 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 		const DYLDPatch patches[] = {
 			{s1, s1Mask, rs1, rs1Mask, "SkyLight::supported_detachable_format("},
 		};
+	
+		//todo: file signature check
 		DYLDPatch::applyAll(patches, const_cast<void *>(data), PAGE_SIZE);
 		
 	

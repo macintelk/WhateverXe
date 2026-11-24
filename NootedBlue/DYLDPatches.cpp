@@ -64,7 +64,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 			return;
 		}*/
 		
-		NBlue::callback->tglid=true;
+		//NBlue::callback->tglid=true;
 		
 		/*if (NBlue::callback->tglid && !tglread) {
 			vnode_t vnode = NULLVP;
@@ -224,7 +224,7 @@ void DYLDPatches::wrapCsValidatePage(vnode *vp, memory_object_t pager, memory_ob
 
 	
 		const DYLDPatch patches[] = {
-			{s1, s1Mask, rs1, rs1Mask, "SkyLight::supported_detachable_format("},
+			{s1, s1Mask, rs1, rs1Mask, "SkyLight::supported_detachable_format"},
 		};
 	
 		//todo: file signature check

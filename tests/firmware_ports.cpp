@@ -98,6 +98,17 @@ int main(int argc,char **argv){
   auto b=table({p});auto q=parse(b.data(),b.size(),Family::TigerLake);assert(q.valid()&&!q.hdmi(3).hdmi);
  }
  auto dup=table({{0x60d2,1,2},{0x60d2,7,2}});assert(parse(dup.data(),dup.size(),Family::TigerLake).status==Status::Conflict);
+ // AI 修改: explicit duplicate-DDI resolution is opt-in; the chosen child and
+ // the detected conflict are both retained. Default Reject stays unchanged.
+ auto dupFirst=parse(dup.data(),dup.size(),Family::TigerLake,ConflictPolicy::SelectFirst);
+ assert(dupFirst.valid() && dupFirst.duplicates==1 && dupFirst.conflictMask==(1U<<1) &&
+        (dupFirst.present&(1U<<1)) && dupFirst.port[1].dvo==1);
+ auto dupLast=parse(dup.data(),dup.size(),Family::TigerLake,ConflictPolicy::SelectLast);
+ assert(dupLast.valid() && dupLast.duplicates==1 && dupLast.conflictMask==(1U<<1) &&
+        (dupLast.present&(1U<<1)) && dupLast.port[1].dvo==7);
+ auto dupReject=parse(dup.data(),dup.size(),Family::TigerLake,ConflictPolicy::Reject);
+ assert(dupReject.status==Status::Conflict && dupReject.duplicates==1 &&
+        dupReject.conflictMask==(1U<<1));
  for(size_t len=0;len<bytes.size();++len)assert(!parse(bytes.data(),len,Family::TigerLake).valid());
  // An otherwise valid firmware table can carry a stale checksum. Do not
  // lose its actual connector wiring or silently normalize the source data.

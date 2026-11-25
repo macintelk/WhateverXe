@@ -3176,6 +3176,40 @@ uint32_t tglConnectionCaller(void *caller) {
 constexpr uint32_t tglProgramCapacity = 512;
 struct TGLProgramRecord { uint64_t q[8]; };
 IOSimpleLock *tglProgramLock;
+// -wex-tgl-edp-softsleep state: the framebuffer whose firmware link is kept,
+// and the thread currently inside its prepareToExitWake (display sleep).
+static void *volatile tglEDPKeptFB {};
+// Local fix (RedmiBook Pro 15 2021): when the firmware link is kept, the transcoder
+// keeps the firmware's bpc (TRANS_DDI_FUNC_CTL 22:20) while the donor's partial
+// mode set programs PIPE_MISC for its own depth. Force PIPE_MISC 7:5 to the kept
+// transcoder depth so the pipe and the link agree. 0xFF = not kept / unknown.
+static volatile uint32_t tglEDPKeptMiscBpc {0xFF};
+static volatile uint32_t tglEDPKeptMiscFixes {};
+static inline uint32_t tglEDPKeptMisc(unsigned long reg,uint32_t value) {
+ const uint32_t bpc=tglEDPKeptMiscBpc;
+ if(bpc>7)return value;
+ if(reg==0x60410) {
+  // TRANS_MSA_MISC 7:5 tells the sink the stream depth: 0=6,1=8,2=10,3=12 bpc.
+  const uint32_t msa=bpc==2 ? 0U : bpc==0 ? 1U : bpc==1 ? 2U : 3U;
+  const uint32_t fixedMSA=(value&~0xE0U)|(msa<<5);
+  if(fixedMSA!=value)__sync_add_and_fetch(&tglEDPKeptMiscFixes,1);
+  return fixedMSA;
+ }
+ if(reg!=0x70030)return value;
+ uint32_t fixed=(value&~0xE0U)|(bpc<<5);
+ if(bpc==2)fixed|=0x10U; // 6 bpc link: keep spatial dithering on
+ if(fixed!=value)__sync_add_and_fetch(&tglEDPKeptMiscFixes,1);
+ return fixed;
+}
+static void *volatile tglSoftSleepThread {};
+static volatile bool tglSoftSleepBacklightOff {};
+static bool tglSoftSleepEnabled() {
+ static int v=-1;if(v<0)v= 1;
+ return v==1;
+}
+static bool tglSoftSleepActive(void *fb=nullptr) {
+ return tglSoftSleepThread==current_thread() && tglEDPKeptFB && (!fb || fb==tglEDPKeptFB);
+}
 // Keep the same binary, allocations and native hooks for observer A/B trials.
 // Disabled means no timestamp/copy/IRQ lock on writes; not an r64-equivalent ABI
 // or a claim that the remaining wrapper/observers are timing-neutral.
@@ -14415,6 +14449,52 @@ void XE::processNativePanel(KernelPatcher &patcher,size_t index,mach_vm_address_
     patcher.clearError();
     // ADLS_PANEL_PWM_INSTALL_END
    }
+   // -wex-tgl-edp-keep: keep the firmware-trained eDP link on TGL (port of
+   // nickk19's display13 -wex-edp-keep, #43, with Aqpcet's TGL relaxations).
+   // hwRegsNeedUpdate answers "no update" when pipe A already scans out the
+   // requested active size over a live eDP SST link on DDI A, so the donor
+   // performs only a partial mode set and never stops/retrains the link.
+   // Donor sites (keep + softsleep) validated identical on the
+   // AppleIntelTGLGraphicsFramebuffer 16.0.0 from WhateverXe Graphics 0.4.0
+   // for Sequoia 15.8.2 and Tahoe 26.7.2 (same __text): hwRegsNeedUpdate
+   // +0x4F044, prepareToExitWake +0x25062, prepareToEnterWake +0x25A4E,
+   // hwSetPanelPower +0x48652. Any other offset or prologue routes nothing.
+   if(tglActive && !adlsDisplaySelected && !display13FramebufferRequested ) {
+    const char *regs="__ZN31AppleIntelFramebufferController16hwRegsNeedUpdateEP21AppleIntelFramebufferP21AppleIntelDisplayPathP10CRTCParamsPK29IODetailedTimingInformationV2PN16AppleIntelScaler12SCALERPARAMSE";
+    const uint8_t regsEntry[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec,0x18};
+    const auto u=patcher.solveSymbol(index,regs,address,size);patcher.clearError();
+    bool ready=u && u==address+0x4F044 && !memcmp(reinterpret_cast<void *>(u),regsEntry,sizeof(regsEntry));
+    if(ready) {
+     KernelPatcher::RouteRequest route(regs,wrapTGLRegsNeedUpdate,orgTGLRegsNeedUpdate);
+     ready=patcher.routeMultiple(index,&route,1,address,size);
+    }
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLEDPKeepReady",ready);
+    SYSLOG("igfx","TGL eDP keep route ready=%d",ready);
+    patcher.clearError();
+   }
+   if(tglActive && !adlsDisplaySelected && !display13FramebufferRequested && tglSoftSleepEnabled()) {
+    const char *exitWake="__ZN21AppleIntelFramebuffer17prepareToExitWakeEv";
+    const char *enterWake="__ZN21AppleIntelFramebuffer18prepareToEnterWakeEv";
+    const char *panel="__ZN31AppleIntelFramebufferController15hwSetPanelPowerEj";
+    const uint8_t exitEntry[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x53,0x50};
+    const uint8_t enterEntry[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x81,0xec,0xe8,0x00,0x00,0x00};
+    const uint8_t panelEntry[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x53,0x48,0x83,0xec,0x28,0x89,0xf3,0x49,0x89,0xff};
+    const auto ex=patcher.solveSymbol(index,exitWake,address,size);patcher.clearError();
+    const auto en=patcher.solveSymbol(index,enterWake,address,size);patcher.clearError();
+    const auto pp=patcher.solveSymbol(index,panel,address,size);patcher.clearError();
+    bool ready=ex==address+0x25062 && en==address+0x25a4e && pp==address+0x48652 &&
+     !memcmp(reinterpret_cast<void *>(ex),exitEntry,sizeof(exitEntry)) &&
+     !memcmp(reinterpret_cast<void *>(en),enterEntry,sizeof(enterEntry)) &&
+     !memcmp(reinterpret_cast<void *>(pp),panelEntry,sizeof(panelEntry));
+    if(ready) {
+     KernelPatcher::RouteRequest routes[] {{exitWake,wrapTGLExitWake,orgTGLExitWake},
+      {enterWake,wrapTGLEnterWake,orgTGLEnterWake},{panel,wrapTGLPanelPowerSoft,orgTGLPanelPowerSoft}};
+     ready=patcher.routeMultipleShort(index,routes,arrsize(routes),address,size);
+    }
+    IORegistryEntry::getRegistryRoot()->setProperty("TGLSoftSleepReady",ready);
+    SYSLOG("igfx","TGL eDP soft-sleep routes ready=%d",ready);
+    patcher.clearError();
+   }
 
 			if (tglActive) {
 				// TGL/Xe-LP has no dedicated eDP transcoder. Keep the allocated
@@ -14480,6 +14560,66 @@ void XE::processNativePanel(KernelPatcher &patcher,size_t index,mach_vm_address_
 				IORegistryEntry::getRegistryRoot()->setProperty("TGLEDPTranscoderReady",ready);
 				patcher.clearError();
 			}
+ // AI 修改: internal eDP sink reset. Install an independent LightUpEDP hook and
+ // retain the donor PPS entry; no Tahoe path is enabled or required. Display13
+ // owns its own routes, so this binds only the Combo eDP path.
+ if(tglActive && !display13FramebufferRequested &&
+    XELP::displayAdapter(xeProfile.family)==XELP::DisplayAdapter::TGL &&
+    XELP::PanelPower::nativePPS0(firmwarePorts,xeProfile.family)) {
+  // AI 修改: the eDP fix is a single opt-in switch. -wex-edp-fix-training runs
+  // both stages before the native internal LightUpEDP: the PPS off/T12/on sink
+  // reset and the DDI/PG power-domain repair.
+  const bool trainingFix=true;
+  auto root=IORegistryEntry::getRegistryRoot();
+  root->setProperty("TGLEDPTrainingFix",trainingFix);
+  if(trainingFix) {
+  // AI 修改: resolve the donor DDI/PG/AUX power-well entries.
+  const char *auxOn="__ZN19AppleIntelPowerWell18enablePowerWellAuxEj";
+  const char *auxOff="__ZN19AppleIntelPowerWell19disablePowerWellAuxEj";
+  const char *ddiOn="__ZN19AppleIntelPowerWell18enablePowerWellDDIEj";
+  const char *ddiOff="__ZN19AppleIntelPowerWell19disablePowerWellDDIEj";
+  const char *engine="__ZN19AppleIntelPowerWell19enableDisplayEngineEv";
+  const auto auxOnFn=patcher.solveSymbol(index,auxOn,address,size);patcher.clearError();
+  const auto auxOffFn=patcher.solveSymbol(index,auxOff,address,size);patcher.clearError();
+  const auto ddiOnFn=patcher.solveSymbol(index,ddiOn,address,size);patcher.clearError();
+  const auto ddiOffFn=patcher.solveSymbol(index,ddiOff,address,size);patcher.clearError();
+  const auto engineFn=patcher.solveSymbol(index,engine,address,size);patcher.clearError();
+  tglEDPPowerDomainReady=auxOnFn==address+0x5C4BA && auxOffFn==address+0x5AE0A &&
+   ddiOnFn==address+0x5BFA8 && ddiOffFn==address+0x5AA86 && engineFn==address+0x5A6A8 &&
+   size>0x5CA12;
+  if(tglEDPPowerDomainReady){
+   tglPowerWellEnableAux=auxOnFn;tglPowerWellDisableAux=auxOffFn;
+   tglPowerWellEnableDDI=ddiOnFn;tglPowerWellDisableDDI=ddiOffFn;
+   tglPowerWellEnableEngine=engineFn;
+  }
+  root->setProperty("TGLEDPPowerDomainReady",tglEDPPowerDomainReady);
+  const char *edp="__ZN31AppleIntelFramebufferController10LightUpEDPEP21AppleIntelFramebufferP21AppleIntelDisplayPathPK29IODetailedTimingInformationV2";
+  const uint8_t lightEntry[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50,0x49,0x89,0xcf};
+  const auto lightFn=patcher.solveSymbol(index,edp,address,size);patcher.clearError();
+  bool ready=size>=0x508c4 && lightFn==address+0x5063e &&
+   !memcmp(reinterpret_cast<void *>(lightFn),lightEntry,sizeof(lightEntry));
+  // AI 修改: never collide with another already-installed LightUpEDP route.
+  if(ready && !orgADLSLightUpEDP && !orgTGLPanelLightUp) {
+   KernelPatcher::RouteRequest route(edp,wrapTGLPanelLightUp,orgTGLPanelLightUp);
+   ready=patcher.routeMultiple(index,&route,1,address,size);
+   patcher.clearError();
+  }
+  tglPanelLightUpReady=ready && orgTGLPanelLightUp;
+  root->setProperty("TGLPanelLightUpReady",tglPanelLightUpReady);
+  // AI 修改: retain the donor PPS entry used for the sink reset.
+  const char *pps="__ZN31AppleIntelFramebufferController15hwSetPanelPowerEj";
+  const uint8_t ppsEntry[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x53,0x48,0x83,0xec,0x28,0x89,0xf3,0x49,0x89,0xff};
+  const uint8_t ppsConfig[]={0x8b,0xb7,0x48,0x0d,0x00,0x00,0xe8,0x30,0xb1,0xff,0xff,0x83,0xfb,0x02};
+  const auto ppsFn=patcher.solveSymbol(index,pps,address,size);patcher.clearError();
+  tglPanelPowerFunctionReady=ppsFn==address+0x48652 && size>0x48B88 &&
+   !memcmp(reinterpret_cast<void *>(ppsFn),ppsEntry,sizeof(ppsEntry)) &&
+   !memcmp(reinterpret_cast<void *>(address+0x4866b),ppsConfig,sizeof(ppsConfig));
+  if(tglPanelPowerFunctionReady)tglPanelPowerFunction=ppsFn;
+  root->setProperty("TGLPanelPowerFunctionReady",tglPanelPowerFunctionReady);
+  }
+  tglEDPTrainingFixReady=trainingFix && tglPanelPowerFunctionReady && tglPanelLightUpReady;
+  root->setProperty("TGLEDPTrainingFixReady",tglEDPTrainingFixReady);
+ }
 }
 
 // Retain hwSetPanelPowerConfig's caller-serialization contract. The wrapper
@@ -14582,6 +14722,126 @@ uint32_t XE::wrapADLSLightUpEDP(void *controller,void *fb,void *path,const void 
  const auto result=FunctionCast(wrapADLSLightUpEDP,s->orgADLSLightUpEDP)(controller,fb,path,timing);
  if(s->display13FramebufferRequested && !display13PanelHealthy())return kIOReturnNotReady;
  return result;
+}
+// TGLEDPKeep record (u32): version, call, kept, reasons, pipe, ddi, edp,
+// portLanes, portRate, live func/transconf/htotal/hblank/hsync/vtotal/vblank/
+// vsync/pipesrc, wanted func/htotal/hblank/hsync/vtotal/vblank/vsync/pipesrc,
+// DPCD 0x202..0x207 (2 words), update (donor's own answer).
+// reasons: 1 not panel path/pipe A, 2 readout failed, 4 transcoder off or not
+// on DDI A / not DP SST, 8 pipe off, 0x10 active size differs; recorded only:
+// 0x100 blanking differs, 0x200 source size differs, 0x400 lanes differ,
+// 0x800 depth differs, 0x1000 sink not trained.
+bool XE::wrapTGLRegsNeedUpdate(void *controller,void *fb,void *path,void *params,const void *timing,void *scaler) {
+ auto s=callbackXE;
+ const bool update=FunctionCast(wrapTGLRegsNeedUpdate,s->orgTGLRegsNeedUpdate)(controller,fb,path,params,timing,scaler);
+ if(!update || !controller || !path || !params || !s->orgTGLRegisterRead)return update;
+ static uint32_t calls {},kept {};
+ uint32_t rec[34] {};
+ rec[0]=1;rec[1]=__sync_add_and_fetch(&calls,1);
+ uint32_t reasons=0;
+ auto p=static_cast<uint8_t *>(path);
+ const uint32_t pipe=*reinterpret_cast<uint32_t *>(p+0x3640);
+ auto port=*reinterpret_cast<uint8_t **>(p+0x3648);
+ auto access=*reinterpret_cast<void **>(static_cast<uint8_t *>(controller)+0xC40);
+ auto config=port ? *reinterpret_cast<uint32_t **>(port+0x548) : nullptr;
+ rec[4]=pipe;rec[5]=port ? *reinterpret_cast<uint32_t *>(port+0x120) : ~0U;rec[6]=config ? config[0] : ~0U;
+ if(port){rec[7]=*reinterpret_cast<uint32_t *>(port+0x124);rec[8]=*reinterpret_cast<uint32_t *>(port+0x128);}
+ if(pipe!=0 || !port || !access || !config || config[0]!=0 || rec[5]!=0)reasons|=1;
+ else {
+  const auto read=[&](uint32_t reg){return FunctionCast(wrapTGLRegisterRead,s->orgTGLRegisterRead)(access,reg);};
+  const uint32_t regs[]={0x60400,0x70008,0x60000,0x60004,0x60008,0x6000C,0x60010,0x60014,0x6001C};
+  for(unsigned i=0;i<9;++i){rec[9+i]=read(regs[i]);if(rec[9+i]==~0U)reasons|=2;}
+  auto w=static_cast<uint8_t *>(params);
+  const auto field=[&](uint32_t off){uint32_t v;memcpy(&v,w+off,4);return v;};
+  rec[18]=field(0x4);for(unsigned i=0;i<6;++i)rec[19+i]=field(0x10+4*i);rec[25]=field(0x28);
+  const uint32_t func=rec[9],conf=rec[10];
+  // TGL TRANS_DDI_FUNC_CTL: enable bit31, DDI select 30:27 = port+1, mode 26:24 = DP SST (2).
+  if(!(func&0x80000000U) || ((func>>27)&0xF)!=1 || ((func>>24)&7)!=2)reasons|=4;
+  if((conf&0xC0000000U)!=0xC0000000U)reasons|=8;
+  if((rec[11]&0x3FFFU)!=(rec[19]&0x3FFFU) || (rec[14]&0x1FFFU)!=(rec[22]&0x1FFFU))reasons|=0x10;
+  for(unsigned i=0;i<6;++i)if(rec[11+i]!=rec[19+i])reasons|=0x100;
+  if(rec[17]!=rec[25])reasons|=0x200;
+  if(((func>>1)&7)!=((rec[18]>>1)&7))reasons|=0x400;
+  if((func^rec[18])&0x00700000U)reasons|=0x800;
+  uint8_t status[8] {};
+  if(wrapTGLReadAUX(port,0x202,status,6) || (status[0]&0x77)!=0x77 || (((func>>1)&7)==3 && (status[1]&0x77)!=0x77) || !(status[2]&1))
+   reasons|=0x1000;
+  memcpy(&rec[26],status,8);
+ }
+ const bool keep=!(reasons&0xFF);
+ rec[2]=keep ? __sync_add_and_fetch(&kept,1) : kept;
+ if(keep) {
+  tglEDPKeptFB=fb;
+  // TRANS_DDI_FUNC_CTL bpc 0=8,1=10,2=6,3=12 -> PIPE_MISC bpc 0=8,1=10,2=6,4=12
+  static const uint32_t miscBpc[8]={0,1,2,4,0xFF,0xFF,0xFF,0xFF};
+  tglEDPKeptMiscBpc=miscBpc[(rec[9]>>20)&7];
+  rec[29]=tglEDPKeptMiscBpc;rec[30]=tglEDPKeptMiscFixes;
+ }
+ rec[3]=reasons;rec[28]=update;
+ auto root=IORegistryEntry::getRegistryRoot();
+ if(rec[1]==1)root->setProperty("TGLEDPKeepFirst",rec,sizeof(rec));
+ root->setProperty("TGLEDPKeepLast",rec,sizeof(rec));
+ root->setProperty("TGLEDPKept",rec[2],32);
+ SYSLOG("igfx","TGL eDP keep call=%u keep=%d reasons=%x live func=%x conf=%x h=%x v=%x src=%x want func=%x h=%x v=%x src=%x sink %02x %02x %02x",
+  rec[1],keep,reasons,rec[9],rec[10],rec[11],rec[14],rec[17],rec[18],rec[19],rec[22],rec[25],
+  rec[26]&0xFF,(rec[26]>>8)&0xFF,(rec[26]>>16)&0xFF);
+ return keep ? false : update;
+}
+// -wex-tgl-edp-softsleep: display sleep on the kept eDP panel turns only the
+// backlight off. The donor's prepareToExitWake would disable the display,
+// put the sink in D3 and cut panel power, so its wake path (prepareToEnterWake)
+// needs a complete mode set and retraining, which this panel never completes.
+// Inside prepareToExitWake for the kept framebuffer, disableDisplay(bool),
+// setDPPowerState(D3) and hwSetPanelPower(off) are skipped (the pipe, link and
+// panel stay up) and EDP_BLC_ENABLE is cleared instead; prepareToEnterWake then
+// finds the pipe running, hwRegsNeedUpdate keeps the link (partial mode set)
+// and the backlight enable is restored. System sleep loses the link anyway.
+static void tglSoftSleepRecord(uint32_t what,uint32_t a,uint32_t b) {
+ static uint32_t n {};
+ uint32_t rec[4] {__sync_add_and_fetch(&n,1),what,a,b};
+ char key[40];snprintf(key,sizeof(key),"TGLSoftSleep%u",what);
+ IORegistryEntry::getRegistryRoot()->setProperty(key,rec,sizeof(rec));
+}
+void XE::tglSoftSleepBacklight(void *controller,bool on) {
+ auto s=callbackXE;
+ auto access=controller ? *reinterpret_cast<void **>(static_cast<uint8_t *>(controller)+0xC40) : nullptr;
+ if(!access || !s->orgTGLRegisterRead)return;
+ const auto pp=FunctionCast(wrapTGLRegisterRead,s->orgTGLRegisterRead)(access,0xC7204);
+ if(pp==~0U)return;
+ const uint32_t want=on ? ((pp&1) ? (pp|4U) : pp) : (pp&~4U);
+ if(want!=pp)wrapTGLRegisterWrite(access,0xC7204,want);
+ tglSoftSleepRecord(on?2:1,pp,want);
+ SYSLOG("igfx","TGL eDP soft-sleep backlight %s PP_CONTROL %x -> %x",on?"on":"off",pp,want);
+}
+uint64_t XE::wrapTGLExitWake(void *fb) {
+ auto s=callbackXE;
+ const bool soft=tglSoftSleepEnabled() && fb && fb==tglEDPKeptFB;
+ if(soft){tglSoftSleepThread=current_thread();tglSoftSleepRecord(0,1,0);}
+ const auto r=FunctionCast(wrapTGLExitWake,s->orgTGLExitWake)(fb);
+ if(soft) {
+  tglSoftSleepThread=nullptr;
+  if(!tglSoftSleepBacklightOff) {
+   tglSoftSleepBacklight(*reinterpret_cast<void **>(static_cast<uint8_t *>(fb)+0x1d0),false);
+   tglSoftSleepBacklightOff=true;
+  }
+ }
+ return r;
+}
+uint64_t XE::wrapTGLEnterWake(void *fb) {
+ auto s=callbackXE;
+ const auto r=FunctionCast(wrapTGLEnterWake,s->orgTGLEnterWake)(fb);
+ if(fb && fb==tglEDPKeptFB && tglSoftSleepBacklightOff) {
+  tglSoftSleepBacklight(*reinterpret_cast<void **>(static_cast<uint8_t *>(fb)+0x1d0),true);
+  tglSoftSleepBacklightOff=false;
+ }
+ return r;
+}
+uint32_t XE::wrapTGLPanelPowerSoft(void *controller,uint32_t state) {
+ if(state!=2 && tglSoftSleepActive()) {
+  tglSoftSleepRecord(3,state,0);
+  return 0;
+ }
+ return FunctionCast(wrapTGLPanelPowerSoft,callbackXE->orgTGLPanelPowerSoft)(controller,state);
 }
 uint32_t XE::wrapADLSPanelBacklight(void *controller,uint32_t brightness) {
  auto s=callbackXE;
@@ -17528,6 +17788,10 @@ uint32_t XE::wrapTGLOptimalLaneCount(void *port, const void *timing, uint32_t bp
 
 uint32_t XE::wrapTGLDPPower(void *port, uint8_t state) {
 	auto caller = __builtin_return_address(0);
+	if (state != 1 && tglSoftSleepActive()) {
+		auto cfg = *reinterpret_cast<uint32_t **>(static_cast<uint8_t *>(port) + 0x548);
+		if (cfg && cfg[0] == 0) { tglSoftSleepRecord(5, state, 0); return 0; }
+	}
 	tglConnectionRecord(port, 4, false, 0, state, caller);
 	auto bytes = static_cast<uint8_t *>(port);
 	auto config = *reinterpret_cast<uint32_t **>(bytes + 0x548);
@@ -19197,6 +19461,7 @@ bool XE::wrapTGLAllocateResources(void *fb) {
 
 void XE::wrapTGLFBDisable(void *fb, bool flag) {
 	auto caller = __builtin_return_address(0);
+	if (tglSoftSleepActive(fb)) { tglSoftSleepRecord(4, flag, 0); return; }
 	tglObserveResource(fb, nullptr, 3, false, 0, flag, 0, caller);
 	FunctionCast(wrapTGLFBDisable, callbackXE->orgTGLFBDisable)(fb, flag);
 	tglObserveResource(fb, nullptr, 3, true, 0, flag, 0, caller);
@@ -19456,9 +19721,44 @@ uint32_t XE::wrapTGLPortTraining(void *port, void *request) {
 	auto caller = __builtin_return_address(0);
 	tglObservePath(port, nullptr, 0, false, 0, request != nullptr, caller);
 	const auto token = tglTrainingScopes.enter(reinterpret_cast<uintptr_t>(current_thread()));
+	// AI 修改: measure the native link-training duration and outcome.
+	uint64_t trainStart {}, trainEnd {};
+	clock_get_uptime(&trainStart);
 	const auto r = FunctionCast(wrapTGLPortTraining, callbackXE->orgTGLPortTraining)(port, request);
+	clock_get_uptime(&trainEnd);
 	tglTrainingScopes.leave(token);
  tglAUXRecord(port,10,true,r,0,0);
+	// AI 修改: diagnostics only; no behavior change.
+	{
+		uint64_t aNs {}, bNs {};
+		absolutetime_to_nanoseconds(trainStart, &aNs);
+		absolutetime_to_nanoseconds(trainEnd, &bNs);
+		const uint64_t ns = bNs >= aNs ? bNs - aNs : 0;
+		static uint32_t timingSeq;
+		const auto seq = __sync_add_and_fetch(&timingSeq, 1);
+		auto p = static_cast<uint8_t *>(port);
+		auto cfg = p ? *reinterpret_cast<uint32_t **>(p + 0x548) : nullptr;
+		const uint32_t ddi = cfg ? cfg[0] : UINT32_MAX;
+		const uint32_t lanes = p ? *reinterpret_cast<uint32_t *>(p + 0x124) : 0;
+		const uint32_t rate = p ? *reinterpret_cast<uint32_t *>(p + 0x128) : 0;
+		const uint32_t mode = p ? *reinterpret_cast<uint32_t *>(p + 0x550) : 0;
+		uint32_t rec[] = {1, seq, r, static_cast<uint32_t>(ns / 1000000), ddi,
+		                  lanes, rate, mode, static_cast<uint32_t>(ns % 1000000), 0};
+		auto root = IORegistryEntry::getRegistryRoot();
+		char key[48];
+		snprintf(key, sizeof(key), "TGLTrainingTimeLast%u", seq % 16);
+		root->setProperty(key, rec, sizeof(rec));
+		if (seq <= 16) {
+			snprintf(key, sizeof(key), "TGLTrainingTimeFirst%u", seq);
+			root->setProperty(key, rec, sizeof(rec));
+		}
+		root->setProperty("TGLTrainingTime", rec, sizeof(rec));
+		if (!r) {
+			uint32_t ok[] = {1, seq, static_cast<uint32_t>(ns / 1000000),
+			                 static_cast<uint32_t>(ns % 1000000), ddi};
+			root->setProperty("TGLTrainingSuccess", ok, sizeof(ok));
+		}
+	}
 	SYSLOG("igfx", "TGL330 port-training return result=%x", r);
 	static uint32_t count {};
 	IORegistryEntry::getRegistryRoot()->setProperty("TGLQuietTrainingCalls",
@@ -19483,6 +19783,112 @@ void XE::wrapTGLFreePath(void *path) {
 	FunctionCast(wrapTGLFreePath, callbackXE->orgTGLFreePath)(path);
 	if (callbackXE->tglPathPoolLock) IORecursiveLockUnlock(callbackXE->tglPathPoolLock);
 	tglObservePath(port, path, 2, true, 0, 0, caller);
+}
+
+// AI 修改: internal panel DDI for the eDP fix. Unlike tglPanelDepthPort this
+// does not require the port to be active (+0x117), because the fix may run
+// during a wake or teardown transition.
+uint32_t XE::tglPanelAuxDDI(void *port) {
+ auto s=callbackXE;auto p=static_cast<uint8_t *>(port);
+ auto c=static_cast<uint8_t *>(s->tglObservationController);
+ if(!p || !c || !s->tglActive)return 9;
+ auto cfg=*reinterpret_cast<uint32_t **>(p+0x548);
+ if(!cfg || cfg[0]>1 || cfg[2]!=0 || cfg[3]!=0)return 9;
+ if(!s->firmwarePorts.valid() || !(s->firmwarePorts.present&(1U<<cfg[0])) ||
+    !s->firmwarePorts.port[cfg[0]].internal() || !s->firmwarePorts.port[cfg[0]].dp())return 9;
+ return cfg[0];
+}
+
+// AI 修改: DDI/PG power-domain repair (part of -wex-edp-fix-training). The
+// display-sleep path can leave the DDI/AUX power-well references stale, so the
+// donor's own enable entries skip the hardware. Drain those references, run
+// the donor's display engine/PG enable sequence, then enable the panel DDI and
+// AUX once. The display-engine step intentionally bypasses the PG reference
+// short-circuit.
+void XE::tglPowerDomainRepair(void *controller,uint32_t ddi) {
+ auto s=callbackXE;auto ctl=static_cast<uint8_t *>(controller);
+ if(!s->tglEDPPowerDomainReady || !ctl || ctl!=s->tglObservationController || ddi>1)return;
+ auto power=*reinterpret_cast<uint8_t **>(ctl+0xC8);
+ auto access=*reinterpret_cast<void **>(ctl+0xC40);
+ if(!power || *reinterpret_cast<void **>(power+0x10)!=controller ||
+    *reinterpret_cast<void **>(power+0x78)!=access)return;
+ using RefFn=void (*)(void *,uint32_t);
+ using EngineFn=void (*)(void *);
+ const auto enableAux=reinterpret_cast<RefFn>(s->tglPowerWellEnableAux);
+ const auto disableAux=reinterpret_cast<RefFn>(s->tglPowerWellDisableAux);
+ const auto enableDDI=reinterpret_cast<RefFn>(s->tglPowerWellEnableDDI);
+ const auto disableDDI=reinterpret_cast<RefFn>(s->tglPowerWellDisableDDI);
+ const auto engine=reinterpret_cast<EngineFn>(s->tglPowerWellEnableEngine);
+ if(!enableAux || !disableAux || !enableDDI || !disableDDI || !engine)return;
+ const auto read=[&](uint32_t reg)->uint32_t {return s->orgTGLRegisterRead ?
+   FunctionCast(wrapTGLRegisterRead,s->orgTGLRegisterRead)(access,reg) : UINT32_MAX;};
+ auto &ddiRef=*reinterpret_cast<volatile uint32_t *>(power+0x30+4*ddi);
+ auto &auxRef=*reinterpret_cast<volatile uint32_t *>(power+0x54+4*ddi);
+ // {4, ddi, ddiBefore, auxBefore, ddiDrained, auxDrained, engineCalled,
+ //  ddiAfter, auxAfter, mainBefore, ioBefore, mainAfter, ioAfter, suspended, 0, 0}
+ uint32_t rec[16] {};
+ rec[0]=4;rec[1]=ddi;rec[2]=ddiRef;rec[3]=auxRef;
+ rec[9]=read(0x45404);rec[10]=read(0x45454);
+ uint32_t ddiDrained=0,auxDrained=0;
+ while(ddiRef && ddiDrained<16) {disableDDI(power,ddi);++ddiDrained;}
+ while(auxRef && auxDrained<16) {disableAux(power,ddi);++auxDrained;}
+ rec[4]=ddiDrained;rec[5]=auxDrained;
+ engine(power);
+ rec[6]=1;
+ enableDDI(power,ddi);rec[7]=ddiRef;
+ enableAux(power,ddi);rec[8]=auxRef;
+ rec[11]=read(0x45404);rec[12]=read(0x45454);
+ rec[13]=power[0x18];
+ IORegistryEntry::getRegistryRoot()->setProperty("TGLEDPPowerDomainLast",rec,sizeof(rec));
+}
+
+// AI 修改: independent internal eDP sink reset. No Tahoe route is used here:
+// the donor's own hwSetPanelPower entry cycles the panel supply before the
+// native internal LightUpEDP, mirroring a proven display sleep/wake so the
+// sink link/scrambler state is re-initialized. It runs before every internal
+// light-up (cold boot and each wake) and never changes the native result.
+uint32_t XE::wrapTGLPanelLightUp(void *controller,void *fb,void *path,const void *timing) {
+ auto self=callbackXE;auto ctl=static_cast<uint8_t *>(controller);
+ auto pb=path?*reinterpret_cast<uint8_t **>(static_cast<uint8_t *>(path)+0x3648):nullptr;
+ auto cfg=pb?*reinterpret_cast<uint32_t **>(pb+0x548):nullptr;
+ auto access=ctl?*reinterpret_cast<void **>(ctl+0xC40):nullptr;
+ // AI 修改: cycle only the qualified internal panel path.
+ if(self->tglEDPTrainingFixReady && self->tglPanelPowerFunctionReady && self->tglPanelPowerFunction &&
+    self->orgTGLRegisterRead && ctl==self->tglObservationController && access &&
+    fb==*reinterpret_cast<void **>(ctl+0xD60) && cfg && cfg[0]==0 && cfg[2]==0 && cfg[3]==0) {
+  const auto read=FunctionCast(wrapTGLRegisterRead,self->orgTGLRegisterRead);
+  static uint32_t cycleSeq;
+  // {2, seq, statusBefore, controlBefore, surface, mainPower, ioPower,
+  //  offResult, t12, onResult, statusAfter, 0}
+  uint32_t rec[12] {};
+  rec[0]=2;rec[1]=__sync_add_and_fetch(&cycleSeq,1);
+  rec[2]=read(access,0xC7200);rec[3]=read(access,0xC7204);
+  rec[4]=read(access,0x7019C);rec[5]=read(access,0x45404);rec[6]=read(access,0x45454);
+  using PanelPowerFn=uint32_t (*)(void *,uint32_t);
+  const auto panel=reinterpret_cast<PanelPowerFn>(self->tglPanelPowerFunction);
+  rec[7]=panel(ctl,0);
+  uint32_t t12=*reinterpret_cast<uint32_t *>(ctl+0x1558);
+  if(!t12 || t12>31)t12=6;
+  // AI 修改: donor T12 is expressed in 100 ms units; add 100 ms margin.
+  rec[8]=t12;
+  IOSleep(t12*100+100);
+  rec[9]=panel(ctl,2);
+  rec[10]=read(access,0xC7200);
+  auto root=IORegistryEntry::getRegistryRoot();
+  root->setProperty("TGLPanelCycle",rec,sizeof(rec));
+  if(!self->tglColdPanelCycleDone) {
+   self->tglColdPanelCycleDone=true;
+   root->setProperty("TGLPanelColdCycle",rec,sizeof(rec));
+  }
+ }
+ // AI 修改: DDI/PG power-domain repair, as late as possible before the native
+ // light-up.
+ if(self->tglEDPTrainingFixReady && self->tglEDPPowerDomainReady) {
+  const auto ddi=tglPanelAuxDDI(pb);
+  if(ddi<=1)tglPowerDomainRepair(controller,ddi);
+ }
+ // AI 修改: always run the native light-up and keep its result unchanged.
+ return FunctionCast(wrapTGLPanelLightUp,self->orgTGLPanelLightUp)(controller,fb,path,timing);
 }
 
 uint32_t XE::wrapTGLLightUpDP(void *controller, void *fb, void *path, const void *timing) {
@@ -20033,6 +20439,32 @@ void XE::tglObserveScanout(void *fb, void *plane, uint32_t event, bool done, uin
 // Per-thread slots span the synchronous gamma call; publication is after it has
 // returned and released its native register lock. Upload and readback stay separate.
 void XE::wrapTGLRegisterWrite(void *access, unsigned long reg, uint32_t value) {
+	// The donor enabling transcoder A itself means a complete mode set with its
+	// own link training: the firmware link is gone and the pipe depth is the
+	// donor's own again, so stop forcing the firmware bpc into its writes.
+	if (reg == 0x60400 && (value & 0x80000000U) && tglEDPKeptMiscBpc != 0xFF) {
+		tglEDPKeptMiscBpc = 0xFF;
+		IORegistryEntry::getRegistryRoot()->setProperty("TGLEDPRetrained", value, 32);
+	}
+	value = tglEDPKeptMisc(reg, value);
+	// Local fix (RedmiBook Pro 15 2021): the donor computes the backlight duty against
+	// its own PWM period (controller+0xE60) while the hardware keeps the firmware
+	// period in 0xC8254 ("EFI using a different backlight frequency"), so full
+	// brightness lands at donorPeriod/firmwarePeriod of the real range. Rescale.
+	if (reg == 0xC8258 && callbackXE->tglActive && !callbackXE->adlsDisplaySelected &&
+		!callbackXE->display13FramebufferRequested && callbackXE->orgTGLRegisterRead) {
+		auto ctl = static_cast<uint8_t *>(callbackXE->tglObservationController);
+		if (ctl && access && *reinterpret_cast<void **>(ctl + 0xC40) == access) {
+			const uint32_t donor = *reinterpret_cast<uint32_t *>(ctl + 0xE60);
+			const uint32_t hw = FunctionCast(wrapTGLRegisterRead, callbackXE->orgTGLRegisterRead)(access, 0xC8254);
+			if (donor && hw && hw != ~0U && donor != hw && value <= donor) {
+				const uint32_t scaled = static_cast<uint32_t>(static_cast<uint64_t>(value) * hw / donor);
+				uint32_t rec[] = {1, value, donor, hw, scaled};
+				IORegistryEntry::getRegistryRoot()->setProperty("TGLBacklightRescale", rec, sizeof(rec));
+				value = scaled;
+			}
+		}
+	}
 	if (callbackXE->tglActive && callbackXE->tglComboPLLFractionCaller &&
 		reinterpret_cast<uintptr_t>(__builtin_return_address(0)) == callbackXE->tglComboPLLFractionCaller) {
 		auto ctl = static_cast<uint8_t *>(callbackXE->tglObservationController);
@@ -20115,6 +20547,7 @@ void XE::wrapTGLRegisterWrite(void *access, unsigned long reg, uint32_t value) {
 }
 
 void XE::wrapTGLFastRegisterWrite(void *access, unsigned long reg, uint32_t value) {
+	value = tglEDPKeptMisc(reg, value);
 	tglProgramRecord(access, reg, value, 1, __builtin_return_address(0));
 	tglStreamAck(access, reg, value, 1, __builtin_return_address(0));
 	auto irq=reg==0x190010 ? tglFBIRQBegin(0,callbackXE->tglObservationController,value,
@@ -20285,6 +20718,24 @@ uint32_t XE::wrapTGLReadAUX(void *port, uint32_t address, void *data, uint32_t l
 		return FunctionCast(wrapTGLReadAUX, callbackXE->orgTGLReadAUX)(port, address, data, length);
 	});
 	tglDPCDRecord(port, address, data, length, false, true, r, caller);
+	// Local fix (RedmiBook Pro 15 2021, TL156MDMP01 panel): the panel sets
+	// DPCD 0x00E bit 7 (EXTENDED_RECEIVER_CAPABILITY_FIELD_PRESENT) with a zero
+	// training interval. The donor uses the whole byte as the interval and
+	// waits ~130 ms before each status read; by then the sink has dropped
+	// lock, so every retrain after display sleep ends in "Phase 2 of link
+	// training failed". Hide the bit on the internal DDI A sink so the donor
+	// polls after the standard 400 us and its own training succeeds.
+	static int noExt = -1;
+	if (noExt < 0) noExt =  1;
+	if (noExt == 1 && !r && port && data && address <= 0xE && address + length > 0xE) {
+		auto config = *reinterpret_cast<uint32_t **>(static_cast<uint8_t *>(port) + 0x548);
+		auto d = static_cast<uint8_t *>(data);
+		if (config && config[0] == 0 && (d[0xE - address] & 0x80)) {
+			static uint32_t masked;
+			d[0xE - address] &= 0x7F;
+			IORegistryEntry::getRegistryRoot()->setProperty("TGLEDPExtCapMasked", __sync_add_and_fetch(&masked, 1), 32);
+		}
+	}
 	return r;
 }
 

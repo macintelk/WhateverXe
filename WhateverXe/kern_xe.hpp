@@ -128,9 +128,16 @@ private:
     bool adlsPLLTableReady {},adlsClockReady {},adlsPowerReady {},adlsPanelPWMReady {};
  XELP::PanelPWM adlsPanelPWM;
  mach_vm_address_t orgADLSLightUpEDP {},orgADLSPanelBacklight {};
+ mach_vm_address_t orgTGLRegsNeedUpdate {};
+ mach_vm_address_t orgTGLExitWake {},orgTGLEnterWake {},orgTGLPanelPowerSoft {};
  static bool adlsPanelPWMTarget(void *controller,void *&access,void *&power);
  static bool adlsCapturePanelPWM(void *controller);
  static uint32_t wrapADLSLightUpEDP(void *controller,void *fb,void *path,const void *timing);
+ static bool wrapTGLRegsNeedUpdate(void *controller,void *fb,void *path,void *params,const void *timing,void *scaler);
+ static uint64_t wrapTGLExitWake(void *fb);
+ static uint64_t wrapTGLEnterWake(void *fb);
+ static uint32_t wrapTGLPanelPowerSoft(void *controller,uint32_t state);
+ static void tglSoftSleepBacklight(void *controller,bool on);
  static uint32_t wrapADLSPanelBacklight(void *controller,uint32_t brightness);
  static void wrapADLSPanelPWMEnable(void *access);
     mach_vm_address_t orgADLSPowerPG {};
@@ -557,6 +564,22 @@ private:
  static uint32_t wrapTGLPanelTiming(void *controller);
 	static uint32_t tglPanelDepthPort(void *port);
 	static void wrapTGLModeTiming(void *controller,void *fb,void *timing);
+	// AI 修改: internal eDP fix, enabled by -wex-edp-fix-training. The
+	// LightUpEDP hook runs the donor's PPS off/T12/on sink reset and the
+	// DDI/PG power-domain repair before the native internal light-up.
+	bool tglPanelLightUpReady {};
+	mach_vm_address_t orgTGLPanelLightUp {};
+	mach_vm_address_t tglPanelPowerFunction {};
+	bool tglPanelPowerFunctionReady {},tglColdPanelCycleDone {};
+	bool tglEDPTrainingFixReady {};
+	static uint32_t wrapTGLPanelLightUp(void *controller, void *fb, void *path, const void *timing);
+	// AI 修改: DDI/PG power-domain repair, part of -wex-edp-fix-training.
+	bool tglEDPPowerDomainReady {};
+	mach_vm_address_t tglPowerWellEnableAux {},tglPowerWellDisableAux {};
+	mach_vm_address_t tglPowerWellEnableDDI {},tglPowerWellDisableDDI {};
+	mach_vm_address_t tglPowerWellEnableEngine {};
+	static uint32_t tglPanelAuxDDI(void *port);
+	static void tglPowerDomainRepair(void *controller,uint32_t ddi);
 	mach_vm_address_t orgTGLGamma10 {}, orgTGLRegisterWrite {}, orgTGLFastRegisterWrite {};
 	static void wrapTGLGamma10(void *path, void *transaction, uint32_t control);
 	static void wrapTGLRegisterWrite(void *access, unsigned long reg, uint32_t value);

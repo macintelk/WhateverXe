@@ -1027,7 +1027,11 @@ public:
 	mach_vm_address_t orgTGLHostIRQProcess {}, orgTGLHostIRQService {};
 	static void wrapTGLHostIRQProcess(void *bridge);
 	static void wrapTGLHostIRQService(void *bridge, const uint64_t *bits);
-
+	
+	static uint64_t wrapFBPowerState(void *fb, uint32_t value);
+	mach_vm_address_t owrapFBPowerState {};
+	
+	
 	
 public:
 

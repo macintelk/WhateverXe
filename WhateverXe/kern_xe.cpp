@@ -13429,7 +13429,8 @@ bool XE::processKextFull(KernelPatcher &patcher, size_t index, mach_vm_address_t
 				
 				KernelPatcher::RouteRequest gen11[] {
 									{"__ZN31AppleIntelFramebufferController18hwInitializeCStateEv", Gen11::callback->hwInitializeCState, Gen11::callback->ohwInitializeCState},
-									{"__ZN31AppleIntelFramebufferController20hwConfigureCustomAUXEb", Gen11::callback->hwConfigureCustomAUX, Gen11::callback->ohwConfigureCustomAUX}
+									{"__ZN31AppleIntelFramebufferController20hwConfigureCustomAUXEb", Gen11::callback->hwConfigureCustomAUX, Gen11::callback->ohwConfigureCustomAUX},
+					{"__ZN21AppleIntelFramebuffer24setFramebufferPowerStateEj", Gen11::callback->wrapFBPowerState, Gen11::callback->owrapFBPowerState}
 								};
 								patcher.routeMultiple(index, gen11, arrsize(gen11), address, size);
 								patcher.clearError();

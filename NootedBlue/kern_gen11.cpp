@@ -20860,3 +20860,22 @@ void Gen11::wrapProcessContextStatusBuffer(void *that, uint32_t flags) {
                 self->csbHandlers[action - 1](that, synth);
         }
 }
+
+uint64_t Gen11::wrapFBPowerState(void *fb, uint32_t value) {
+	auto *s = callback;
+	static bool wakeCycleArmed;
+	if (!s || !s->owrapFBPowerState) return 0;
+	auto org = (uint64_t (*)(void *, uint32_t))s->owrapFBPowerState;
+	void *ctl = *(void **)((uint8_t *)fb + 0x1D0);
+	const bool dedicated = ctl && fb == *(void **)((uint8_t *)ctl + 0xD60);
+	const uint32_t index = *(uint32_t *)((uint8_t *)fb + 0x1DC);
+	if (!dedicated || index != 0) return org(fb, value);
+	if (value == 0) { wakeCycleArmed = true; return org(fb, value); }
+	if (value != 2 || !wakeCycleArmed) return org(fb, value);
+	if (*(uint32_t *)((uint8_t *)fb + 0x4284) != 0) return org(fb, value);
+	wakeCycleArmed = false;
+	uint64_t native = org(fb, 2);
+	org(fb, 1);
+	uint64_t cycled = org(fb, 2);
+	return cycled;
+}
